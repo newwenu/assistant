@@ -1,5 +1,7 @@
 use std::time::Duration;
 
+use crate::os::footer;
+
 use super::outcome::SearchOutcome;
 use super::{MAX_MATCHES, MAX_OUTPUT_LINES};
 
@@ -22,28 +24,37 @@ pub(super) fn assistant_text(
     if outcome.timed_out {
         push_line(
             &mut text,
-            &format!(
-                "[search stopped at the {}ms time budget; results may be incomplete; narrow \
-                 'path' or 'include']",
-                budget.as_millis()
+            &footer::render(
+                footer::SEARCH,
+                format!(
+                    "stopped at the {}ms time budget; results may be incomplete; narrow 'path' \
+                     or 'include'",
+                    budget.as_millis()
+                ),
             ),
         );
     } else if outcome.match_limit {
         push_line(
             &mut text,
-            &format!(
-                "[truncated: showing the first {} matching lines; total unknown; narrow 'path' \
-                 or 'include']",
-                MAX_MATCHES
+            &footer::render(
+                footer::TRUNCATED,
+                format!(
+                    "showing the first {} matching lines; total unknown; narrow 'path' or \
+                     'include'",
+                    MAX_MATCHES
+                ),
             ),
         );
     } else if outcome.line_limit {
         push_line(
             &mut text,
-            &format!(
-                "[truncated: output line limit ({}) reached; total unknown; narrow 'path', \
-                 'include', or reduce 'context']",
-                MAX_OUTPUT_LINES
+            &footer::render(
+                footer::TRUNCATED,
+                format!(
+                    "output line limit ({}) reached; total unknown; narrow 'path', 'include', \
+                     or reduce 'context'",
+                    MAX_OUTPUT_LINES
+                ),
             ),
         );
     }
@@ -51,17 +62,23 @@ pub(super) fn assistant_text(
     // footer 标记集：各自独占一行、只给事实（[I38c §14.4] / [grep §3.1]）。
     if let Some(probe) = &outcome.probe {
         if probe.files > 0 {
-            push_line(&mut text, &format!("[non-utf8: {} file(s)]", probe.files));
+            push_line(
+                &mut text,
+                &footer::render(footer::NON_UTF8, format!("{} file(s)", probe.files)),
+            );
         }
     }
     let skipped = outcome.skipped_files();
     if skipped > 0 {
-        push_line(&mut text, &format!("[skipped: {} file(s)]", skipped));
+        push_line(
+            &mut text,
+            &footer::render(footer::SKIPPED, format!("{} file(s)", skipped)),
+        );
     }
     if outcome.lossy_lines > 0 {
         push_line(
             &mut text,
-            &format!("[lossy: {} line(s)]", outcome.lossy_lines),
+            &footer::render(footer::LOSSY, format!("{} line(s)", outcome.lossy_lines)),
         );
     }
     text

@@ -8,7 +8,7 @@ use assistant_tools::{
     cleanup_expired_results, mcp::McpServerManager, os, sandbox, ApprovalPrompter,
     FileToolResultStorage, InMemoryReadReceiptStore, PermissionAuditStore, PermissionGrantStore,
     ReadReceiptStore, SandboxEnforcement, SandboxHostPaths, SandboxProbe, ToolGateway,
-    ToolPipeline, ToolRegistry, ToolResultStorage,
+    ToolPipeline, ToolRegistry, ToolResultStorage, ToolTier,
 };
 
 use crate::adapters::{
@@ -283,11 +283,39 @@ pub fn init(handle: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>>
             };
             resolved
         });
-    let tool_exec = Arc::new(PipelineToolExecution::with_workspace_source(
-        pipeline,
-        waits,
-        workspace_source,
-    ));
+    // 升级通道的层级上限同样按会话求值（I58 §3.8 ③）：读会话落库的工具装配，
+    // 与 `resolve_available_tools` 的白名单过滤同源；读不到就 fail-closed 到沙箱层级，
+    // 绝不因为「读不到配置」而放宽可升级范围。
+    let tier_handle = handle.clone();
+    let max_tool_tier_source: crate::adapters::MaxToolTierSource =
+        Arc::new(move |conversation_id: &str| {
+            let state = tier_handle.state::<crate::setup::DbState>();
+            let raw = match state.0.lock() {
+                Ok(conn) => {
+                    assistant_storage::conversations::get_conversation_by_id(&conn, conversation_id)
+                        .ok()
+                        .flatten()
+                        .and_then(|row| row.tool_config_json)
+                }
+                Err(e) => {
+                    log::warn!("Failed to lock db for tool tier resolve: {e}");
+                    None
+                }
+            };
+            raw.as_deref()
+                .and_then(|raw| {
+                    serde_json::from_str::<crate::protocol::ConversationToolConfigDto>(raw).ok()
+                })
+                .map(|config| ToolTier::from(config.max_tool_tier))
+                .unwrap_or(ToolTier::Sandbox)
+        });
+    let tool_exec = Arc::new(
+        PipelineToolExecution::with_workspace_source(pipeline, waits, workspace_source)
+            // 行索引缓存根：与结果落盘同为可重建产物，由装配层给出（I58 §3.5）。
+            .with_index_root(dirs.indexes())
+            // 升级通道：注册表 + 层级来源，`request_tool(detail = "enable")` 的唯一出口（I58 §3.8）。
+            .with_escalation(registry.clone(), max_tool_tier_source),
+    );
     handle.manage(tool_exec);
 
     handle.manage(registry);

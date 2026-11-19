@@ -18,7 +18,9 @@ use crate::r#trait::{
     ValidationResult,
 };
 use crate::result::ToolResult;
-use crate::storage::{ReadReceipt, ReadReceiptKey, ReadReceiptStore};
+use crate::storage::{
+    ReadReceipt, ReadReceiptKey, ReadReceiptStore, DEFAULT_LINE_WINDOW_MAX_CHARS,
+};
 
 use atomic::{write_atomically, WriteOutcome};
 use encoding::{resolve_target_encoding, TargetEncoding};
@@ -211,6 +213,8 @@ impl Tool for AgentWriteTool {
                     tool_call_id: context.tool_call_id.clone().unwrap_or_default(),
                     encoding: target.name().to_string(),
                     has_bom: target.written_bom(),
+                    truncated_lines: 0,
+                    line_window_max_chars: DEFAULT_LINE_WINDOW_MAX_CHARS,
                 },
             )
             .await;

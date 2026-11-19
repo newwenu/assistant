@@ -636,6 +636,8 @@ async fn receipt_carries_encoding_and_bom_state() {
         tool_call_id: "call-4".to_string(),
         encoding: "GBK".to_string(),
         has_bom: true,
+        truncated_lines: 2,
+        line_window_max_chars: 2000,
     };
     store
         .record(receipt_key(None, "/repo/gbk.txt"), recorded.clone())

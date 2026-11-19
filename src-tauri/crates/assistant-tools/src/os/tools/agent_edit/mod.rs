@@ -60,6 +60,9 @@ impl Tool for AgentEditTool {
              that pass are reported as ambiguous instead of picking the first. The file must \
              have been read (or written) in this session and must not have changed since; its \
              encoding and BOM come from that read, so non-UTF-8 files are edited in place. \
+             If that read had lines cut at the line-width limit, the edit is rejected: the \
+             unseen tail of those lines cannot be verified (use `grep` to locate the exact \
+             line first). \
              Writes are atomic (temp file + fsync + rename); CRLF files stay CRLF."
                 .to_string(),
         )
@@ -186,11 +189,28 @@ impl Tool for AgentEditTool {
             Some(receipt) => receipt,
         };
 
+        // I57 §3.6 闸门：回执上有行被切时，被切掉的尾部无法与 `old_string` 逐字校验，
+        // 因此拒绝写入。只读回执、不重扫文件，也不给模型开关（输入 schema 不变）。
+        if receipt.truncated_lines > 0 {
+            return Ok(ToolResult::err(format!(
+                "'{}' was read with {} line(s) cut at {} chars; the unseen part of those lines \
+                 cannot be verified before editing (use 'grep' to locate the exact line first)",
+                path_text, receipt.truncated_lines, receipt.line_window_max_chars
+            )));
+        }
+
         let encoding = resolve_label(&receipt.encoding).unwrap_or(UTF_8);
         let has_bom = receipt.has_bom;
+        // I58 §3.6：定位失败的诊断是否附「可申请 `super_edit`」的指引。
+        // 门控 `request_tool`（唯一申请入口），不是 `super_edit` 是否已在工具集里。
+        let escalation = context
+            .available_tool_names
+            .as_ref()
+            .is_some_and(|names| names.iter().any(|name| name == "request_tool"));
         let edit_request = request.clone();
+        let edit_path = resolved.clone();
         let edited = tokio::task::spawn_blocking(move || {
-            apply::apply_edit(&resolved, &edit_request, encoding, has_bom)
+            apply::apply_edit(&edit_path, &edit_request, encoding, has_bom, escalation)
         })
         .await;
         let write = match edited {
@@ -208,6 +228,8 @@ impl Tool for AgentEditTool {
                     tool_call_id: context.tool_call_id.clone().unwrap_or_default(),
                     encoding: write.encoding.name().to_string(),
                     has_bom: write.has_bom,
+                    truncated_lines: 0,
+                    line_window_max_chars: receipt.line_window_max_chars,
                 },
             )
             .await;

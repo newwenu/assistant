@@ -72,6 +72,12 @@ impl AppDirs {
         self.data.join(dir_name::TOOL_RESULTS)
     }
 
+    /// 行索引缓存根（`super_read` 的 `index_root`，I58 §3.5）。
+    /// 与 `tool_results()` 同根：都是可重建的工具产物，删掉只会导致重建。
+    pub fn indexes(&self) -> PathBuf {
+        self.data.join(dir_name::TOOL_INDEX)
+    }
+
     pub fn mascot_assets(&self) -> PathBuf {
         self.data.join(dir_name::MASCOT_ASSETS)
     }
@@ -117,6 +123,7 @@ mod tests {
             dirs.tool_results(),
             PathBuf::from("/data/root/tool-results")
         );
+        assert_eq!(dirs.indexes(), PathBuf::from("/data/root/tool-index"));
         assert_eq!(
             dirs.mascot_assets(),
             PathBuf::from("/data/root/mascot-assets")

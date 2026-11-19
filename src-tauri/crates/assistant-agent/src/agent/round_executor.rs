@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::time::Instant;
 
 use async_trait::async_trait;
@@ -11,6 +12,7 @@ use crate::kernel::{
     TurnPhase, TurnSpec, TurnStatus, UsageSnapshot,
 };
 
+use super::node_event::{AgentNode, AgentNodeDetail, NodeState};
 pub use super::tool_call::FinalizedToolCall;
 use super::tool_event::ToolEvent;
 
@@ -89,6 +91,24 @@ pub trait TurnObserver: Send + Sync {
     /// 正文 / 推理增量：返回本次事件的 `seq`。executor **只能**经这里发 delta，
     /// 不得直接持有 `EventSink`（seq 单调、代际校验、`iteration` 标记都在 `TurnEmitter`）。
     fn delta(&self, delta: &ProviderDelta) -> u32;
+
+    /// 节点级观测（I55 §4.2）。无返回值（G11 同口径）：观测不得成为控制通道。
+    ///
+    /// `iteration` 由调用方显式传入，**不复用** `set_iteration` 的当前值：迭代外节点
+    /// （`admit` / `prepare`）恒为 0。`transition` 同样是显式声明（`true` = 构成状态迁移，
+    /// `false` = 仅过程事实），实现方不得自行推断。
+    ///
+    /// 默认空实现：非广播链路与测试替身不需要节点事件，避免为「不观测」的路径强加噪声。
+    fn node(
+        &self,
+        node: AgentNode,
+        iteration: u32,
+        state: NodeState,
+        transition: bool,
+        detail: Option<AgentNodeDetail>,
+    ) {
+        let _ = (node, iteration, state, transition, detail);
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -152,10 +172,33 @@ pub struct ToolExecCtx<'a> {
     pub iteration: u32,
     pub child_token: &'a CancellationToken,
     pub clock: &'a dyn Clock,
+    /// 本轮真实工具集（`TurnRunCtx::tools` 原样透传，I58 §3.1）。
+    ///
+    /// 供适配器填 `ToolUseContext::available_tool_names`：`request_tool` 的清单
+    /// 必须以「模型这次真能调什么」为准，而不是注册表全集。
+    pub tools: Option<&'a [assistant_providers::types::ToolSpec]>,
     /// 工具事件的唯一出口。适配器的 `PipelineEventSink` 只转发 P2 的
     /// `Started` / `Finished` / `Failed`（§6.1），不在此处发 `ArgsDelta`，
     /// 也不得绕过 `TurnObserver` 另开事件通道。
     pub observer: &'a dyn TurnObserver,
+    /// 轮内升级收集器（I58 §3.8 ②）。`None` 表示本链路不支持升级：适配器必须
+    /// 让 `ToolUseContext::escalation` 保持 `None`，`request_tool(enable)` 据此返回业务错误。
+    ///
+    /// 用 `Arc` 而不是借用：`ToolUseContext::escalation` 是 `Arc<dyn ToolEscalationPort>`
+    /// （无生命周期参数），端口要把它带进工具调用就必须能 'static 持有。
+    pub escalations: Option<Arc<dyn EscalationSink>>,
+}
+
+/// 轮内升级收集器（I58 §3.8 ②）：只收成品 `ToolSpec`，不感知注册表与准入。
+///
+/// 生命周期是「一个迭代」：编排层每迭代新建一个，工具批次结束后 `drain` 并尾部追加，
+/// 下一次模型调用才可见（G21）。跨轮不携带。
+pub trait EscalationSink: Send + Sync {
+    /// 登记一个已通过准入、已转成 provider 形状的工具声明。
+    fn push(&self, tool: assistant_providers::types::ToolSpec);
+
+    /// 取出本次批次登记的全部声明（已清空收集器）。
+    fn drain(&self) -> Vec<assistant_providers::types::ToolSpec>;
 }
 
 #[derive(Debug, Clone, PartialEq)]

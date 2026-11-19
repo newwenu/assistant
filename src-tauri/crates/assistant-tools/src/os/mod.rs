@@ -1,7 +1,7 @@
 mod shared;
 mod tools;
 
-pub(crate) use shared::{fs_util, scope, walk};
+pub(crate) use shared::{footer, fs_util, scope, walk};
 pub use shared::{output, path, process_output, text_encoding};
 
 #[cfg(test)]
@@ -9,7 +9,7 @@ pub(crate) use shared::test_support;
 
 pub use tools::{
     agent_ask_user, agent_delete, agent_edit, agent_glob, agent_grep, agent_list, agent_mkdir,
-    agent_move, agent_read, agent_write, fs_link,
+    agent_move, agent_read, agent_request_tool, agent_write, fs_link, super_edit, super_read,
 };
 
 use std::sync::Arc;
@@ -27,10 +27,15 @@ pub fn register_os_tools(registry: &ToolRegistry) {
 }
 
 pub fn register_readonly_tools(registry: &ToolRegistry, receipts: Arc<dyn ReadReceiptStore>) {
-    registry.register(Arc::new(agent_read::AgentReadTool::new(receipts)) as Arc<dyn Tool>);
+    registry.register(Arc::new(agent_read::AgentReadTool::new(receipts.clone())) as Arc<dyn Tool>);
+    // 按行索引读取（I58 §3.2）：与 `read` 同属只读组，共用同一份读取回执。
+    registry.register(Arc::new(super_read::SuperReadTool::new(receipts)) as Arc<dyn Tool>);
     registry.register(Arc::new(agent_list::AgentListTool::new()) as Arc<dyn Tool>);
     registry.register(Arc::new(agent_glob::AgentGlobTool::new()) as Arc<dyn Tool>);
     registry.register(Arc::new(agent_grep::AgentGrepTool::new()) as Arc<dyn Tool>);
+    // 能力发现（I58 §3.1）：只读、无审批，属只读组；目录由 Pipeline 注入，
+    // 因此本组不持有注册表。
+    registry.register(Arc::new(agent_request_tool::AgentRequestTool::new()) as Arc<dyn Tool>);
 }
 
 /// 修改组：`write` / `edit` / `mkdir` / `move`。
@@ -40,6 +45,8 @@ pub fn register_write_tools(registry: &ToolRegistry, receipts: Arc<dyn ReadRecei
     registry
         .register(Arc::new(agent_write::AgentWriteTool::new(receipts.clone())) as Arc<dyn Tool>);
     registry.register(Arc::new(agent_edit::AgentEditTool::new(receipts.clone())) as Arc<dyn Tool>);
+    // 按行地址替换（I58 §3.3）：与 `edit` 同组、同审批键，随 `edit` 一起放开。
+    registry.register(Arc::new(super_edit::SuperEditTool::new(receipts.clone())) as Arc<dyn Tool>);
     registry.register(Arc::new(agent_mkdir::AgentMkdirTool::new()) as Arc<dyn Tool>);
     registry.register(Arc::new(agent_move::AgentMoveTool::new(receipts)) as Arc<dyn Tool>);
 }

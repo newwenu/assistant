@@ -57,6 +57,14 @@ fn schema_declares_path_offset_limit_and_encoding() {
     assert!(schema["properties"]["limit"].is_object());
     assert!(schema["properties"]["encoding"].is_object());
     assert!(
+        schema["properties"].get("column").is_none(),
+        "row-level paging belongs to I58 super_read, not to read"
+    );
+    assert!(
+        schema["properties"].get("maxLineChars").is_none(),
+        "read keeps MAX_LINE_CHARS as a hard cap, not a tunable window"
+    );
+    assert!(
         schema["properties"].get("action").is_none(),
         "schema must not declare the toolbox-injected action field"
     );
@@ -521,9 +529,142 @@ async fn long_lines_are_truncated_with_a_marker() {
         .unwrap();
 
     let text = result.assistant_text();
-    assert!(text.ends_with(&format!("{}\n", LINE_TRUNCATED_MARKER)));
+    assert!(text.contains(&format!("{LINE_TRUNCATED_MARKER}\n")));
     assert!(text.contains(&"x".repeat(MAX_LINE_CHARS)));
     assert!(!text.contains(&long_line));
+    assert!(
+        text.ends_with(&format!(
+            "[long-lines: 1 lines cut at {} chars]",
+            MAX_LINE_CHARS
+        )),
+        "长行 footer 必须独占最后一行: {text:?}"
+    );
+}
+
+/// G6：`truncatedLines` 恒在、类型稳定、不超过 `returnedLines`，且与 `truncated` 正交
+/// （单行超宽时窗口取完了行，但行本身被切：`truncated = false` 而 `truncatedLines > 0`）。
+#[tokio::test]
+async fn truncated_lines_is_reported_and_orthogonal_to_truncated() {
+    let dir = tempfile::tempdir().unwrap();
+    let ctx = context(dir.path(), None);
+    let huge = "q".repeat(4 * 1024 * 1024);
+    write(dir.path(), "one-line.txt", &huge);
+
+    let result = tool()
+        .execute(&json!({ "path": "one-line.txt" }), &ctx)
+        .await
+        .unwrap();
+
+    assert!(result.ok, "{:?}", result.error);
+    let data = result.data.as_ref().unwrap();
+    assert_eq!(data["truncatedLines"], json!(1));
+    assert_eq!(data["truncated"], json!(false));
+    assert_eq!(data["endLine"], json!(1));
+}
+
+/// G6 的另一半：普通文件 `truncatedLines = 0`，字段仍在（键恒在，不是省略）。
+#[tokio::test]
+async fn truncated_lines_is_zero_for_ordinary_files() {
+    let dir = tempfile::tempdir().unwrap();
+    let ctx = context(dir.path(), None);
+    write(dir.path(), "plain.txt", "alpha\nbeta\n");
+
+    let result = tool()
+        .execute(&json!({ "path": "plain.txt" }), &ctx)
+        .await
+        .unwrap();
+
+    let data = result.data.as_ref().unwrap();
+    assert_eq!(data["truncatedLines"], json!(0));
+    assert!(!result.assistant_text().contains("[long-lines"));
+}
+
+/// G7：`[long-lines]` 在 `[encoding]` 之前、各占一行，`n` 与 `data.truncatedLines` 同源。
+#[tokio::test]
+async fn long_lines_footer_precedes_the_encoding_footer() {
+    let dir = tempfile::tempdir().unwrap();
+    let ctx = context(dir.path(), None);
+    let mut content = String::from("\u{FEFF}");
+    content.push_str(&"w".repeat(MAX_LINE_CHARS + 10));
+    content.push('\n');
+    write(dir.path(), "bom-long.txt", &content);
+
+    let result = tool()
+        .execute(&json!({ "path": "bom-long.txt" }), &ctx)
+        .await
+        .unwrap();
+
+    assert!(result.ok, "{:?}", result.error);
+    let data = result.data.as_ref().unwrap();
+    assert_eq!(data["truncatedLines"], json!(1));
+
+    let text = result.assistant_text();
+    let lines: Vec<&str> = text.lines().collect();
+    assert_eq!(
+        lines.last(),
+        Some(&"[encoding: UTF-8 (bom)]"),
+        "编码 footer 必须在最后: {text:?}"
+    );
+    assert_eq!(
+        lines[lines.len() - 2],
+        format!("[long-lines: 1 lines cut at {} chars]", MAX_LINE_CHARS)
+    );
+}
+
+/// G7：`truncatedLines` 与 `returnedLines` 的包含关系（多行被切时计数逐行累加）。
+#[tokio::test]
+async fn truncated_lines_counts_every_cut_line() {
+    let dir = tempfile::tempdir().unwrap();
+    let ctx = context(dir.path(), None);
+    let wide = "v".repeat(MAX_LINE_CHARS + 5);
+    let content = format!("{}\n{}\nshort\n", wide, wide);
+    write(dir.path(), "two-long.txt", &content);
+
+    let result = tool()
+        .execute(&json!({ "path": "two-long.txt" }), &ctx)
+        .await
+        .unwrap();
+
+    let data = result.data.as_ref().unwrap();
+    assert_eq!(data["truncatedLines"], json!(2));
+    assert_eq!(data["endLine"], json!(3));
+    assert!(result
+        .assistant_text()
+        .contains("[long-lines: 2 lines cut at 2000 chars]"));
+}
+
+/// G3 的文案面：窗口**未满**但预算耗尽时走 S3（不是「more content follows」式的含糊说法）。
+///
+/// 两个构造条件缺一不可：① 每行预算够大，使字节预算在 2000 行之前耗尽（窗口未满）；
+/// ② 剩余内容超过 8 MiB 宽限，否则扫描会读到 EOF 并给出精确总数（那是 S1）。
+/// 20,000 行 × 600 字节：预算在第 ~1727 行收口，剩余 ≈ 11 MB > 宽限；行本身不超宽，
+/// 因此 `truncatedLines = 0`、无 `[long-lines]`，可见 S3 与长行截断是两件事。
+#[tokio::test]
+async fn a_budget_stop_before_the_line_cap_is_reported_as_a_scan_budget_stop() {
+    let dir = tempfile::tempdir().unwrap();
+    let ctx = context(dir.path(), None);
+    let line = format!("{}\n", "y".repeat(600));
+    let content = line.repeat(20_000);
+    write(dir.path(), "budget.txt", &content);
+
+    let result = tool()
+        .execute(&json!({ "path": "budget.txt" }), &ctx)
+        .await
+        .unwrap();
+
+    assert!(result.ok, "{:?}", result.error);
+    let data = result.data.as_ref().unwrap();
+    assert_eq!(data["truncated"], json!(true));
+    assert_eq!(data["totalLines"], Value::Null);
+    assert_eq!(data["truncatedLines"], json!(0));
+
+    let text = result.assistant_text();
+    assert!(
+        text.contains("scan budget exhausted after"),
+        "窗口未满的停止必须归因到扫描预算: {text:?}"
+    );
+    assert!(text.contains("total unknown"));
+    assert!(!text.contains("[long-lines"), "没有行被切就没有长行 footer");
 }
 
 #[tokio::test]
@@ -808,6 +949,39 @@ async fn receipt_records_the_detected_encoding_and_bom_state() {
     let receipt = store.lookup(&key).await.expect("receipt recorded");
     assert_eq!(receipt.encoding, "GBK");
     assert!(!receipt.has_bom);
+    assert_eq!(receipt.truncated_lines, 0, "完整读取不得留下切行标记");
+    assert_eq!(
+        receipt.line_window_max_chars, 2000,
+        "A 侧的每行宽度是常量，供 edit 闸门文案归因"
+    );
+}
+
+/// 回执里的 `truncated_lines` 与 `data.truncatedLines` 同源（I57 §3.5 的唯一写入点）。
+#[tokio::test]
+async fn a_receipt_records_the_cut_line_count_for_a_long_line_read() {
+    let dir = tempfile::tempdir().unwrap();
+    let ctx = context(dir.path(), None);
+    let (tool, store) = tool_with_store();
+    let path = write(dir.path(), "wide.txt", &format!("{}\n", "z".repeat(5000)));
+
+    let result = tool
+        .execute(&json!({ "path": "wide.txt" }), &ctx)
+        .await
+        .unwrap();
+
+    assert!(result.ok, "{:?}", result.error);
+    assert_eq!(result.data.as_ref().unwrap()["truncatedLines"], json!(1));
+
+    let key = assistant_tools::storage::ReadReceiptKey {
+        session_id: ctx.session_id.clone(),
+        path: assistant_tools::os::path::canonicalize_lenient(&path)
+            .expect("canonical path")
+            .display()
+            .to_string(),
+    };
+    let receipt = store.lookup(&key).await.expect("receipt recorded");
+    assert_eq!(receipt.truncated_lines, 1);
+    assert_eq!(receipt.line_window_max_chars, 2000);
 }
 
 /// 扫描块大小，与 `agent_read::window::CHUNK_BYTES` 同值。

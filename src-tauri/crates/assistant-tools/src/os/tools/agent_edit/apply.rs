@@ -90,11 +90,15 @@ pub(super) struct EditWrite {
 /// `encoding` / `has_bom` 来自 `read` 的回执（上级 §14.8）：写侧只消费、不重判，
 /// 因此同一文件不会在 `read` 与 `edit` 上得出两种编码结论。回执只作为解码闸门——
 /// 字节与回执编码不符时解码失败即拒绝；BOM 按回执 `has_bom` 写回（§14.2 唯一发现点）。
+///
+/// `escalation` 只影响定位失败时的诊断文案（是否附「可申请按行地址替换」的指引），
+/// 不影响写入行为（I58 §3.6）。
 pub(super) fn apply_edit(
     path: &Path,
     request: &EditRequest,
     encoding: &'static Encoding,
     has_bom: bool,
+    escalation: bool,
 ) -> Result<EditWrite, String> {
     let path_text = path.display().to_string();
     let raw =
@@ -114,7 +118,14 @@ pub(super) fn apply_edit(
 
     let located = match locate(&content, &request.old_string, &request.new_string) {
         Some(located) => located,
-        None => return Err(not_found_message(&path_text, &content, &request.old_string)),
+        None => {
+            return Err(not_found_message(
+                &path_text,
+                &content,
+                &request.old_string,
+                escalation,
+            ))
+        }
     };
 
     if located.hits.len() > 1 && !request.replace_all {

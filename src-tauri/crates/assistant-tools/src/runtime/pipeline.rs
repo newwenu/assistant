@@ -4,6 +4,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use serde_json::Value;
 
+use crate::catalog::ToolCatalog;
 use crate::compact::{args_preview, build_compact, ToolResultCompact};
 use crate::context::ToolUseContext;
 use crate::exec::{self, DEFAULT_TOOL_TIMEOUT};
@@ -71,6 +72,17 @@ pub enum PipelineEvent {
         tool_call_id: String,
         tool_name: String,
         args_preview: Option<String>,
+    },
+    /// 阶段进入事实（I55 §4.7）：只说明「进入了哪个阶段」，不带终态语义。
+    ///
+    /// `index` 是本次批次内的全局序号（按发起顺序），`total` 为 `tool_calls.len()`；
+    /// 并发批次下事件按实际进入顺序交错出现，不保证与序号同序。
+    StageEntered {
+        tool_call_id: String,
+        tool_name: String,
+        stage: PipelineStage,
+        index: u32,
+        total: u32,
     },
     Finished {
         tool_call_id: String,
@@ -198,6 +210,7 @@ impl ToolPipeline {
     ) -> Vec<ToolOutcome> {
         let batches = self.partition_tool_batches(tool_calls);
         let mut slots: Vec<Option<ToolOutcome>> = vec![None; tool_calls.len()];
+        let total = tool_calls.len() as u32;
 
         for batch in batches {
             for &index in &batch {
@@ -212,13 +225,31 @@ impl ToolPipeline {
 
             let collected: Vec<(usize, ToolOutcome)> = if batch.len() > 1 {
                 let futures = batch.iter().map(|&index| async move {
-                    let outcome = self.run_call(&tool_calls[index], context, policy).await;
+                    let outcome = self
+                        .run_call(
+                            &tool_calls[index],
+                            context,
+                            policy,
+                            sink,
+                            index as u32,
+                            total,
+                        )
+                        .await;
                     (index, outcome)
                 });
                 futures::future::join_all(futures).await
             } else {
                 let index = batch[0];
-                let outcome = self.run_call(&tool_calls[index], context, policy).await;
+                let outcome = self
+                    .run_call(
+                        &tool_calls[index],
+                        context,
+                        policy,
+                        sink,
+                        index as u32,
+                        total,
+                    )
+                    .await;
                 vec![(index, outcome)]
             };
 
@@ -241,8 +272,16 @@ impl ToolPipeline {
             .collect();
         let targets = select_persist_targets(&sizes);
 
-        for (outcome, persist) in outcomes.iter_mut().zip(targets) {
+        for (index, (outcome, persist)) in outcomes.iter_mut().zip(targets).enumerate() {
             if persist {
+                sink.emit(PipelineEvent::StageEntered {
+                    tool_call_id: outcome.tool_call_id.clone(),
+                    tool_name: outcome.tool_name.clone(),
+                    stage: PipelineStage::Persist,
+                    index: index as u32,
+                    total,
+                })
+                .await;
                 self.persist(outcome, context.session_id.as_deref()).await;
             }
             outcome.compact = Some(build_compact(
@@ -258,12 +297,26 @@ impl ToolPipeline {
     }
 
     /// 阶段 1–4：查找、校验、网关、执行。不落盘、不发完成事件。
+    ///
+    /// 每个阶段边界各发一条 `StageEntered`（I55 §4.7）：它只描述「进入」，
+    /// 终态仍由 `Started` / `Finished` / `Failed` 三态承载（O8）。
     async fn run_call(
         &self,
         call: &ToolCall,
         context: &ToolUseContext,
         policy: &ResolvedPermissionPolicy,
+        sink: &dyn PipelineEventSink,
+        index: u32,
+        total: u32,
     ) -> ToolOutcome {
+        let entered = |stage: PipelineStage| PipelineEvent::StageEntered {
+            tool_call_id: call.tool_call_id.clone(),
+            tool_name: call.tool_name.clone(),
+            stage,
+            index,
+            total,
+        };
+        sink.emit(entered(PipelineStage::Find)).await;
         let registered = match self.registry.find_by_name(&call.tool_name) {
             Some(registered) => registered,
             None => {
@@ -282,7 +335,14 @@ impl ToolPipeline {
 
         let mut call_context = context.clone();
         call_context.tool_call_id = Some(call.tool_call_id.clone());
+        // 工具目录由注册表提供（I58 §3.1）：`request_tool` 只经上下文取目录，
+        // 不反向持有注册表，避免 `Arc<ToolRegistry>` → `Arc<dyn Tool>` 的环。
+        // 调用方已注入时不再覆盖，测试可借此替换成受控目录。
+        if call_context.tool_catalog.is_none() {
+            call_context.tool_catalog = Some(self.registry.clone() as Arc<dyn ToolCatalog>);
+        }
 
+        sink.emit(entered(PipelineStage::Validate)).await;
         let validation = tool.validate_input(&call.arguments, &call_context);
         if !validation.ok {
             // 校验失败必须可审计：`blocks_input_rewrite` 的两种取值都记同一 outcome，
@@ -312,6 +372,7 @@ impl ToolPipeline {
             return outcome;
         }
 
+        sink.emit(entered(PipelineStage::Gateway)).await;
         let decision = match self
             .gateway
             .evaluate(tool, &call.arguments, &call_context, policy)
@@ -378,6 +439,7 @@ impl ToolPipeline {
             }
         }
 
+        sink.emit(entered(PipelineStage::Execute)).await;
         let result = exec::invoke(tool, &call.arguments, &call_context, self.default_timeout).await;
 
         ToolOutcome::new(call, PipelineStage::Execute, result)

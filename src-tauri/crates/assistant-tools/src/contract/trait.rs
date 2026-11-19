@@ -164,11 +164,42 @@ pub trait Tool: Send + Sync {
         self.id()
     }
 
+    /// `full` 档描述：只在工具**已进入本轮 tools 数组**时下发（I58 §3.6）。
+    ///
+    /// 读者此刻已经拿到 [`Tool::input_schema`] 并准备调用，因此这里写「怎么用不出错」——
+    /// 语义要点、会导致失败的约束、与相邻工具的互操作，而**不是**「什么时候该申请我」。
+    /// 选择指引属于 [`Tool::brief`]：那是申请前才需要的，写在这里会在调用时变成反向指令。
     async fn description(&self) -> Result<String, String>;
+
+    /// `brief` 档描述：申请前的「一句用途 + 何时该申请」（I58 §3.6 三档）。
+    ///
+    /// 默认 `None`：消费方回落到 [`Tool::description`] 的首句。
+    /// 覆写时只写「这是什么、什么时候该申请」——不含 schema、不含调用约束、
+    /// 不含「默认用别的工具」之外的细节（那是 `full` 档的事）。
+    fn brief(&self) -> Option<&'static str> {
+        None
+    }
+
+    /// 面向模型的手册正文（`request_tool` 的 `manual` 详情用它，I58 §3.1）。
+    ///
+    /// 默认 `None`：既有工具零改动，`request_tool` 回退到 [`Tool::description`]。
+    /// 覆写时只写「怎么调、代价多大、边界在哪」，不重复 schema 已经表达的事实。
+    fn manual(&self) -> Option<&'static str> {
+        None
+    }
 
     fn input_schema(&self) -> Value;
 
     fn tier(&self) -> ToolTier;
+
+    /// 伴随工具：本工具没有独立身份，跟随 `base` 获得**准入**（I58 §3.6）。
+    ///
+    /// 返回基工具的内部 id。默认 `None`：独立工具，按白名单单独勾选。
+    /// 非 `None` 的工具在配置路径上一律被排除（`exclude_companions`，身份过滤），
+    /// 能否被调用只由运行时申请决定——勾基工具不等于勾它。
+    fn companion_of(&self) -> Option<&str> {
+        None
+    }
 
     /// 默认不可见（fail-closed）。新增工具必须显式声明受众：
     /// 面向模型用 `BOTH` / `AGENT_ONLY`，仅 ToolBox 用 `TOOLBOX_ONLY`。

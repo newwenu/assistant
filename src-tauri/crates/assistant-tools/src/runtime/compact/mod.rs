@@ -144,7 +144,7 @@ mod tests {
         assert!(parse_truncation("a.txt:1:hit\n[skipped: 2 file(s)]").is_none());
 
         let incomplete =
-            "hits\n[search stopped at the 500ms time budget; results may be incomplete]";
+            "hits\n[search: stopped at the 500ms time budget; results may be incomplete]";
         assert!(parse_truncation(incomplete).is_none());
 
         let both = "a.txt:1:hit\n[skipped: 2 file(s)]\n\

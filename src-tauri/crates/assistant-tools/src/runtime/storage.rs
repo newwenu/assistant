@@ -713,6 +713,12 @@ pub struct ReadReceiptKey {
     pub path: String,
 }
 
+/// 行窗口「每行字符上限」的默认值（I57 §3.5）。
+///
+/// `read` 的 `MAX_LINE_CHARS` 与本模块 `ReadReceipt::utf8` 的默认宽度共用此常量，
+/// 避免「闸门文案里的宽度」与「实际切行宽度」两处各写一个 `2000` 而漂移。
+pub const DEFAULT_LINE_WINDOW_MAX_CHARS: usize = 2000;
+
 /// 已读取过的文件记录。`revision` 变化即失效，`edit` / `write` 据此拒绝「未读过或已过期」。
 ///
 /// `encoding` / `has_bom` 是写侧（`write` / `edit`）唯一的编码来源：
@@ -725,6 +731,14 @@ pub struct ReadReceipt {
     pub encoding: String,
     /// 文件是否带 BOM；写回时据此补回。
     pub has_bom: bool,
+    /// 本次读取中**有行被切**的行数（I57 §3.5）。`0` 表示完整读到可见段；
+    /// `> 0` 时 `edit` 拒绝写入——被切掉的尾部无法与 `old_string` 逐字校验。
+    pub truncated_lines: usize,
+    /// 本次读取使用的每行宽度，只供 `edit` 闸门文案归因（§6.3 的 `{width}`）。
+    ///
+    /// 在 A 内恒为 [`DEFAULT_LINE_WINDOW_MAX_CHARS`]、不产生任何分支；
+    /// 它是为 I58 的 `super_read` 预留的——B 写自己的宽度，`edit` 文案自动正确。
+    pub line_window_max_chars: usize,
 }
 
 impl ReadReceipt {
@@ -735,6 +749,8 @@ impl ReadReceipt {
             tool_call_id: tool_call_id.into(),
             encoding: "UTF-8".to_string(),
             has_bom: false,
+            truncated_lines: 0,
+            line_window_max_chars: DEFAULT_LINE_WINDOW_MAX_CHARS,
         }
     }
 }

@@ -1,7 +1,10 @@
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
+
+use crate::catalog::ToolCatalog;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -35,6 +38,31 @@ pub struct ToolUseContext {
     /// **不得**在第二处重算路径。`None` = 不提供回读（ToolBox 无会话归属）。
     #[serde(skip)]
     pub tool_output_root: Option<PathBuf>,
+    /// 行索引缓存根（`super_read` 的 `index_root`，I58 §3.5）。
+    ///
+    /// 运行时字段，不进 wire；由应用层注入（`AppDirs::indexes()`），
+    /// 库 crate 不解析基根。`None` = 不提供索引，`super_read` 报业务错误，
+    /// **不**静默降级为线性扫描。
+    #[serde(skip)]
+    pub index_root: Option<PathBuf>,
+    /// 本轮真正可调用的工具名（`ToolSpec.name`，I58 §3.1）。
+    ///
+    /// 运行时字段，不进 wire；由 Agent 适配层从 `ToolExecCtx.tools` 映射。
+    /// `None` = 没有本轮工具集事实（ToolBox 入口），`request_tool` 据此回退注册表。
+    #[serde(skip)]
+    pub available_tool_names: Option<Vec<String>>,
+    /// 工具目录：`request_tool` 的唯一能力来源（I58 §3.1）。
+    ///
+    /// 运行时字段，不进 wire；由 `ToolPipeline` 每次调用前注入（注册表是唯一实现）。
+    /// 工具实现不持有注册表，避免 `Arc<ToolRegistry>` → `Arc<dyn Tool>` 的环。
+    #[serde(skip)]
+    pub tool_catalog: Option<Arc<dyn ToolCatalog>>,
+    /// 升级端口：`request_tool(detail = "enable")` 的唯一出口（I58 §3.8）。
+    ///
+    /// 运行时字段，不进 wire；由适配层每次 `execute` 现构造并注入。
+    /// `None` = 没有升级通道（ToolBox / 单测），`enable` 分支返回业务错误。
+    #[serde(skip)]
+    pub escalation: Option<Arc<dyn crate::escalation::ToolEscalationPort>>,
 }
 
 impl ToolUseContext {
@@ -53,6 +81,14 @@ impl ToolUseContext {
             cancel: None,
             // ToolBox 无会话归属，因此没有输出域可读。
             tool_output_root: None,
+            // ToolBox 直调不经应用层装配，因此没有索引缓存根。
+            index_root: None,
+            // ToolBox 不经 `resolve_available_tools`，没有「本轮工具集」事实。
+            available_tool_names: None,
+            // ToolBox 直调不经 `ToolPipeline`，因此没有目录可查。
+            tool_catalog: None,
+            // ToolBox 直调没有本轮工具集，因此没有升级通道。
+            escalation: None,
         }
     }
 }

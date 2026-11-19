@@ -44,7 +44,7 @@ async fn the_whitelist_selects_only_the_named_tools() {
     assert_eq!(
         names(&tools),
         vec!["delete", "read"],
-        "registry order is by id"
+        "only the named tools may appear, in registry id order"
     );
 }
 
@@ -110,6 +110,107 @@ async fn the_resolution_order_is_deterministic() {
     let second = resolve_available_tools(&registry, &enabled, &[], ToolTier::Os).await;
     assert_eq!(names(&first), names(&second));
     assert_eq!(names(&first), vec!["edit", "glob", "read", "write"]);
+}
+
+/// I58 §3.6 / G17：配置路径是身份过滤，不是关系展开。
+///
+/// 白名单里显式写了伴随 id 也不能让超级工具进入本轮工具集——`callable` 只有
+/// 「模型申请」一个来源。基工具在不在名单里都不改变这一点。
+#[tokio::test]
+async fn companion_ids_in_the_whitelist_never_get_injected() {
+    let registry = full_registry();
+    let enabled = vec!["read".to_string(), "super_read".to_string()];
+    let tools = resolve_available_tools(&registry, &enabled, &[], ToolTier::Os).await;
+    assert_eq!(
+        names(&tools),
+        vec!["read"],
+        "super_read must stay out of the tool set even when explicitly whitelisted"
+    );
+}
+
+/// 只有伴随 id、没有基工具时什么都不注入。
+#[tokio::test]
+async fn a_companion_without_its_base_injects_nothing() {
+    let registry = full_registry();
+    let enabled = vec!["super_read".to_string(), "super_edit".to_string()];
+    let tools = resolve_available_tools(&registry, &enabled, &[], ToolTier::Os).await;
+    assert!(
+        tools.is_empty(),
+        "a lone companion id must resolve to nothing, got {:?}",
+        names(&tools)
+    );
+}
+
+/// G21：`disabled_tools` 里的伴随 id 不构成阻断——用户的唯一控制点是基工具。
+#[tokio::test]
+async fn companion_ids_in_the_blacklist_have_no_effect() {
+    let registry = full_registry();
+    let enabled = vec!["read".to_string()];
+    let disabled = vec!["super_read".to_string()];
+    let tools = resolve_available_tools(&registry, &enabled, &disabled, ToolTier::Os).await;
+    assert_eq!(
+        names(&tools),
+        vec!["read"],
+        "a stale companion id in disabledTools must be ignored"
+    );
+}
+
+/// G17 的反向断言：禁用基工具时伴随项也不会「残留」——它从未进入候选集。
+#[tokio::test]
+async fn disabling_the_base_tool_leaves_no_orphan_companion() {
+    let registry = full_registry();
+    let enabled = vec!["read".to_string(), "super_read".to_string()];
+    let disabled = vec!["read".to_string()];
+    let tools = resolve_available_tools(&registry, &enabled, &disabled, ToolTier::Os).await;
+    assert!(
+        tools.is_empty(),
+        "neither the base nor its companion may survive, got {:?}",
+        names(&tools)
+    );
+}
+
+/// 元工具是普通可勾选条目：不勾就注入不了，模型因而无从申请升级（I58 §3.6）。
+#[tokio::test]
+async fn the_meta_tool_requires_an_explicit_check() {
+    let registry = full_registry();
+    let enabled = vec!["read".to_string()];
+    let tools = resolve_available_tools(&registry, &enabled, &[], ToolTier::Os).await;
+    assert_eq!(
+        names(&tools),
+        vec!["read"],
+        "request_tool must not be injected unless the user checks it"
+    );
+}
+
+#[tokio::test]
+async fn the_meta_tool_is_injected_when_checked() {
+    let registry = full_registry();
+    let enabled = vec!["read".to_string(), "request_tool".to_string()];
+    let tools = resolve_available_tools(&registry, &enabled, &[], ToolTier::Os).await;
+    assert_eq!(names(&tools), vec!["read", "request_tool"]);
+}
+
+/// 元工具同样受 `disabled_tools` 否决——它不再享有「不受黑名单影响」的特权。
+#[tokio::test]
+async fn the_meta_tool_can_be_disabled() {
+    let registry = full_registry();
+    let enabled = vec!["read".to_string(), "request_tool".to_string()];
+    let disabled = vec!["request_tool".to_string()];
+    let tools = resolve_available_tools(&registry, &enabled, &disabled, ToolTier::Os).await;
+    assert_eq!(
+        names(&tools),
+        vec!["read"],
+        "a disabled meta tool must be excluded like any other entry"
+    );
+}
+
+/// 只勾元工具、不勾任何基工具：它照常注入，但清单里没有可申请对象。
+#[tokio::test]
+async fn a_lone_meta_tool_still_resolves() {
+    let registry = full_registry();
+    let enabled = vec!["request_tool".to_string()];
+    let tools = resolve_available_tools(&registry, &enabled, &[], ToolTier::Os).await;
+    assert_eq!(names(&tools), vec!["request_tool"]);
 }
 
 #[test]

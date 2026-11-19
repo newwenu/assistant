@@ -6,6 +6,7 @@
 use assistant_providers::base::{ProviderError, ProviderErrorPayload};
 
 use crate::agent::middleware::{MiddlewareOutcome, ModelRequestView, TurnCtx};
+use crate::agent::node_event::{AgentNode, NodeState};
 use crate::agent::round_executor::{
     RoundOutcome, ToolErrorClass, ToolExecResult, ToolStage, TurnRunCtx,
 };
@@ -103,6 +104,19 @@ pub(super) async fn stream_failure(
             payload,
         ),
     };
+    // ⑤ `model` 的终态由这里统一发：`call.rs` 的三条失败分支都汇聚到本函数。
+    let node_state = if matches!(status, TurnStatus::Cancelled) {
+        NodeState::Cancelled
+    } else {
+        NodeState::Error
+    };
+    ctx.observer.node(
+        AgentNode::Model,
+        state.iteration,
+        node_state,
+        true,
+        Some(super::model_detail(state, None, None, 0)),
+    );
     state.provider_error = Some(provider_error);
     let persist = persist_row(
         state,
@@ -130,6 +144,14 @@ pub(super) async fn cancelled_before_call(
     ctx: &TurnRunCtx<'_>,
     start_iteration: u32,
 ) -> RoundOutcome {
+    // 取消发生在 `model` 的 `running` 之后：终态记 `cancelled`，不留悬空格子（O2）。
+    ctx.observer.node(
+        AgentNode::Model,
+        state.iteration,
+        NodeState::Cancelled,
+        true,
+        Some(super::model_detail(state, None, None, 0)),
+    );
     let text = state.content.clone();
     let reasoning = state.reasoning.clone();
     let persist = persist_final_text(
@@ -154,11 +176,20 @@ pub(super) async fn cancelled_tool_exec(
     let n = (to_run.len() + skipped.len()) as u32;
     let mut all_results = cancelled_results(&to_run);
     all_results.extend(skipped);
+    // ⑨ `pipeline` 的取消终态：`running` 已在 `execute_tools` 发出，此处必须收口（O2）。
+    // ⑩ `after-tool` 尚未起 `running`（取消发生在执行返回之前），按迁移表不发（§5.1）。
+    ctx.observer.node(
+        AgentNode::Pipeline,
+        state.iteration,
+        NodeState::Cancelled,
+        true,
+        None,
+    );
     let append = append_tool_results(state, ctx, all_results).await;
     state.tool_calls += n;
     let persist = match append {
         Err(err) => Err(err),
-        Ok(()) => {
+        Ok(_) => {
             persist_row(
                 state,
                 ctx,
@@ -219,7 +250,7 @@ pub(super) async fn halted_with_summary(
     state: &mut RoundState,
     ctx: &TurnRunCtx<'_>,
     reason: String,
-    prior: Result<(), StoreError>,
+    prior: Result<Vec<String>, StoreError>,
     start_iteration: u32,
 ) -> RoundOutcome {
     let summary = progress_summary_reason(&reason);
@@ -233,7 +264,7 @@ pub(super) async fn halted_with_summary(
     .await;
     let persist = match (persist, prior) {
         (Err(err), _) => Err(err),
-        (Ok(()), Err(err)) => Err(err),
+        (Ok(_), Err(err)) => Err(err),
         _ => Ok(()),
     };
     let outcome = state.finish(
@@ -262,7 +293,8 @@ pub(super) async fn halted_by_budget(
             max_iterations: ctx.spec.max_iterations,
             model: ctx.model,
         };
-        let wrapped = call_model_without_tools(state, ctx, &turn_ctx).await;
+        // 本迭代 ⑤ 尚未 `running`（刹车在模型调用之前），收尾调用就归属本迭代。
+        let wrapped = call_model_without_tools(state, ctx, &turn_ctx, state.iteration).await;
         return match wrapped {
             Ok(wrapped) => {
                 let persist = persist_final_text(
@@ -337,7 +369,8 @@ pub(super) async fn wrap_up_on_last_iteration(
     state.tool_calls += calls.len() as u32;
     let skipped = not_executed(&calls, "未执行：已达迭代上限");
     let append = append_tool_results(state, ctx, skipped).await;
-    let wrapped = call_model_without_tools(state, ctx, turn_ctx).await;
+    // 本迭代 ⑤ 已 `finished`（`finalize_all` 之后发过），收尾调用归属下一圈，避免同槽双终态。
+    let wrapped = call_model_without_tools(state, ctx, turn_ctx, turn_ctx.iteration + 1).await;
     let (base, persist) = match wrapped {
         Ok(wrapped) => {
             let persist = persist_final_text(
@@ -381,7 +414,7 @@ pub(super) async fn wrap_up_on_last_iteration(
     };
     let persist = match (persist, append) {
         (Err(err), _) => Err(err),
-        (Ok(()), Err(err)) => Err(err),
+        (Ok(_), Err(err)) => Err(err),
         _ => Ok(()),
     };
     state.finish_with_persist_error(base, persist)
@@ -393,10 +426,15 @@ pub(super) struct WrapUpOutcome {
 }
 
 /// 收尾调用：撤 tools + 追加收尾指令 + `is_wrap_up_call = true`（触发 ④ 还原）。
+///
+/// `iteration` 是 ⑤ 的归属迭代，由调用点决定：预算中止路径的收尾调用**就是**本迭代
+/// 的模型调用（本迭代 ⑤ 尚未 `running`）；迭代上限路径的收尾调用发生在该迭代模型调用
+/// **之后**，必须归属下一圈，否则同一 `(model, iteration)` 会出现两条终态（违 I55 O2）。
 pub(super) async fn call_model_without_tools(
     state: &mut RoundState,
     ctx: &TurnRunCtx<'_>,
     turn_ctx: &TurnCtx<'_>,
+    iteration: u32,
 ) -> Result<WrapUpOutcome, TurnError> {
     let mut request = state.request.clone();
     request.options.tools = None;
@@ -410,7 +448,7 @@ pub(super) async fn call_model_without_tools(
             max_tokens: request.options.max_tokens,
             is_wrap_up_call: true,
         };
-        if let MiddlewareOutcome::StopTurn { middleware, reason } =
+        if let (MiddlewareOutcome::StopTurn { middleware, reason }, _) =
             state.chain.before_model(&mut view, turn_ctx).await
         {
             log::warn!(
@@ -433,10 +471,30 @@ pub(super) async fn call_model_without_tools(
     let request_started = ctx.clock.now();
     let model_call_budget = effective_model_call_budget(ctx);
     let child = crate::kernel::TurnTasks::child_token(ctx.child_token);
-    let stream = request.stream(child.clone()).map_err(|err| {
-        state.provider_error = Some(ProviderErrorPayload::from(&err));
-        TurnError::Provider(err.to_string())
-    })?;
+    // ⑤ `model` 的 `running`：收尾调用是独立的一次模型调用（`wrap_up` 路径的节点顺序
+    // 是 ⑪→⑤→⑥，与模板顺序不同，按事件顺序着色）。
+    ctx.observer.node(
+        AgentNode::Model,
+        iteration,
+        NodeState::Running,
+        true,
+        Some(super::model_detail(state, None, None, 0)),
+    );
+    let stream = match request.stream(child.clone()) {
+        Ok(stream) => stream,
+        Err(err) => {
+            // 请求构造失败也要收口，否则 ⑤ 留下悬空 `running`（O2）。
+            ctx.observer.node(
+                AgentNode::Model,
+                iteration,
+                NodeState::Error,
+                true,
+                Some(super::model_detail(state, Some(err.to_string()), None, 0)),
+            );
+            state.provider_error = Some(ProviderErrorPayload::from(&err));
+            return Err(TurnError::Provider(err.to_string()));
+        }
+    };
     let result = stream::consume(
         stream,
         child,
@@ -462,6 +520,18 @@ pub(super) async fn call_model_without_tools(
             if state.ttft_ms.is_none() {
                 state.ttft_ms = outcome.ttft_ms;
             }
+            ctx.observer.node(
+                AgentNode::Model,
+                iteration,
+                NodeState::Finished,
+                true,
+                Some(super::model_detail(
+                    state,
+                    None,
+                    outcome.finish_reason.clone(),
+                    0,
+                )),
+            );
             Ok(WrapUpOutcome {
                 text: outcome.full_content.clone(),
                 reasoning: outcome.full_reasoning.clone(),
@@ -472,11 +542,35 @@ pub(super) async fn call_model_without_tools(
             state.provider_error = Some(ProviderErrorPayload::from(&ProviderError::Timeout(
                 "Stream timed out".to_string(),
             )));
+            ctx.observer.node(
+                AgentNode::Model,
+                iteration,
+                NodeState::Error,
+                true,
+                Some(super::model_detail(
+                    state,
+                    Some("timeout".to_string()),
+                    None,
+                    0,
+                )),
+            );
             Err(TurnError::Timeout)
         }
         Err(StreamError::Cancelled(partial)) => {
             apply_partial(state, &partial);
             state.provider_error = Some(ProviderErrorPayload::from(&ProviderError::Cancelled));
+            ctx.observer.node(
+                AgentNode::Model,
+                iteration,
+                NodeState::Cancelled,
+                true,
+                Some(super::model_detail(
+                    state,
+                    Some("cancelled".to_string()),
+                    None,
+                    0,
+                )),
+            );
             Err(TurnError::MiddlewareStop {
                 name: "wrap-up".to_string(),
                 reason: "本轮已取消".to_string(),
@@ -485,6 +579,13 @@ pub(super) async fn call_model_without_tools(
         Err(StreamError::Provider(err, partial)) => {
             apply_partial(state, &partial);
             state.provider_error = Some(ProviderErrorPayload::from(&err));
+            ctx.observer.node(
+                AgentNode::Model,
+                iteration,
+                NodeState::Error,
+                true,
+                Some(super::model_detail(state, Some(err.to_string()), None, 0)),
+            );
             Err(TurnError::Provider(err.to_string()))
         }
     }

@@ -13,6 +13,7 @@ use assistant_providers::types::ChatMessage;
 use async_trait::async_trait;
 
 use crate::agent::ladder::{self, ClearedBody};
+use crate::agent::node_event::{MiddlewareAction, MiddlewareVerdict};
 use crate::agent::round_executor::{ToolErrorClass, ToolExecResult, ToolStage};
 use crate::multimodal::ProjectionPurpose;
 use crate::request_projection::offload_if_over_budget;
@@ -457,6 +458,40 @@ impl TurnMiddleware for RepeatedFailureMiddleware {
     }
 }
 
+/// `before_model` 的改写快照：只比较这三项（I55 Q2），不比较消息正文（逐条比文本成本高）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct RequestSnapshot {
+    messages: usize,
+    context_window_tokens: Option<u32>,
+    max_tokens: u32,
+}
+
+impl RequestSnapshot {
+    fn of(req: &ModelRequestView<'_>) -> Self {
+        Self {
+            messages: req.messages.len(),
+            context_window_tokens: req.context_window_tokens,
+            max_tokens: req.max_tokens,
+        }
+    }
+}
+
+/// `after_tool` 的改写快照：长度与错误标记即可覆盖截断、分类改写。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ResultSnapshot {
+    content_len: usize,
+    is_error: bool,
+}
+
+impl ResultSnapshot {
+    fn of(result: &ToolExecResult) -> Self {
+        Self {
+            content_len: result.content.len(),
+            is_error: result.is_error,
+        }
+    }
+}
+
 /// 固定顺序中间件链：顺序由 [`P4_MIDDLEWARE_ORDER`] 决定，不做运行时排序。
 pub struct MiddlewareChain {
     order: Vec<Arc<dyn TurnMiddleware>>,
@@ -510,46 +545,77 @@ impl MiddlewareChain {
         self.order.iter().map(|mw| mw.name()).collect()
     }
 
+    /// 返回 `(结果, 实际改写过请求的中间件名)`。
+    ///
+    /// `applied` 只记**真正改动过请求**的项（I55 Q2）：每个中间件执行前后各取一次快照，
+    /// 三项（消息条数 / `context_window_tokens` / `max_tokens`）任一变化才记入，
+    /// 因此既不需要新造「阶梯清单常量」，也不需要给 `TurnMiddleware` 加返回值。
     pub async fn before_model(
         &self,
         req: &mut ModelRequestView<'_>,
         ctx: &TurnCtx<'_>,
-    ) -> MiddlewareOutcome {
+    ) -> (MiddlewareOutcome, Vec<&'static str>) {
+        let mut applied: Vec<&'static str> = Vec::new();
         for mw in &self.order {
-            if let MiddlewareOutcome::StopTurn { middleware, reason } =
-                mw.before_model(req, ctx).await
-            {
+            let before = RequestSnapshot::of(req);
+            let outcome = mw.before_model(req, ctx).await;
+            if RequestSnapshot::of(req) != before {
+                applied.push(mw.name());
+            }
+            if let MiddlewareOutcome::StopTurn { middleware, reason } = outcome {
                 log::warn!(
                     target: "agent::middleware",
                     "中间件 {} 在 before_model 终止本轮：{}",
                     middleware,
                     reason
                 );
-                return MiddlewareOutcome::StopTurn { middleware, reason };
+                return (MiddlewareOutcome::StopTurn { middleware, reason }, applied);
             }
         }
-        MiddlewareOutcome::Continue
+        (MiddlewareOutcome::Continue, applied)
     }
 
+    /// 返回 `(结果, 本结果上各中间件的判定)`。
+    ///
+    /// 判定只记**有信息量**的两类：`stop`（携带原因）与真正改动过结果的 `continue`
+    /// （内容长度或错误标记变化）。恒 `continue` 且无改写的中间件不入列，
+    /// 否则每个结果会固定塞入 7 条空判定，把 `after-tool` 的 detail 变成噪声。
     pub async fn after_tool(
         &self,
         res: &mut ToolResultView<'_>,
         ctx: &TurnCtx<'_>,
-    ) -> MiddlewareOutcome {
+    ) -> (MiddlewareOutcome, Vec<MiddlewareVerdict>) {
+        let mut verdicts: Vec<MiddlewareVerdict> = Vec::new();
         for mw in &self.order {
-            if let MiddlewareOutcome::StopTurn { middleware, reason } =
-                mw.after_tool(res, ctx).await
-            {
-                log::warn!(
-                    target: "agent::middleware",
-                    "中间件 {} 在 after_tool 终止本轮：{}",
-                    middleware,
-                    reason
-                );
-                return MiddlewareOutcome::StopTurn { middleware, reason };
+            let before = ResultSnapshot::of(res.result);
+            let outcome = mw.after_tool(res, ctx).await;
+            match outcome {
+                MiddlewareOutcome::Continue => {
+                    if ResultSnapshot::of(res.result) != before {
+                        verdicts.push(MiddlewareVerdict {
+                            middleware: mw.name().to_string(),
+                            action: MiddlewareAction::Continue,
+                            reason: None,
+                        });
+                    }
+                }
+                MiddlewareOutcome::StopTurn { middleware, reason } => {
+                    verdicts.push(MiddlewareVerdict {
+                        middleware: middleware.to_string(),
+                        action: MiddlewareAction::Stop,
+                        reason: Some(reason.clone()),
+                    });
+                    log::warn!(
+                        target: "agent::middleware",
+                        "中间件 {} 在 after_tool 终止本轮：{}",
+                        middleware,
+                        reason
+                    );
+                    return (MiddlewareOutcome::StopTurn { middleware, reason }, verdicts);
+                }
             }
         }
-        MiddlewareOutcome::Continue
+        (MiddlewareOutcome::Continue, verdicts)
     }
 
     pub async fn after_iteration(&self, ctx: &TurnCtx<'_>) -> MiddlewareOutcome {

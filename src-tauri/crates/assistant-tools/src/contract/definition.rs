@@ -42,4 +42,8 @@ pub struct ToolDescriptor {
     pub name: String,
     pub description: String,
     pub tier: ToolTier,
+    /// 伴随工具的基工具 id（`Tool::companion_of`）。`Some` 表示本工具没有独立身份：
+    /// 不单独勾选、不因基工具被勾选而注入，只是**跟随基工具获得准入**（可被模型申请），
+    /// 面板据此渲染为基工具下的从属行（I58 §3.6）。
+    pub companion_of: Option<String>,
 }

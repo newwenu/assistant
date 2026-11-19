@@ -3,6 +3,7 @@ use serde_json::Value;
 use std::path::{Path, PathBuf};
 
 use crate::context::ToolUseContext;
+use crate::os::footer;
 use crate::os::path;
 use crate::r#trait::{
     BehaviorHints, PermissionIntent, Tool, ToolAudience, ToolTier, ValidationResult,
@@ -321,8 +322,12 @@ fn walk_dir(
 
     if truncated {
         outcome.lines.push(format!(
-            "{}[truncated: showing {} of {} entries]",
-            indent, limit, total
+            "{}{}",
+            indent,
+            footer::render(
+                footer::TRUNCATED,
+                format!("showing {} of {} entries", limit, total)
+            )
         ));
     }
     Ok(())

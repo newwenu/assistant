@@ -10,6 +10,7 @@ use assistant_storage::token_usage::TokenUsageRecord;
 use async_trait::async_trait;
 use serde::Serialize;
 
+use crate::agent::node_event::AgentNodeEvent;
 use crate::agent::tool_event::ToolEvent;
 use crate::chat_options::ReasoningOverride;
 use crate::prompt_builder::PromptFacts;
@@ -46,6 +47,8 @@ pub enum TurnEvent {
         phase: TurnPhase,
     },
     Tool(ToolEvent),
+    /// 节点级观测（I55 §4.2）：与 `Delta` 共用同一 `seq` 序列，`node` / `state` 双判别。
+    Node(AgentNodeEvent),
     CompactionStarted {
         turn_id: String,
     },

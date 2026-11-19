@@ -4,6 +4,7 @@ use assistant_providers::base::{ProviderError, ProviderErrorPayload};
 
 use crate::compaction::{self, CompactDecision};
 
+use crate::agent::node_event::{AgentNode, AgentNodeDetail, NodeState, ROOT_AGENT_ID};
 use crate::agent::round_executor::{
     RoundExecutor, ToolExecutionPort, TurnBudget, TurnObserver, TurnRunCtx,
 };
@@ -94,7 +95,17 @@ impl TurnRunner {
             self.tasks.clone(),
             conversation_id,
             ctx.turn_id.clone(),
+            ROOT_AGENT_ID,
+            None,
         );
+        // ① `admit`：宿主侧的 `TurnTasks::begin` 无 sink 参数，准入事实只能在此补记。
+        // `iteration = 0` / `at_ms = 0`（迭代外节点且先于一切内部步骤）；准入失败（`Busy`）
+        // 在 `begin` 处就返回错误、`run()` 不会执行，因此不会出现「已准入」的假事实（I55 Q1）。
+        // 与 `RunnerObserver::node` 同口径：只对广播路由发，orb 链路事件序列不变（G10）。
+        if spec.route == EventRoute::Broadcast {
+            emitter.node(AgentNode::Admit, 0, NodeState::Running, true, 0, None);
+            emitter.node(AgentNode::Admit, 0, NodeState::Finished, true, 0, None);
+        }
         let mut persister = TurnPersister::new(
             self.store.clone(),
             self.tasks.clone(),
@@ -238,6 +249,8 @@ impl TurnRunner {
             spec,
             conversation_id,
             turn_id: &ctx.turn_id,
+            clock: self.clock.as_ref(),
+            turn_started_at: started_at,
         };
         let round_ctx = TurnRunCtx {
             turn_id: &ctx.turn_id,
@@ -380,6 +393,9 @@ struct RunnerObserver<'a> {
     spec: &'a TurnSpec,
     conversation_id: &'a str,
     turn_id: &'a str,
+    /// `at_ms` 的唯一来源：注入的 `Clock` 与 turn 起点（禁止 `SystemTime::now()`）。
+    clock: &'a dyn crate::kernel::Clock,
+    turn_started_at: std::time::Instant,
 }
 
 impl TurnObserver for RunnerObserver<'_> {
@@ -401,6 +417,27 @@ impl TurnObserver for RunnerObserver<'_> {
 
     fn delta(&self, delta: &ProviderDelta) -> u32 {
         self.emitter.delta(delta)
+    }
+
+    /// 与 `set_phase` 同口径：只对广播路由发；orb 链路事件序列不变。
+    fn node(
+        &self,
+        node: AgentNode,
+        iteration: u32,
+        state: NodeState,
+        transition: bool,
+        detail: Option<AgentNodeDetail>,
+    ) {
+        if self.spec.route != EventRoute::Broadcast {
+            return;
+        }
+        let at_ms = self
+            .clock
+            .now()
+            .saturating_duration_since(self.turn_started_at)
+            .as_millis() as u64;
+        self.emitter
+            .node(node, iteration, state, transition, at_ms, detail);
     }
 }
 

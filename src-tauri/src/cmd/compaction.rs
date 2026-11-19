@@ -192,7 +192,14 @@ pub(crate) async fn execute_compaction(
         )
         .with_finished_change_kind(MessageChangeKindDto::MessagesCompacted),
     );
-    let emitter = TurnEmitter::new(sink, tasks.clone(), conversation_id, attempt_id.clone());
+    let emitter = TurnEmitter::new(
+        sink,
+        tasks.clone(),
+        conversation_id,
+        attempt_id.clone(),
+        assistant_agent::agent::node_event::ROOT_AGENT_ID,
+        None,
+    );
     emitter.stream_start(TurnPhase::Compacting);
 
     let clock = SystemClock::new();

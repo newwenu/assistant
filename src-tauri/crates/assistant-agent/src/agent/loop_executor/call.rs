@@ -6,6 +6,7 @@
 
 use assistant_providers::base::{ChatDelta, ProviderErrorPayload};
 
+use crate::agent::node_event::{AgentNode, AgentNodeDetail, ModelDetail, NodeState};
 use crate::agent::round_executor::{RoundOutcome, TurnRunCtx};
 use crate::agent::tool_call::ToolCallAccumulator;
 use crate::kernel::request::ChatRequest;
@@ -35,6 +36,21 @@ pub(super) async fn call_model_with_retries(
     state.content.clear();
     state.reasoning.clear();
     let mut retries_used = 0u32;
+    // ⑤ `model` 的 `running` 每迭代只发一次（I55 §4.6 第 3 条）；重试走 `waiting`。
+    ctx.observer.node(
+        AgentNode::Model,
+        it,
+        NodeState::Running,
+        true,
+        Some(AgentNodeDetail::Model(ModelDetail {
+            attempt: retries_used + 1,
+            retry_reason: None,
+            prompt_tokens: state.prompt_tokens,
+            completion_tokens: state.completion_tokens,
+            finish_reason: None,
+            tool_call_count: 0,
+        })),
+    );
 
     loop {
         if ctx.child_token.is_cancelled() {
@@ -50,6 +66,13 @@ pub(super) async fn call_model_with_retries(
             Ok(stream) => stream,
             Err(err) => {
                 let message = err.to_string();
+                ctx.observer.node(
+                    AgentNode::Model,
+                    it,
+                    NodeState::Error,
+                    true,
+                    Some(super::model_detail(state, Some(message.clone()), None, 0)),
+                );
                 state.provider_error = Some(ProviderErrorPayload::from(&err));
                 state.model_calls += 1;
                 let content = state.content.clone();
@@ -122,6 +145,7 @@ pub(super) async fn call_model_with_retries(
                 let message = err.to_string();
                 if retries_used < ctx.limits.empty_response_retries {
                     retries_used += 1;
+                    state.model_retries_used = retries_used;
                     accumulator.reset();
                     log::warn!(
                         "[agent-loop] provider 失败重试 {}/{}：turn={} iteration={} err={}",
@@ -130,6 +154,21 @@ pub(super) async fn call_model_with_retries(
                         ctx.turn_id,
                         it,
                         message
+                    );
+                    // 重试等待：`waiting` → 回到 `running`（I55 §5.2 第 3 条，禁新增事件）。
+                    ctx.observer.node(
+                        AgentNode::Model,
+                        it,
+                        NodeState::Waiting,
+                        true,
+                        Some(super::model_detail(state, Some(message.clone()), None, 0)),
+                    );
+                    ctx.observer.node(
+                        AgentNode::Model,
+                        it,
+                        NodeState::Running,
+                        true,
+                        Some(super::model_detail(state, None, None, 0)),
                     );
                     continue;
                 }
@@ -148,6 +187,7 @@ pub(super) async fn call_model_with_retries(
         state.content = outcome.full_content.clone();
         state.reasoning = outcome.full_reasoning.clone();
         let finish_reason = outcome.finish_reason.clone();
+        state.finish_reason = finish_reason.clone();
         // 4) 空响应重试：纯工具调用是有效输出；输出上限截断不重发。
         if !outcome.has_effective_output
             && !accumulator.has_pending()
@@ -155,6 +195,7 @@ pub(super) async fn call_model_with_retries(
             && retries_used < ctx.limits.empty_response_retries
         {
             retries_used += 1;
+            state.model_retries_used = retries_used;
             accumulator.reset();
             log::info!(
                 "[agent-loop] 空响应重试 {}/{}：turn={} iteration={}",
@@ -162,6 +203,25 @@ pub(super) async fn call_model_with_retries(
                 ctx.limits.empty_response_retries,
                 ctx.turn_id,
                 it
+            );
+            ctx.observer.node(
+                AgentNode::Model,
+                it,
+                NodeState::Waiting,
+                true,
+                Some(super::model_detail(
+                    state,
+                    Some("empty-response".to_string()),
+                    None,
+                    0,
+                )),
+            );
+            ctx.observer.node(
+                AgentNode::Model,
+                it,
+                NodeState::Running,
+                true,
+                Some(super::model_detail(state, None, None, 0)),
             );
             continue;
         }

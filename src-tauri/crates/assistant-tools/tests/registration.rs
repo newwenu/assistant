@@ -35,7 +35,7 @@ fn production_registry() -> ToolRegistry {
 }
 
 #[test]
-fn the_readonly_group_registers_the_four_read_tools_and_keeps_fs_link() {
+fn the_readonly_group_registers_the_read_tools_and_keeps_fs_link() {
     let registry = readonly_registry();
     let ids: Vec<String> = {
         let mut ids = registry.tool_ids();
@@ -44,8 +44,17 @@ fn the_readonly_group_registers_the_four_read_tools_and_keeps_fs_link() {
     };
     assert_eq!(
         ids,
-        vec!["fs_link", "glob", "grep", "ls", "read"],
-        "the read-only group must register exactly read / ls / glob / grep"
+        vec![
+            "fs_link",
+            "glob",
+            "grep",
+            "ls",
+            "read",
+            "request_tool",
+            "super_read"
+        ],
+        "the read-only group must register exactly read / super_read / ls / glob / grep / \
+         request_tool"
     );
 }
 
@@ -76,7 +85,20 @@ async fn tool_definitions_for_os_tier_expose_every_os_facing_tool() {
         .collect();
     assert_eq!(
         ids,
-        vec!["delete", "edit", "glob", "grep", "ls", "mkdir", "move", "read", "write"],
+        vec![
+            "delete",
+            "edit",
+            "glob",
+            "grep",
+            "ls",
+            "mkdir",
+            "move",
+            "read",
+            "request_tool",
+            "super_edit",
+            "super_read",
+            "write"
+        ],
         "fs_link is TOOLBOX_ONLY and must be filtered out by audience"
     );
 
@@ -132,6 +154,7 @@ async fn the_registered_groups_carry_the_expected_metadata() {
     let expectations = [
         ("write", ToolTier::Os, false),
         ("edit", ToolTier::Os, false),
+        ("super_edit", ToolTier::Os, true),
         ("mkdir", ToolTier::Os, false),
         ("move", ToolTier::Os, false),
         ("delete", ToolTier::Os, true),

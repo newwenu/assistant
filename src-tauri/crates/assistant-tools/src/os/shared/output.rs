@@ -1,6 +1,8 @@
 use std::collections::VecDeque;
 use std::fmt::Write as _;
 
+use crate::os::footer;
+
 /// 裁切方向（I46 compact §2.7 D7）。
 ///
 /// 策略是**工具的声明**，不是框架的全局开关：条目型工具保留前缀，命令类输出保留
@@ -119,8 +121,14 @@ pub fn truncate_output(text: &str, limits: &OutputLimits) -> TruncatedOutput {
         }
         let _ = write!(
             output,
-            "[truncated: showing {} of {} lines, {} of {} bytes]",
-            returned_lines, total_lines, retained_bytes, total_bytes
+            "{}",
+            footer::render(
+                footer::TRUNCATED,
+                format!(
+                    "showing {} of {} lines, {} of {} bytes",
+                    returned_lines, total_lines, retained_bytes, total_bytes
+                )
+            )
         );
     } else {
         output.push_str(&text[tail_start..]);

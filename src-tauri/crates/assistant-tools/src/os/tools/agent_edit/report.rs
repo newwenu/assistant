@@ -1,5 +1,6 @@
 use crate::context::ToolUseContext;
 use crate::os::agent_read::LINE_TRUNCATED_MARKER;
+use crate::os::footer;
 use crate::os::path;
 use crate::r#trait::ApprovalPreview;
 
@@ -46,7 +47,17 @@ pub(super) fn build_preview(
     })
 }
 
-pub(super) fn not_found_message(path_text: &str, content: &str, old: &str) -> String {
+/// `old_string` 定位失败时的诊断。
+///
+/// `escalation` 表示本轮工具集里有 `request_tool`（唯一的申请入口）：此时补一句
+/// 「按行地址替换可绕开子串匹配」的升级指引（I58 §3.6）。门控的是**能不能申请**，
+/// 不是 `super_edit` 在不在工具集里——后者按设计只在模型申请后才追加。
+pub(super) fn not_found_message(
+    path_text: &str,
+    content: &str,
+    old: &str,
+    escalation: bool,
+) -> String {
     let mut message = format!(
         "'old_string' was not found in '{}' after trying exact, line-prefix-stripped, \
          trailing-newline, trim-end, trim and normalized matching. The file may have changed \
@@ -67,31 +78,26 @@ pub(super) fn not_found_message(path_text: &str, content: &str, old: &str) -> St
              the complete line.",
         );
     }
-    if let Some(marker) = trailing_footer_marker(old) {
+    if let Some(marker) = footer::trailing_marker(old) {
         message.push_str(&format!(
-            "\nHint: 'old_string' ends with the '{}' footer line that read appends after \
-             non-UTF-8 output; that footer is not part of the file. Remove it and retry.",
+            "\nHint: 'old_string' ends with the '{}' footer line that the read tools append \
+             after the body; that footer is not part of the file. Remove it and retry.",
             marker
         ));
+    }
+    if escalation {
+        message.push_str(
+            "\nHint: if the text is hard to copy exactly (very long lines or duplicated \
+             content), request_tool(detail = \"enable\", tools = [\"super_edit\"]) lets you \
+             address the range by line and column instead — duplicated content is not \
+             ambiguous, and only the target range itself must match.",
+        );
     }
     if let Some(snippet) = nearest_snippet(content, old) {
         message.push_str("\nNearest text in the file:\n");
         message.push_str(&snippet);
     }
     message
-}
-
-/// footer 标记集（上级 §14.4 规则 5）：`[<tag>: …]` 独占一行。
-///
-/// 新增 tag 必须同步回写 §14.4；这里只识别、不剥离——自动剥离会把模型的误解静默修正为
-/// 成功（规则 4），因此仅在 0 匹配诊断里指出。
-const FOOTER_TAGS: &[&str] = &["encoding", "non-utf8"];
-
-fn trailing_footer_marker(old: &str) -> Option<&str> {
-    let last = old.trim_end_matches(['\n', '\r']).lines().last()?.trim();
-    let inner = last.strip_prefix('[')?.strip_suffix(']')?;
-    let tag = inner.split_once(':')?.0.trim();
-    FOOTER_TAGS.contains(&tag).then_some(last)
 }
 
 pub(super) fn ambiguous_message(path_text: &str, content: &str, hits: &[(usize, usize)]) -> String {
@@ -167,4 +173,37 @@ fn render_context(content: &str, center: usize) -> String {
         rendered.push(format!("{}: {}", from + offset + 1, &content[*start..*end]));
     }
     rendered.join("\n")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 登记表里的每个 tag 都必须走到 `edit` 的诊断文案，否则 `old_string` 会把
+    /// footer 当正文吞掉（I58 §10 G5）。白名单本身在 `os::footer` 单测里已覆盖，
+    /// 这里验证的是「诊断确实消费了同一份白名单」。
+    #[test]
+    fn every_registered_footer_tag_is_diagnosed() {
+        for tag in footer::TAGS {
+            let old = format!("body\n{}", footer::render(tag, "marker"));
+            let message = not_found_message("a.txt", "unrelated content", &old, false);
+            assert!(
+                message.contains("footer line"),
+                "footer tag '{}' 未被诊断: {}",
+                tag,
+                message
+            );
+        }
+    }
+
+    /// 非登记形态（圆括号、无冒号、未知 tag）不得被误认为 footer。
+    #[test]
+    fn unregistered_shapes_are_not_treated_as_footer() {
+        assert_eq!(
+            footer::trailing_marker("body\n(catalog: showing 1 of 3)"),
+            None
+        );
+        assert_eq!(footer::trailing_marker("body\n[unknown: x]"), None);
+        assert_eq!(footer::trailing_marker("body\n[catalog]"), None);
+    }
 }

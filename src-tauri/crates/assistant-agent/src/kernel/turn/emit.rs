@@ -1,6 +1,7 @@
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 
+use crate::agent::node_event::{AgentNode, AgentNodeDetail, AgentNodeEvent, NodeState};
 use crate::agent::tool_event::ToolEvent;
 
 use crate::kernel::ids::TurnId;
@@ -15,6 +16,8 @@ pub struct TurnEmitter {
     tasks: Arc<TurnTasks>,
     conversation_id: String,
     turn_id: TurnId,
+    agent_id: String,
+    parent_turn_id: Option<String>,
     seq: AtomicU32,
     iteration: AtomicU32,
 }
@@ -25,12 +28,16 @@ impl TurnEmitter {
         tasks: Arc<TurnTasks>,
         conversation_id: impl Into<String>,
         turn_id: TurnId,
+        agent_id: impl Into<String>,
+        parent_turn_id: Option<String>,
     ) -> Self {
         Self {
             sink,
             tasks,
             conversation_id: conversation_id.into(),
             turn_id,
+            agent_id: agent_id.into(),
+            parent_turn_id,
             seq: AtomicU32::new(0),
             iteration: AtomicU32::new(1),
         }
@@ -97,6 +104,35 @@ impl TurnEmitter {
 
     pub fn tool_event(&self, event: ToolEvent) {
         self.dispatch(TurnEvent::Tool(event));
+    }
+
+    /// 节点事件（I55 §4.2）：与 `Delta` 共用同一 `seq` 计数器，混排才有时间线语义。
+    ///
+    /// `iteration` / `at_ms` 都由调用方给出：迭代外节点恒 `iteration = 0`，
+    /// `at_ms` 必须来自 `Clock` 端口（内核禁止 `SystemTime::now()`）。
+    pub fn node(
+        &self,
+        node: AgentNode,
+        iteration: u32,
+        state: NodeState,
+        transition: bool,
+        at_ms: u64,
+        detail: Option<AgentNodeDetail>,
+    ) {
+        let seq = self.seq.fetch_add(1, Ordering::SeqCst) + 1;
+        self.dispatch(TurnEvent::Node(AgentNodeEvent {
+            turn_id: self.turn_id.clone(),
+            conversation_id: self.conversation_id.clone(),
+            seq,
+            node,
+            iteration,
+            state,
+            transition,
+            at_ms,
+            agent_id: self.agent_id.clone(),
+            parent_turn_id: self.parent_turn_id.clone(),
+            detail,
+        }));
     }
 
     pub fn compaction_started(&self) {

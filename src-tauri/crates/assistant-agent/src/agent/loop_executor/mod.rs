@@ -30,6 +30,10 @@ use assistant_providers::base::{ProviderError, ProviderErrorPayload};
 use async_trait::async_trait;
 
 use crate::agent::middleware::{MiddlewareChain, MiddlewareOutcome, ModelRequestView, TurnCtx};
+use crate::agent::node_event::{
+    AfterIterationDetail, AgentNode, AgentNodeDetail, BrakeDetail, BrakeVerdict, BranchDetail,
+    BudgetRemaining, LadderDetail, ModelDetail, NodeState,
+};
 use crate::agent::round_executor::{RoundExecutor, RoundOutcome, TurnRunCtx};
 use crate::agent::stop::stop_hooks_all_continue;
 use crate::agent::tool_call::{ToolCallAccumulator, ToolCallBoundary};
@@ -78,15 +82,26 @@ struct RoundState {
     content: String,
     reasoning: String,
     provider_error: Option<ProviderErrorPayload>,
+    /// 本迭代内层重试已用次数：`ModelDetail.attempt = model_retries_used + 1` 的唯一来源。
+    model_retries_used: u32,
+    /// 本迭代最后一次模型调用的 `finish_reason`（`ModelDetail` 用）。
+    finish_reason: Option<String>,
+    /// `persist-assistant` 的 `running` 是否已发：每迭代只发一条，多次落库只重复终态。
+    persist_running_emitted: bool,
+    /// 本轮**当前**工具集（I58 §3.8 ③）。与 `request.options.tools` 保持同源：
+    /// 升级项在工具批次结束后尾部追加，下一次模型调用才可见（G21）。
+    tools: Option<Arc<Vec<assistant_providers::types::ToolSpec>>>,
 }
 
 impl RoundState {
     fn new(request: ChatRequest, initial_message_id: &str, chain: MiddlewareChain) -> Self {
+        let tools = request.options.tools.clone().map(Arc::new);
         Self {
             last_request: request.clone(),
             msg_id: initial_message_id.to_string(),
             last_row_id: initial_message_id.to_string(),
             request,
+            tools,
             row_created: false,
             row_finalized: false,
             chain,
@@ -107,6 +122,9 @@ impl RoundState {
             content: String::new(),
             reasoning: String::new(),
             provider_error: None,
+            model_retries_used: 0,
+            finish_reason: None,
+            persist_running_emitted: false,
         }
     }
 
@@ -114,6 +132,9 @@ impl RoundState {
     fn reset_iteration_flags(&mut self) {
         self.row_created = false;
         self.row_finalized = false;
+        self.model_retries_used = 0;
+        self.finish_reason = None;
+        self.persist_running_emitted = false;
     }
 
     /// `None` 表示全部钩子 `Continue`；否则携带钩子名与原因。
@@ -202,6 +223,33 @@ impl RoundExecutor for LoopRoundExecutor {
     }
 }
 
+/// `ModelDetail` 的唯一构造点（`attempt` 恒取 `model_retries_used + 1`，I55 §4.6 第 3 条）。
+fn model_detail(
+    state: &RoundState,
+    retry_reason: Option<String>,
+    finish_reason: Option<String>,
+    tool_call_count: u32,
+) -> AgentNodeDetail {
+    AgentNodeDetail::Model(ModelDetail {
+        attempt: state.model_retries_used + 1,
+        retry_reason,
+        prompt_tokens: state.prompt_tokens,
+        completion_tokens: state.completion_tokens,
+        finish_reason,
+        tool_call_count,
+    })
+}
+
+/// `LadderDetail` 的唯一构造点。D 级字段（`droppedMessages` / `trimmedChars`）V1 不统计，
+/// 保持 `None`——「未统计」不能写成 0（I55 §4.5 末段）。
+fn ladder_detail(applied: Vec<&'static str>) -> AgentNodeDetail {
+    AgentNodeDetail::Ladder(LadderDetail {
+        applied: applied.into_iter().map(str::to_string).collect(),
+        dropped_messages: None,
+        trimmed_chars: None,
+    })
+}
+
 /// P4 的生产执行器；无自身状态，全部状态落在 `RoundState`。
 pub struct LoopRoundExecutor;
 
@@ -213,6 +261,9 @@ pub(crate) async fn run(ctx: TurnRunCtx<'_>) -> RoundOutcome {
     let limits = ctx.limits;
 
     // 0) 请求历史只投影一次；读库同属长 await，取消优先（C4.23）。
+    // ② `prepare` 是迭代外节点：`iteration` 恒 0，且在此处是唯一可发点（`RoundState` 尚未建立）。
+    ctx.observer
+        .node(AgentNode::Prepare, 0, NodeState::Running, true, None);
     let request = match cancellable(
         ctx.child_token,
         request::build(ctx.input, start_iteration, ctx.tools),
@@ -220,23 +271,31 @@ pub(crate) async fn run(ctx: TurnRunCtx<'_>) -> RoundOutcome {
     .await
     {
         None => {
+            // `prepare` 的终态只有 `finished` / `error`（I55 §5.1）：取消落 `error`，
+            // 否则会留下悬空 `running`（违 O2）。
+            ctx.observer
+                .node(AgentNode::Prepare, 0, NodeState::Error, true, None);
             return projection_exit(
                 TurnStatus::Cancelled,
                 None,
                 Some(ProviderErrorPayload::from(&ProviderError::Cancelled)),
-            )
+            );
         }
         Some(Ok(request)) => request,
         Some(Err(err)) => {
+            ctx.observer
+                .node(AgentNode::Prepare, 0, NodeState::Error, true, None);
             return projection_exit(
                 TurnStatus::Failed,
                 Some(TurnError::Other(err.clone())),
                 Some(ProviderErrorPayload::from(&ProviderError::RequestRejected(
                     err,
                 ))),
-            )
+            );
         }
     };
+    ctx.observer
+        .node(AgentNode::Prepare, 0, NodeState::Finished, true, None);
 
     let chain = if ctx.spec.ladder.is_projection_only() {
         MiddlewareChain::projection_only()
@@ -253,6 +312,8 @@ pub(crate) async fn run(ctx: TurnRunCtx<'_>) -> RoundOutcome {
             .clock
             .now()
             .saturating_duration_since(ctx.turn_started_at);
+        ctx.observer
+            .node(AgentNode::Brake, it, NodeState::Running, true, None);
         let brake = state.brake(
             hooks,
             max_iterations,
@@ -260,6 +321,34 @@ pub(crate) async fn run(ctx: TurnRunCtx<'_>) -> RoundOutcome {
             elapsed,
             limits.turn_wall_clock,
             ctx.model,
+        );
+        // `stop` 是正常控制流：节点仍记 `finished`，出口由 turn 终态表达（I55 §5.1 末条）。
+        ctx.observer.node(
+            AgentNode::Brake,
+            it,
+            NodeState::Finished,
+            true,
+            Some(AgentNodeDetail::Brake(BrakeDetail {
+                verdict: if brake.is_some() {
+                    BrakeVerdict::Stop
+                } else {
+                    BrakeVerdict::Continue
+                },
+                hook: brake.as_ref().map(|(hook, _)| hook.to_string()),
+                budget: BudgetRemaining {
+                    remaining_iterations: Some(max_iterations.saturating_sub(it)),
+                    remaining_tool_calls: Some(
+                        limits.max_tool_calls.saturating_sub(state.tool_calls),
+                    ),
+                    remaining_wall_clock_ms: ctx.remaining_turn_budget.turn_deadline.map(
+                        |deadline| {
+                            deadline
+                                .saturating_duration_since(ctx.clock.now())
+                                .as_millis() as u64
+                        },
+                    ),
+                },
+            })),
         );
         decide_stop_phase(&brake, "迭代开头");
         if let Some((hook_name, reason)) = brake {
@@ -278,26 +367,41 @@ pub(crate) async fn run(ctx: TurnRunCtx<'_>) -> RoundOutcome {
 
         // 2) before_model：阶梯与中间件只改本次请求的消息副本。
         ctx.observer.set_phase(TurnPhase::Thinking);
-        let (window, max_tokens) = {
+        ctx.observer
+            .node(AgentNode::Ladder, it, NodeState::Running, true, None);
+        let (window, max_tokens, applied) = {
             let mut view = ModelRequestView {
                 messages: &mut state.request.chat_messages,
                 context_window_tokens: state.request.context_window_tokens,
                 max_tokens: state.request.options.max_tokens,
                 is_wrap_up_call: false,
             };
-            if let MiddlewareOutcome::StopTurn { middleware, reason } =
-                state.chain.before_model(&mut view, &turn_ctx).await
-            {
+            let (outcome, applied) = state.chain.before_model(&mut view, &turn_ctx).await;
+            if let MiddlewareOutcome::StopTurn { middleware, reason } = outcome {
                 log::warn!(
                     target: "agent::loop",
                     "中间件 {} 在 before_model 结束本轮：{}",
                     middleware,
                     reason
                 );
+                ctx.observer.node(
+                    AgentNode::Ladder,
+                    it,
+                    NodeState::Finished,
+                    true,
+                    Some(ladder_detail(applied)),
+                );
                 return stopped(&mut state, &ctx, reason, start_iteration).await;
             }
-            (view.context_window_tokens, view.max_tokens)
+            (view.context_window_tokens, view.max_tokens, applied)
         };
+        ctx.observer.node(
+            AgentNode::Ladder,
+            it,
+            NodeState::Finished,
+            true,
+            Some(ladder_detail(applied)),
+        );
         state.request.context_window_tokens = window;
         state.request.options.max_tokens = max_tokens;
 
@@ -324,7 +428,35 @@ pub(crate) async fn run(ctx: TurnRunCtx<'_>) -> RoundOutcome {
         }
 
         let calls = accumulator.finalize_all(ToolCallBoundary::StreamEnd);
+        // ⑤ `model` 的终态：`finalize_all` 之后才知道本迭代最终的工具调用数。
+        ctx.observer.node(
+            AgentNode::Model,
+            it,
+            NodeState::Finished,
+            true,
+            Some(model_detail(
+                &state,
+                None,
+                state.finish_reason.clone(),
+                calls.len() as u32,
+            )),
+        );
         let has_effective_output = !state.content.is_empty() || !calls.is_empty();
+
+        // ⑦ `branch`：无工具时 `finished` 之后立即出口 `completed`，前端据此把 ⑧–⑫ 批量标 `skipped`。
+        ctx.observer
+            .node(AgentNode::Branch, it, NodeState::Running, true, None);
+        ctx.observer.node(
+            AgentNode::Branch,
+            it,
+            NodeState::Finished,
+            true,
+            Some(AgentNodeDetail::Branch(BranchDetail {
+                has_tool_calls: !calls.is_empty(),
+                wrap_up: ctx.spec.wrap_up,
+                tool_call_count: calls.len() as u32,
+            })),
+        );
 
         // 4.1) 重试用尽仍空 → Failed（首迭代占位行以空内容收尾，不加新行）。
         if !has_effective_output {
@@ -411,9 +543,15 @@ pub(crate) async fn run(ctx: TurnRunCtx<'_>) -> RoundOutcome {
         let _ = &append;
 
         // 8) 迭代后钩子：nudge 只进下一轮，不落库。
-        state
-            .pending_nudges
-            .extend(state.chain.take_pending_nudges());
+        ctx.observer.node(
+            AgentNode::AfterIteration,
+            it,
+            NodeState::Running,
+            true,
+            None,
+        );
+        let nudges = state.chain.take_pending_nudges();
+        state.pending_nudges.extend(nudges.iter().cloned());
         let halt_reason = match halt_reason_from_tools {
             Some(reason) => Some(reason),
             None => match state.chain.after_iteration(&turn_ctx).await {
@@ -429,6 +567,16 @@ pub(crate) async fn run(ctx: TurnRunCtx<'_>) -> RoundOutcome {
                 _ => None,
             },
         };
+        ctx.observer.node(
+            AgentNode::AfterIteration,
+            it,
+            NodeState::Finished,
+            true,
+            Some(AgentNodeDetail::AfterIteration(AfterIterationDetail {
+                nudges,
+                next_iteration: it + 1,
+            })),
+        );
         if let Some(reason) = halt_reason {
             return halted_with_summary(&mut state, &ctx, reason, append, start_iteration).await;
         }

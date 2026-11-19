@@ -484,6 +484,7 @@ fn event_shape(events: &[TurnEvent]) -> Vec<String> {
             TurnEvent::Delta { seq, .. } => format!("delta:{seq}"),
             TurnEvent::PhaseChanged { phase, .. } => format!("phase:{phase:?}"),
             TurnEvent::Tool(_) => "tool".to_string(),
+            TurnEvent::Node(_) => "node".to_string(),
             TurnEvent::CompactionStarted { .. } => "compaction_started".to_string(),
             TurnEvent::CompactionFinished { ok, .. } => format!("compaction_finished:{ok}"),
             TurnEvent::Terminated { status, .. } => format!("terminated:{status:?}"),

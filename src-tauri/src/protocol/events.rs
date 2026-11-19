@@ -5,6 +5,7 @@ pub mod event_name {
     pub const SESSION_STATE_CHANGED: &str = "session-state-changed";
     pub const CHAT_USER_MESSAGE_CONFIRMED: &str = "chat-user-message-confirmed";
     pub const AGENT_TOOL_CALL: &str = "agent-tool-call";
+    pub const AGENT_NODE_EVENT: &str = "agent-node-event";
     pub const CONVERSATION_LIST_CHANGED: &str = "conversation-list-changed";
     pub const CONVERSATION_TERMINATED: &str = "conversation-terminated";
     pub const CONVERSATION_UNLOCKED: &str = "conversation-unlocked";

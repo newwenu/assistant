@@ -1,4 +1,5 @@
 use super::types::{PersistedInfo, TruncatedInfo, TruncatedUnit};
+use crate::os::footer;
 
 /// `[truncated: showing 2 of 4 lines, 8 of 100 bytes]` → 三态。
 ///
@@ -7,8 +8,10 @@ use super::types::{PersistedInfo, TruncatedInfo, TruncatedUnit};
 /// - 含 `total unknown` → `unit = Unknown`，`returned` / `total` 均为 `None`；
 /// - 其余为精确态，`returned` / `total` 均有值。
 pub fn parse_truncation(text: &str) -> Option<TruncatedInfo> {
-    let start = text.rfind("[truncated:")?;
-    let body = &text[start + "[truncated:".len()..];
+    // 前缀取自登记表，生产方改 tag 时这里不会静默失配。
+    let prefix = format!("[{}:", footer::TRUNCATED);
+    let start = text.rfind(&prefix)?;
+    let body = &text[start + prefix.len()..];
     let body = body.split(']').next().unwrap_or_default().trim();
 
     // 显式未知优先：无法计数时不得保留半套数字（否则「未知」与「精确」无法区分）。

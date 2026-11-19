@@ -31,6 +31,15 @@ export type AgentToolCallPayloadDto = { "phase": "started",
  * 参数摘要（`Started` 首帧只带摘要，完整参数走 `ArgsDelta` 或终态）。
  */
 argsPreview: string | null, } | { "phase": "argsDelta", delta: string, } | { "phase": "finished", result: string, confirmationWaitMs: number | null, compact: ToolResultCompactDto | null, } | { "phase": "failed", error: string, errorKind: ToolErrorKindDto, confirmationWaitMs: number | null, compact: ToolResultCompactDto | null, } | { "phase": "awaitingApproval", approval: ToolApprovalRequestDto, } | { "phase": "approvalClosed", timeoutMs: number, } | { "phase": "awaitingAnswer", question: AgentQuestionRequestDto, };
+export type AfterIterationDetailDto = { nudges: Array<string>, nextIteration: number, };
+export type AfterToolDetailDto = { verdicts: Array<MiddlewareVerdictDto>, };
+export type AgentNodeDetailDto = { "kind": "brake" } & BrakeDetailDto | { "kind": "ladder" } & LadderDetailDto | { "kind": "model" } & ModelDetailDto | { "kind": "pipeline" } & PipelineDetailDto | { "kind": "budgetSplit" } & BudgetSplitDetailDto | { "kind": "branch" } & BranchDetailDto | { "kind": "persist" } & PersistDetailDto | { "kind": "afterTool" } & AfterToolDetailDto | { "kind": "afterIteration" } & AfterIterationDetailDto;
+export type AgentNodeDto = "admit" | "prepare" | "brake" | "ladder" | "model" | "persist-assistant" | "branch" | "budget-split" | "pipeline" | "after-tool" | "persist-tools" | "after-iteration";
+export type AgentNodeEventDto = { turnId: string, conversationId: string, seq: number, node: AgentNodeDto, iteration: number, state: NodeStateDto, 
+/**
+ * `true` = 状态迁移（重置 `sinceMs`）；`false` = 过程事实（只进时间线）。
+ */
+transition: boolean, atMs: number, agentId: string, parentTurnId: string | null, detail: AgentNodeDetailDto | null, };
 export type AppConfDto = { theme: ThemeModeDto, language: string, hotkey: string, stayOnTop: boolean, launchAtLogin: boolean, closeToTray: boolean, keybindings: { [key in string]: string }, autoCompact: boolean, compactThresholdPercentOfBudget: number, compactSummaryPrompt: string | null, compactSummaryMaxTokens: number, mainWindowX: number | null, mainWindowY: number | null, mainWindowWidth: number | null, mainWindowHeight: number | null, miniWindowX: number | null, miniWindowY: number | null, approvalTimeoutSecs: number | null, userQuestionTimeoutSecs: number | null, 
 /**
  * 工具结果落盘文件保留天数；`0` 表示禁用清理（I46 compact §2.9 D9）。
@@ -55,6 +64,11 @@ removedBytes: number, };
 export type AttachmentImportDto = { attachmentId: string, mediaType: string, bytes: number, fileName: string, };
 export type AttachmentLimitsDto = { maxImages: number, maxFiles: number, maxImageBytes: number, maxFileBytes: number, };
 export type AttachmentSummary = { attachmentId: string, mediaType: string, bytes: number, createdAt: number, };
+export type BrakeDetailDto = { verdict: BrakeVerdictDto, hook: string | null, budget: BudgetRemainingDto, };
+export type BrakeVerdictDto = "continue" | "stop";
+export type BranchDetailDto = { hasToolCalls: boolean, wrapUp: boolean, toolCallCount: number, };
+export type BudgetRemainingDto = { remainingIterations: number | null, remainingToolCalls: number | null, remainingWallClockMs: number | null, };
+export type BudgetSplitDetailDto = { requested: number, executed: number, deferred: number, };
 export type CapabilitySourceDto = "api" | "catalog" | "snapshot" | "fallback";
 export type CapabilitySupportDto = "supported" | "unsupported" | "unknown";
 export type ChatDeltaPayloadDto = { conversationId: string, attemptId: string, messageId: string, seq: number, 
@@ -166,6 +180,7 @@ export type InstallMascotAssetResultDto = {
  * 相对素材根目录的路径（如 `rive/custom.riv`）。前端经 `mascotAssetUrl` 拼接，不持有绝对路径。
  */
 relPath: string, bytes: number, version: number, };
+export type LadderDetailDto = { applied: Array<string>, droppedMessages: number | null, trimmedChars: number | null, };
 export type MascotConfDto = { renderer: string, primaryColor: string | null, secondaryColor: string | null, riveIdlePoseRotation: boolean, riveSrc: string | null, svgAnimated: boolean, gifSrc: string | null, gifBorderRadius: number, };
 export type McpLaunchInputDto = { command: string, args: Array<string>, cwd?: string | null, env: { [key in string]: string }, callTimeoutMs?: number | null, };
 export type McpServerCreateDto = { name: string, launch: McpLaunchInputDto, };
@@ -221,6 +236,8 @@ export type MessageToolCallDto = { callId: string, name: string, arguments: unkn
  */
 compact: ToolResultCompactDto | null, };
 export type MessageToolCallStatusDto = "success" | "error" | "cancelled" | "missing";
+export type MiddlewareActionDto = "continue" | "stop";
+export type MiddlewareVerdictDto = { middleware: string, action: MiddlewareActionDto, reason: string | null, };
 export type ModelCapabilityDto = { support: CapabilitySupportDto, source: CapabilitySourceDto, };
 export type ModelConfigDto = { id: string, name: string, ownedBy: string, contextWindow: number | null, supportVision: boolean, 
 /**
@@ -244,6 +261,7 @@ pdf: ModelCapabilityDto | null,
  * 附件能力事实；存量 models_json 无此字段，缺省即 None。
  */
 attachment: ModelCapabilityDto | null, };
+export type ModelDetailDto = { attempt: number, retryReason: string | null, promptTokens: number | null, completionTokens: number | null, finishReason: string | null, toolCallCount: number, };
 export type ModelEffortSupportDto = { modelId: string, 
 /**
  * 该端点可原样下发的档位；端点不归一（responses）时等于目录声明档位。
@@ -254,6 +272,7 @@ expressible: Array<string>,
  */
 unsupported: Array<string>, };
 export type MousePositionDto = { clientX: number, clientY: number, };
+export type NodeStateDto = "pending" | "running" | "waiting" | "finished" | "error" | "skipped" | "cancelled";
 export type OrbConfDto = { clickThrough: boolean, alwaysOnTop: boolean, scalePercent: number, opacityPercent: number, hideOnPointerHover: boolean, hoverDelayMs: number, idleOpacityPercent: number, positionX: number | null, positionY: number | null, };
 export type OsToolExecRequestDto = { tool: string, action: string, params: unknown, };
 export type OsToolResultDto = { ok: boolean, data: unknown, resultForAssistant: string | null, error: string | null, errorKind: ToolErrorKindDto | null, };
@@ -261,7 +280,10 @@ export type PermissionGrantDto = { grantKey: string, tool: string, scope: GrantS
 export type PermissionAuditEntryDto = { tool: string, action: string, resource: string, outcome: string, atMillis: number, conversationId: string | null, turnId: string | null, iteration: number | null, };
 export type PermissionAuditPageDto = { entries: Array<PermissionAuditEntryDto>, hasMore: boolean, };
 export type PermissionIntentDto = { action: string, resources: Array<string>, };
+export type PersistDetailDto = { rows: number, messageIds: Array<string>, };
 export type PersistedResultDto = { path: string, bytes: number | null, };
+export type PipelineDetailDto = { stage: PipelineStageDto | null, index: number | null, total: number | null, toolName: string | null, toolCallId: string | null, };
+export type PipelineStageDto = "find" | "validate" | "gateway" | "execute" | "persist";
 export type ProviderErrorPayloadDto = { code: CommandErrorCodeDto, message: string, retryAfterMs: number | null, retryable: boolean, httpStatus: number | null, provider: string | null, providerCode: string | null, };
 export type ProviderInputDto = { id: string, name: string, type: string, baseUrl: string, apiKey: string, apiKeyChanged?: boolean | null, models: Array<ModelConfigDto>, defaultModel: string, };
 export type ProviderListDto = { id: string, name: string, type: string, baseUrl: string, apiKeyMasked: string, models: Array<ModelConfigDto>, defaultModel: string, updatedAt: number, 
@@ -381,7 +403,7 @@ export type ToolApprovalDecisionDto = { conversationId: string, callId: string, 
 export type ToolApprovalKindDto = "approve" | "deny" | "allowSession" | "allowAlways";
 export type ToolApprovalRequestDto = { conversationId: string, turnId: string, callId: string, toolName: string, arguments: unknown, intents: Array<PermissionIntentDto>, timeoutMs: number, context: ApprovalContextDto, };
 export type ToolBehaviorDto = { readOnly: boolean, destructive: boolean, openWorld: boolean, };
-export type ToolDescriptorDto = { id: string, name: string, description: string, tier: ToolTierDto, };
+export type ToolDescriptorDto = { id: string, name: string, description: string, tier: ToolTierDto, companionOf: string | null, };
 export type ToolErrorKindDto = "business" | "timeout" | "cancelled" | "internal" | "denied";
 export type ToolResultCompactDto = { head: string, truncated: TruncatedDto | null, persisted: PersistedResultDto | null, errorKind: ToolErrorKindDto | null, anchor: DocAnchorDto | null, };
 export type ToolTierDto = "sandbox" | "os" | "external";

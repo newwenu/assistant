@@ -1,4 +1,9 @@
-use assistant_agent::agent::round_executor::ToolErrorClass;
+use assistant_agent::agent::node_event::{
+    AfterIterationDetail, AfterToolDetail, AgentNode, AgentNodeDetail, AgentNodeEvent, BrakeDetail,
+    BrakeVerdict, BranchDetail, BudgetRemaining, BudgetSplitDetail, LadderDetail, MiddlewareAction,
+    MiddlewareVerdict, ModelDetail, NodeState, PersistDetail, PipelineDetail,
+};
+use assistant_agent::agent::round_executor::{ToolErrorClass, ToolStage};
 use assistant_agent::agent::tool_event::{CompactUnit, ToolCompact, ToolEventPayload};
 use assistant_tools::{
     ApprovalContext, ApprovalExtension, ApprovalExtensionSeverity, ApprovalPreview, ApprovalReason,
@@ -99,6 +104,9 @@ impl Default for ConversationToolConfigDto {
 ///
 /// 只含面板需要的事实：`id` 是白名单取值，`name` 是展示名，`tier` 决定分组。
 /// 不下发 `inputSchema`：装配面板不展示参数结构，且它体积大。
+///
+/// `companionOf` 非 null 表示这是伴随工具（I58 §3.6）：面板把它归入「超级工具」分组，
+/// 勾选状态镜像基工具，用户不需要单独勾选。输出 DTO，键恒在、值可为 `null`。
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ToolDescriptorDto {
@@ -106,6 +114,7 @@ pub struct ToolDescriptorDto {
     pub name: String,
     pub description: String,
     pub tier: ToolTierDto,
+    pub companion_of: Option<String>,
 }
 
 impl From<assistant_tools::ToolDescriptor> for ToolDescriptorDto {
@@ -115,6 +124,7 @@ impl From<assistant_tools::ToolDescriptor> for ToolDescriptorDto {
             name: descriptor.name,
             description: descriptor.description,
             tier: descriptor.tier.into(),
+            companion_of: descriptor.companion_of,
         }
     }
 }
@@ -634,4 +644,400 @@ pub struct AgentQuestionAnswerItemDto {
     pub selected: Vec<String>,
     #[ts(optional = nullable)]
     pub other: Option<String>,
+}
+
+// ---------------------------------------------------------------------------
+// turn 节点观测（I55 §4.2）：`agent-node-event` 的 wire 投影。
+//
+// 内部类型（`AgentNode` / `NodeState`）不外泄到契约：DTO 一律独立定义并做显式转换，
+// 生成的前端类型只认 DTO。`parentTurnId` 与 `detail` 的键恒在（值为 `null`），
+// `transition` 为必填布尔——三者都参与前端的状态迁移判定，不能缺省。
+// ---------------------------------------------------------------------------
+
+/// turn 模板节点（I55 §3.1），`kebab-case` 与内部 `AgentNode` 1:1。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "kebab-case")]
+pub enum AgentNodeDto {
+    Admit,
+    Prepare,
+    Brake,
+    Ladder,
+    Model,
+    PersistAssistant,
+    Branch,
+    BudgetSplit,
+    Pipeline,
+    AfterTool,
+    PersistTools,
+    AfterIteration,
+}
+
+impl From<AgentNode> for AgentNodeDto {
+    fn from(node: AgentNode) -> Self {
+        match node {
+            AgentNode::Admit => Self::Admit,
+            AgentNode::Prepare => Self::Prepare,
+            AgentNode::Brake => Self::Brake,
+            AgentNode::Ladder => Self::Ladder,
+            AgentNode::Model => Self::Model,
+            AgentNode::PersistAssistant => Self::PersistAssistant,
+            AgentNode::Branch => Self::Branch,
+            AgentNode::BudgetSplit => Self::BudgetSplit,
+            AgentNode::Pipeline => Self::Pipeline,
+            AgentNode::AfterTool => Self::AfterTool,
+            AgentNode::PersistTools => Self::PersistTools,
+            AgentNode::AfterIteration => Self::AfterIteration,
+        }
+    }
+}
+
+/// 节点状态 7 值闭集（I55 §4.3）。后端只发 `running` / `waiting` / 三个终态。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "lowercase")]
+pub enum NodeStateDto {
+    Pending,
+    Running,
+    Waiting,
+    Finished,
+    Error,
+    Skipped,
+    Cancelled,
+}
+
+impl From<NodeState> for NodeStateDto {
+    fn from(state: NodeState) -> Self {
+        match state {
+            NodeState::Pending => Self::Pending,
+            NodeState::Running => Self::Running,
+            NodeState::Waiting => Self::Waiting,
+            NodeState::Finished => Self::Finished,
+            NodeState::Error => Self::Error,
+            NodeState::Skipped => Self::Skipped,
+            NodeState::Cancelled => Self::Cancelled,
+        }
+    }
+}
+
+/// 工具流水线阶段 5 值（复用内部 `ToolStage`，不新造枚举）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub enum PipelineStageDto {
+    Find,
+    Validate,
+    Gateway,
+    Execute,
+    Persist,
+}
+
+impl From<ToolStage> for PipelineStageDto {
+    fn from(stage: ToolStage) -> Self {
+        match stage {
+            ToolStage::Find => Self::Find,
+            ToolStage::Validate => Self::Validate,
+            ToolStage::Gateway => Self::Gateway,
+            ToolStage::Execute => Self::Execute,
+            ToolStage::Persist => Self::Persist,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "lowercase")]
+pub enum BrakeVerdictDto {
+    Continue,
+    Stop,
+}
+
+impl From<BrakeVerdict> for BrakeVerdictDto {
+    fn from(verdict: BrakeVerdict) -> Self {
+        match verdict {
+            BrakeVerdict::Continue => Self::Continue,
+            BrakeVerdict::Stop => Self::Stop,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "lowercase")]
+pub enum MiddlewareActionDto {
+    Continue,
+    Stop,
+}
+
+impl From<MiddlewareAction> for MiddlewareActionDto {
+    fn from(action: MiddlewareAction) -> Self {
+        match action {
+            MiddlewareAction::Continue => Self::Continue,
+            MiddlewareAction::Stop => Self::Stop,
+        }
+    }
+}
+
+/// 剩余预算：每字段 `null` 表示「未配置」而非 0（I55 §4.4 末段）。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct BudgetRemainingDto {
+    pub remaining_iterations: Option<u32>,
+    pub remaining_tool_calls: Option<u32>,
+    pub remaining_wall_clock_ms: Option<u64>,
+}
+
+impl From<BudgetRemaining> for BudgetRemainingDto {
+    fn from(budget: BudgetRemaining) -> Self {
+        Self {
+            remaining_iterations: budget.remaining_iterations,
+            remaining_tool_calls: budget.remaining_tool_calls,
+            remaining_wall_clock_ms: budget.remaining_wall_clock_ms,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct BrakeDetailDto {
+    pub verdict: BrakeVerdictDto,
+    pub hook: Option<String>,
+    pub budget: BudgetRemainingDto,
+}
+
+impl From<BrakeDetail> for BrakeDetailDto {
+    fn from(detail: BrakeDetail) -> Self {
+        Self {
+            verdict: detail.verdict.into(),
+            hook: detail.hook,
+            budget: detail.budget.into(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct LadderDetailDto {
+    pub applied: Vec<String>,
+    pub dropped_messages: Option<u32>,
+    pub trimmed_chars: Option<u64>,
+}
+
+impl From<LadderDetail> for LadderDetailDto {
+    fn from(detail: LadderDetail) -> Self {
+        Self {
+            applied: detail.applied,
+            dropped_messages: detail.dropped_messages,
+            trimmed_chars: detail.trimmed_chars,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelDetailDto {
+    pub attempt: u32,
+    pub retry_reason: Option<String>,
+    pub prompt_tokens: Option<u32>,
+    pub completion_tokens: Option<u32>,
+    pub finish_reason: Option<String>,
+    pub tool_call_count: u32,
+}
+
+impl From<ModelDetail> for ModelDetailDto {
+    fn from(detail: ModelDetail) -> Self {
+        Self {
+            attempt: detail.attempt,
+            retry_reason: detail.retry_reason,
+            prompt_tokens: detail.prompt_tokens,
+            completion_tokens: detail.completion_tokens,
+            finish_reason: detail.finish_reason,
+            tool_call_count: detail.tool_call_count,
+        }
+    }
+}
+
+/// 工具流水线 detail：过程形态带阶段与序号，终态形态全 `null`（I55 §4.4）。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct PipelineDetailDto {
+    pub stage: Option<PipelineStageDto>,
+    pub index: Option<u32>,
+    pub total: Option<u32>,
+    pub tool_name: Option<String>,
+    pub tool_call_id: Option<String>,
+}
+
+impl From<PipelineDetail> for PipelineDetailDto {
+    fn from(detail: PipelineDetail) -> Self {
+        Self {
+            stage: detail.stage.map(Into::into),
+            index: detail.index,
+            total: detail.total,
+            tool_name: detail.tool_name,
+            tool_call_id: detail.tool_call_id,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct BudgetSplitDetailDto {
+    pub requested: u32,
+    pub executed: u32,
+    pub deferred: u32,
+}
+
+impl From<BudgetSplitDetail> for BudgetSplitDetailDto {
+    fn from(detail: BudgetSplitDetail) -> Self {
+        Self {
+            requested: detail.requested,
+            executed: detail.executed,
+            deferred: detail.deferred,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct BranchDetailDto {
+    pub has_tool_calls: bool,
+    pub wrap_up: bool,
+    pub tool_call_count: u32,
+}
+
+impl From<BranchDetail> for BranchDetailDto {
+    fn from(detail: BranchDetail) -> Self {
+        Self {
+            has_tool_calls: detail.has_tool_calls,
+            wrap_up: detail.wrap_up,
+            tool_call_count: detail.tool_call_count,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct PersistDetailDto {
+    pub rows: u32,
+    pub message_ids: Vec<String>,
+}
+
+impl From<PersistDetail> for PersistDetailDto {
+    fn from(detail: PersistDetail) -> Self {
+        Self {
+            rows: detail.rows,
+            message_ids: detail.message_ids,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct MiddlewareVerdictDto {
+    pub middleware: String,
+    pub action: MiddlewareActionDto,
+    pub reason: Option<String>,
+}
+
+impl From<MiddlewareVerdict> for MiddlewareVerdictDto {
+    fn from(verdict: MiddlewareVerdict) -> Self {
+        Self {
+            middleware: verdict.middleware,
+            action: verdict.action.into(),
+            reason: verdict.reason,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct AfterToolDetailDto {
+    pub verdicts: Vec<MiddlewareVerdictDto>,
+}
+
+impl From<AfterToolDetail> for AfterToolDetailDto {
+    fn from(detail: AfterToolDetail) -> Self {
+        Self {
+            verdicts: detail.verdicts.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct AfterIterationDetailDto {
+    pub nudges: Vec<String>,
+    pub next_iteration: u32,
+}
+
+impl From<AfterIterationDetail> for AfterIterationDetailDto {
+    fn from(detail: AfterIterationDetail) -> Self {
+        Self {
+            nudges: detail.nudges,
+            next_iteration: detail.next_iteration,
+        }
+    }
+}
+
+/// 按节点分派的 detail 闭集（I55 §4.4）：`admit` / `prepare` 无 detail。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum AgentNodeDetailDto {
+    Brake(BrakeDetailDto),
+    Ladder(LadderDetailDto),
+    Model(ModelDetailDto),
+    Pipeline(PipelineDetailDto),
+    BudgetSplit(BudgetSplitDetailDto),
+    Branch(BranchDetailDto),
+    Persist(PersistDetailDto),
+    AfterTool(AfterToolDetailDto),
+    AfterIteration(AfterIterationDetailDto),
+}
+
+impl From<AgentNodeDetail> for AgentNodeDetailDto {
+    fn from(detail: AgentNodeDetail) -> Self {
+        match detail {
+            AgentNodeDetail::Brake(detail) => Self::Brake(detail.into()),
+            AgentNodeDetail::Ladder(detail) => Self::Ladder(detail.into()),
+            AgentNodeDetail::Model(detail) => Self::Model(detail.into()),
+            AgentNodeDetail::Pipeline(detail) => Self::Pipeline(detail.into()),
+            AgentNodeDetail::BudgetSplit(detail) => Self::BudgetSplit(detail.into()),
+            AgentNodeDetail::Branch(detail) => Self::Branch(detail.into()),
+            AgentNodeDetail::Persist(detail) => Self::Persist(detail.into()),
+            AgentNodeDetail::AfterTool(detail) => Self::AfterTool(detail.into()),
+            AgentNodeDetail::AfterIteration(detail) => Self::AfterIteration(detail.into()),
+        }
+    }
+}
+
+/// 单条节点事件（I55 §4.2 全形）。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentNodeEventDto {
+    pub turn_id: String,
+    pub conversation_id: String,
+    pub seq: u32,
+    pub node: AgentNodeDto,
+    pub iteration: u32,
+    pub state: NodeStateDto,
+    /// `true` = 状态迁移（重置 `sinceMs`）；`false` = 过程事实（只进时间线）。
+    pub transition: bool,
+    pub at_ms: u64,
+    pub agent_id: String,
+    pub parent_turn_id: Option<String>,
+    pub detail: Option<AgentNodeDetailDto>,
+}
+
+impl From<AgentNodeEvent> for AgentNodeEventDto {
+    fn from(event: AgentNodeEvent) -> Self {
+        Self {
+            turn_id: event.turn_id,
+            conversation_id: event.conversation_id,
+            seq: event.seq,
+            node: event.node.into(),
+            iteration: event.iteration,
+            state: event.state.into(),
+            transition: event.transition,
+            at_ms: event.at_ms,
+            agent_id: event.agent_id,
+            parent_turn_id: event.parent_turn_id,
+            detail: event.detail.map(Into::into),
+        }
+    }
 }

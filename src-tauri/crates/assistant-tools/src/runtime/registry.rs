@@ -1,6 +1,10 @@
 use dashmap::DashMap;
-use std::sync::Arc;
+use std::collections::HashSet;
+use std::sync::{Arc, Mutex, OnceLock};
 
+use async_trait::async_trait;
+
+use crate::catalog::{CatalogEntry, ToolCatalog};
 use crate::definition::{ToolDefinition, ToolDescriptor};
 use crate::r#trait::{Tool, ToolTier};
 
@@ -155,15 +159,111 @@ impl ToolRegistry {
                 name: registered.name.clone(),
                 description,
                 tier: registered.tool.tier(),
+                companion_of: registered.tool.companion_of().map(str::to_string),
             });
         }
         descriptors
+    }
+
+    /// 配置路径的身份过滤：伴随工具（`Tool::companion_of`）没有独立身份，
+    /// 白名单里的伴随 id 一律排除（I58 §3.6）。
+    ///
+    /// 只做减法，且只问「这个 id 是不是伴随工具」，**不查它的基工具是否在名单里**——
+    /// 准入是运行时事实（`available_tool_names`），配置域内不表达 `callable`。
+    /// 因此没有「禁用基工具而伴随残留」的顺序问题：伴随项从未进入候选集。
+    /// 未知 id 原样保留，由调用方的层级 / 受众过滤静默丢弃。
+    ///
+    /// 被排除的伴随 id 会记一条告警（每 id 每进程一次）：配置里写了它**不会**让它可用，
+    /// 而这件事本身没有别的可观测面——面板上的从属行不产生勾选框，用户从旧配置导入
+    /// 或手改 `config.toml` 时，静默丢弃只会让人以为生效了（§9 L18）。
+    pub fn exclude_companions(&self, enabled: &HashSet<String>) -> HashSet<String> {
+        enabled
+            .iter()
+            .filter(|id| match self.tools.get(id.as_str()) {
+                Some(entry) => match entry.value().tool.companion_of() {
+                    Some(base) => {
+                        warn_ignored_companion(id, base);
+                        false
+                    }
+                    None => true,
+                },
+                None => true,
+            })
+            .cloned()
+            .collect()
     }
 }
 
 impl Default for ToolRegistry {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// 已告警过的伴随 id（进程级去重）：配置里的脏数据每轮都会走到
+/// `exclude_companions`，不去重会把同一条告警刷满日志。
+fn warned_companions() -> &'static Mutex<HashSet<String>> {
+    static WARNED: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+    WARNED.get_or_init(|| Mutex::new(HashSet::new()))
+}
+
+fn warn_ignored_companion(id: &str, base: &str) {
+    let mut warned = match warned_companions().lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    if warned.insert(id.to_string()) {
+        log::warn!(
+            "tool '{}' is a companion of '{}' and has no independent identity; \
+             ignoring its whitelist entry (I58 §3.6)",
+            id,
+            base
+        );
+    }
+}
+
+/// `request_tool` 的目录来源（I58 §3.1）：注册表是唯一实现。
+///
+/// 只列 `audience.agent` 的工具——ToolBox 专属工具模型看不到、也调不到，
+/// 把它们写进清单只会诱导无效调用。不按 `tier` 过滤：层级上限由白名单解析负责，
+/// 清单是「注册表事实」而不是「本轮可用集」（后者来自 `available_tool_names`）。
+#[async_trait]
+impl ToolCatalog for ToolRegistry {
+    async fn entries(&self) -> Vec<CatalogEntry> {
+        let selected = {
+            let mut collected: Vec<RegisteredTool> = self
+                .tools
+                .iter()
+                .filter(|entry| entry.value().tool.audience().agent)
+                .map(|entry| entry.value().clone())
+                .collect();
+            collected.sort_by(|left, right| left.id.cmp(&right.id));
+            collected
+        };
+
+        let mut entries = Vec::with_capacity(selected.len());
+        for registered in selected {
+            let manual = match registered.tool.manual() {
+                Some(manual) => manual.to_string(),
+                None => match registered.tool.description().await {
+                    Ok(description) => description,
+                    Err(error) => {
+                        log::warn!(
+                            "tool '{}' manual unavailable, falling back to empty: {}",
+                            registered.id,
+                            error
+                        );
+                        String::new()
+                    }
+                },
+            };
+            entries.push(CatalogEntry {
+                id: registered.id.clone(),
+                name: registered.name.clone(),
+                manual,
+            });
+        }
+        entries
     }
 }
 

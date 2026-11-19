@@ -85,6 +85,8 @@ async fn grant_encoded_receipt(
                 tool_call_id: "call-read".to_string(),
                 encoding: encoding.to_string(),
                 has_bom,
+                truncated_lines: 0,
+                line_window_max_chars: 2000,
             },
         )
         .await;
@@ -829,6 +831,169 @@ async fn footer_copied_into_old_string_is_diagnosed() {
         &std::fs::read(dir.path().join("gbk.txt")).unwrap()[..],
         expected.as_ref()
     );
+}
+
+#[tokio::test]
+async fn long_lines_footer_copied_into_old_string_is_diagnosed() {
+    let dir = tempfile::tempdir().unwrap();
+    let receipts = store();
+    let ctx = context(dir.path(), Some("session-1"));
+    write_fixture(dir.path(), "plain.txt", "alpha\nbeta\n");
+    grant_receipt(&receipts, dir.path(), "plain.txt", Some("session-1")).await;
+
+    let result = tool(receipts)
+        .execute(
+            &json!({
+                "path": "plain.txt",
+                "old_string": "beta\n[long-lines: 1 lines cut at 2000 chars]",
+                "new_string": "gamma"
+            }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+    assert!(!result.ok);
+    let error = result.error.unwrap_or_default();
+    assert!(error.contains("[long-lines: 1 lines cut at 2000 chars]"));
+    assert!(error.contains("not part of the file"));
+    assert_eq!(read(&dir.path().join("plain.txt")), "alpha\nbeta\n");
+}
+
+/// 模拟「本次 `read` 有行被切」的回执（I57 §3.5），供 G8 闸门用例使用。
+async fn grant_truncated_receipt(
+    receipts: &Arc<dyn ReadReceiptStore>,
+    root: &Path,
+    name: &str,
+    session: Option<&str>,
+    truncated_lines: usize,
+    width: usize,
+) {
+    let resolved = assistant_tools::os::path::canonicalize_lenient(&root.join(name))
+        .expect("canonical fixture");
+    let revision = assistant_tools::os::agent_read::file_revision(&resolved).unwrap();
+    let mut receipt = assistant_tools::storage::ReadReceipt::utf8(revision, "call-read");
+    receipt.truncated_lines = truncated_lines;
+    receipt.line_window_max_chars = width;
+    receipts
+        .record(
+            ReadReceiptKey {
+                session_id: session.map(str::to_string),
+                path: resolved.display().to_string(),
+            },
+            receipt,
+        )
+        .await;
+}
+
+/// G8：回执报告有行被切时，`edit` 必须在写入前拒绝，且文件逐字节不变。
+///
+/// 闸门只读回执、不重扫文件——被切掉的尾部无法与 `old_string` 逐字校验，
+/// 因此任何 `edit` 都是盲写；逃生路径是先用 `grep` 定位再按行号读。
+#[tokio::test]
+async fn a_receipt_with_cut_lines_blocks_editing_without_touching_the_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let receipts = store();
+    let ctx = context(dir.path(), Some("session-1"));
+    let original = format!("alpha\n{}\n", "x".repeat(5000));
+    write_fixture(dir.path(), "wide.txt", &original);
+    grant_truncated_receipt(
+        &receipts,
+        dir.path(),
+        "wide.txt",
+        Some("session-1"),
+        1,
+        2000,
+    )
+    .await;
+
+    let result = tool(receipts)
+        .execute(
+            &json!({ "path": "wide.txt", "old_string": "alpha", "new_string": "beta" }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+    assert!(!result.ok);
+    let error = result.error.unwrap_or_default();
+    assert!(error.contains("was read with 1 line(s) cut at 2000 chars"));
+    assert!(error.contains("cannot be verified before editing"));
+    assert!(error.contains("'grep'"), "逃生路径只写 grep: {error:?}");
+    assert!(
+        !error.contains("super_read"),
+        "A 侧不得提到 I58 的工具名: {error:?}"
+    );
+    assert_eq!(
+        read(&dir.path().join("wide.txt")),
+        original,
+        "闸门必须在 apply_edit 之前收口，文件逐字节不变"
+    );
+}
+
+/// 闸门不误伤：`truncated_lines = 0` 的回执上 `edit` 仍成功。
+#[tokio::test]
+async fn the_cut_line_gate_does_not_fire_for_complete_reads() {
+    let dir = tempfile::tempdir().unwrap();
+    let receipts = store();
+    let ctx = context(dir.path(), Some("session-1"));
+    write_fixture(dir.path(), "plain.txt", "alpha\nbeta\n");
+    grant_truncated_receipt(
+        &receipts,
+        dir.path(),
+        "plain.txt",
+        Some("session-1"),
+        0,
+        2000,
+    )
+    .await;
+
+    let result = tool(receipts)
+        .execute(
+            &json!({ "path": "plain.txt", "old_string": "beta", "new_string": "gamma" }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+    assert!(result.ok, "{:?}", result.error);
+    assert_eq!(read(&dir.path().join("plain.txt")), "alpha\ngamma\n");
+}
+
+/// N11 语义不变：`revision` 校验仍在闸门之前——文件已变时报修订号错误，不报切行错误。
+#[tokio::test]
+async fn the_revision_check_still_precedes_the_cut_line_gate() {
+    let dir = tempfile::tempdir().unwrap();
+    let receipts = store();
+    let ctx = context(dir.path(), Some("session-1"));
+    write_fixture(dir.path(), "wide.txt", "alpha\n");
+    grant_truncated_receipt(
+        &receipts,
+        dir.path(),
+        "wide.txt",
+        Some("session-1"),
+        1,
+        2000,
+    )
+    .await;
+    write_fixture(dir.path(), "wide.txt", "alpha\nbeta\n");
+
+    let result = tool(receipts)
+        .execute(
+            &json!({ "path": "wide.txt", "old_string": "beta", "new_string": "gamma" }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+    assert!(!result.ok);
+    let error = result.error.unwrap_or_default();
+    assert!(
+        error.contains("changed after it was last read"),
+        "修订号校验必须先于切行闸门: {error:?}"
+    );
+    assert!(!error.contains("cut at"));
+    assert_eq!(read(&dir.path().join("wide.txt")), "alpha\nbeta\n");
 }
 
 #[tokio::test]

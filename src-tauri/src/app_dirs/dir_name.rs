@@ -9,6 +9,7 @@
 pub const DATABASE: &str = "assistant.db";
 pub const ATTACHMENTS: &str = "attachments";
 pub const TOOL_RESULTS: &str = "tool-results";
+pub const TOOL_INDEX: &str = "tool-index";
 pub const MASCOT_ASSETS: &str = "mascot-assets";
 pub const LOGS: &str = "logs";
 pub const CRASHES: &str = "crashes";

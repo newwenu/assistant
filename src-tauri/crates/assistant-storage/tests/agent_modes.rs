@@ -137,6 +137,7 @@ fn builtin_seed_tool_config_matches_defaults() {
     .unwrap();
     assert_eq!(agent_config, BUILTIN_AGENT_TOOL_CONFIG);
     assert_eq!(agent_config.approval_level, ApprovalLevel::DangerousOnly);
+    assert!(agent_config.enabled_tools.is_empty());
 }
 
 #[test]

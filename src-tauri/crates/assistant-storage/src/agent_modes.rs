@@ -189,6 +189,10 @@ impl Default for ModeToolConfig {
 ///
 /// 这是内置模式的**业务种子**，与 `ModeToolConfig::default()`（缺省兜底）语义不同。
 /// 工具装配初始值只在此处定义：协议层只有契约缺省，app 层不做任何默认值。
+///
+/// 元工具 `request_tool` **不**在此强制注入：它没有身份特殊性，与普通工具一样
+/// 「勾了才注入」（I58 §3.6）。种子若默认塞它，等于替用户做了一次勾选，
+/// 既破了 deny-by-default，也让「用户取消勾选」变成看不见的空操作。
 pub const BUILTIN_AGENT_TOOL_CONFIG: ModeToolConfig = ModeToolConfig {
     max_tool_tier: ToolTier::Sandbox,
     approval_level: ApprovalLevel::DangerousOnly,

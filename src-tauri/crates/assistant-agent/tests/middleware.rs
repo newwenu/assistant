@@ -54,7 +54,7 @@ async fn run_after_tool(
         argument_fingerprint: fingerprint,
         scope,
     };
-    chain.after_tool(&mut view, &ctx).await
+    chain.after_tool(&mut view, &ctx).await.0
 }
 
 #[test]
@@ -310,7 +310,7 @@ async fn before_model_microcompacts_only_older_tool_bodies() {
         max_tokens: 1_000,
         is_wrap_up_call: false,
     };
-    let out = chain.before_model(&mut req, &ctx).await;
+    let out = chain.before_model(&mut req, &ctx).await.0;
     assert_eq!(out, MiddlewareOutcome::Continue);
     assert!(req.messages[1]
         .content

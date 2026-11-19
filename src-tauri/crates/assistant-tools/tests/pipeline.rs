@@ -221,10 +221,22 @@ fn call(id: &str, name: &str) -> ToolCall {
 
 /// 取出 `Finished` 事件里下发给 wire 的正文（与 tool 行 `content` 同源）。
 fn finished_text(sink: &InMemoryEventSink) -> String {
-    match &sink.events()[1] {
-        PipelineEvent::Finished { assistant_text, .. } => assistant_text.clone(),
+    match stateful_events(sink)
+        .into_iter()
+        .find(|event| matches!(event, PipelineEvent::Finished { .. }))
+    {
+        Some(PipelineEvent::Finished { assistant_text, .. }) => assistant_text,
         other => panic!("expected Finished event, got {other:?}"),
     }
+}
+
+/// 只看三态（`Started` / `Finished` / `Failed`）：`StageEntered` 是节点事实，
+/// 数量随阶段边界变化，不参与「事件顺序」断言（I55 §4.7 / O8）。
+fn stateful_events(sink: &InMemoryEventSink) -> Vec<PipelineEvent> {
+    sink.events()
+        .into_iter()
+        .filter(|event| !matches!(event, PipelineEvent::StageEntered { .. }))
+        .collect()
 }
 
 #[tokio::test]
@@ -427,7 +439,7 @@ async fn approved_call_runs_and_reports_events_in_order() {
     assert_eq!(h.executed.load(Ordering::SeqCst), 1);
     assert!(outcomes[0].persisted.is_none(), "small result stays inline");
 
-    let events = sink.events();
+    let events = stateful_events(&sink);
     assert_eq!(events.len(), 2);
     assert!(matches!(events[0], PipelineEvent::Started { .. }));
     assert!(matches!(events[1], PipelineEvent::Finished { .. }));
@@ -443,7 +455,7 @@ async fn failed_call_reports_failed_event() {
         .execute(&[call("c1", "probe")], &ctx(), &allow_all(), &sink)
         .await;
 
-    let events = sink.events();
+    let events = stateful_events(&sink);
     assert_eq!(events.len(), 2);
     match &events[1] {
         PipelineEvent::Failed {
@@ -640,7 +652,7 @@ async fn concurrent_batch_preserves_original_order() {
     assert_eq!(outcomes[1].tool_call_id, "c2");
     assert_eq!(outcomes[0].result.data.as_ref().unwrap()["who"], "slow");
 
-    let events = sink.events();
+    let events = stateful_events(&sink);
     assert_eq!(events.len(), 4);
     assert!(matches!(events[0], PipelineEvent::Started { .. }));
     assert!(matches!(events[1], PipelineEvent::Started { .. }));

@@ -4,6 +4,7 @@ use serde_json::Value;
 use std::path::{Path, PathBuf};
 
 use crate::context::ToolUseContext;
+use crate::os::footer;
 use crate::os::path;
 use crate::os::scope;
 use crate::os::walk;
@@ -153,11 +154,17 @@ impl Tool for AgentGlobTool {
             "(no matches)".to_string()
         } else if truncated {
             format!(
-                "{}\n[truncated: showing {} of {} items; narrow the pattern or pass a more \
-                 specific 'path']",
+                "{}\n{}",
                 returned.join("\n"),
-                returned.len(),
-                total
+                footer::render(
+                    footer::TRUNCATED,
+                    format!(
+                        "showing {} of {} items; narrow the pattern or pass a more specific \
+                         'path'",
+                        returned.len(),
+                        total
+                    )
+                )
             )
         } else {
             returned.join("\n")

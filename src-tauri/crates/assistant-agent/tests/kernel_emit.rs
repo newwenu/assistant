@@ -4,6 +4,7 @@ mod common;
 
 use std::sync::Arc;
 
+use assistant_agent::agent::node_event::{AgentNodeEvent, ROOT_AGENT_ID};
 use assistant_agent::agent::tool_event::ToolEvent;
 use assistant_agent::kernel::ports::test_doubles::{RecordingSink, ScriptedResponse};
 use assistant_agent::kernel::{OnBusy, TurnEmitter, TurnEvent, TurnSpec, TurnTasks};
@@ -21,6 +22,7 @@ fn event_turn_id(event: &TurnEvent) -> Option<&str> {
         | TurnEvent::Delta { turn_id, .. }
         | TurnEvent::PhaseChanged { turn_id, .. }
         | TurnEvent::Tool(ToolEvent { turn_id, .. })
+        | TurnEvent::Node(AgentNodeEvent { turn_id, .. })
         | TurnEvent::CompactionStarted { turn_id }
         | TurnEvent::CompactionFinished { turn_id, .. }
         | TurnEvent::Terminated { turn_id, .. } => Some(turn_id),
@@ -62,7 +64,14 @@ async fn emitter_user_message_confirmed_is_conversation_scoped() {
     let sink = Arc::new(RecordingSink::new());
     let tasks = Arc::new(TurnTasks::new());
     let (turn_id, _token) = tasks.begin("conv-1", OnBusy::Replace).expect("begin");
-    let emitter = TurnEmitter::new(sink.clone(), tasks.clone(), "conv-1", turn_id);
+    let emitter = TurnEmitter::new(
+        sink.clone(),
+        tasks.clone(),
+        "conv-1",
+        turn_id,
+        ROOT_AGENT_ID,
+        None,
+    );
 
     emitter.user_message_confirmed("user-1");
 

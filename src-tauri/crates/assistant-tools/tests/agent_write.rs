@@ -69,6 +69,8 @@ async fn record_read_receipt(
                 tool_call_id: "call-read".to_string(),
                 encoding: encoding.to_string(),
                 has_bom,
+                truncated_lines: 0,
+                line_window_max_chars: 2000,
             },
         )
         .await;

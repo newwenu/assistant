@@ -5,6 +5,7 @@
 
 use assistant_providers::types::{ChatMessage, MessageRole};
 
+use crate::agent::node_event::{AgentNode, AgentNodeDetail, NodeState, PersistDetail};
 use crate::agent::round_executor::{ToolExecResult, TurnRunCtx};
 use crate::agent::tool_call::FinalizedToolCall;
 use crate::kernel::{
@@ -16,6 +17,45 @@ use super::RoundState;
 
 fn is_current(ctx: &TurnRunCtx<'_>) -> bool {
     ctx.generation.is_current()
+}
+
+/// ⑥ 的 `running`：每迭代仅一条（I55 §4.6 第 4 条），重复落库只重复终态。
+///
+/// 只在真正进入写入窗口后调用（代际不符时 `persist_row` 提前返回，不算「已开始落库」）。
+fn assistant_running(state: &mut RoundState, ctx: &TurnRunCtx<'_>) {
+    if state.persist_running_emitted {
+        return;
+    }
+    state.persist_running_emitted = true;
+    ctx.observer.node(
+        AgentNode::PersistAssistant,
+        state.iteration,
+        NodeState::Running,
+        true,
+        None,
+    );
+}
+
+/// ⑥ 的终态：**每次落库一条**（I55 O2 的唯一例外，§4.6 第 4 条）。
+fn assistant_terminal(state: &RoundState, ctx: &TurnRunCtx<'_>, msg_id: Option<&str>, ok: bool) {
+    let detail = PersistDetail {
+        rows: u32::from(ok),
+        message_ids: msg_id
+            .filter(|_| ok)
+            .map(|id| vec![id.to_string()])
+            .unwrap_or_default(),
+    };
+    ctx.observer.node(
+        AgentNode::PersistAssistant,
+        state.iteration,
+        if ok {
+            NodeState::Finished
+        } else {
+            NodeState::Error
+        },
+        true,
+        Some(AgentNodeDetail::Persist(detail)),
+    );
 }
 
 pub(super) async fn ensure_row(
@@ -42,6 +82,7 @@ pub(super) async fn ensure_row(
     Ok(msg_id)
 }
 
+/// assistant 行的唯一写入口：⑥ 的 `running` / 终态都在这里发，调用点不再各自包裹。
 pub(super) async fn persist_row(
     state: &mut RoundState,
     ctx: &TurnRunCtx<'_>,
@@ -58,6 +99,31 @@ pub(super) async fn persist_row(
         );
         return Ok(());
     }
+    assistant_running(state, ctx);
+    let result = persist_row_inner(
+        state,
+        ctx,
+        content,
+        reasoning,
+        calls,
+        status,
+        start_iteration,
+    )
+    .await;
+    let msg_id = state.msg_id.clone();
+    assistant_terminal(state, ctx, Some(&msg_id), result.is_ok());
+    result
+}
+
+async fn persist_row_inner(
+    state: &mut RoundState,
+    ctx: &TurnRunCtx<'_>,
+    content: String,
+    reasoning: String,
+    calls: &[FinalizedToolCall],
+    status: MessageStatus,
+    start_iteration: u32,
+) -> Result<(), StoreError> {
     let msg_id = ensure_row(state, ctx, start_iteration).await?;
     let tokens = state.total_tokens;
     let reasoning = (!reasoning.is_empty()).then_some(reasoning.as_str());
@@ -188,13 +254,45 @@ pub(super) async fn persist_final_text(
     }
 }
 
+/// ⑪ 的 `running`：每次落库一条（结果批次每迭代通常只有一批）。
+fn tools_running(state: &RoundState, ctx: &TurnRunCtx<'_>) {
+    ctx.observer.node(
+        AgentNode::PersistTools,
+        state.iteration,
+        NodeState::Running,
+        true,
+        None,
+    );
+}
+
+fn tools_terminal(state: &RoundState, ctx: &TurnRunCtx<'_>, ids: &[String], ok: bool) {
+    ctx.observer.node(
+        AgentNode::PersistTools,
+        state.iteration,
+        if ok {
+            NodeState::Finished
+        } else {
+            NodeState::Error
+        },
+        true,
+        Some(AgentNodeDetail::Persist(PersistDetail {
+            rows: ids.len() as u32,
+            message_ids: ids.to_vec(),
+        })),
+    );
+}
+
+/// 返回本次落库的行 id（`rows = ids.len()` 的唯一来源）。
 pub(super) async fn append_tool_results(
     state: &mut RoundState,
     ctx: &TurnRunCtx<'_>,
     results: Vec<ToolExecResult>,
-) -> Result<(), StoreError> {
+) -> Result<Vec<String>, StoreError> {
+    // 空批次仍发一对事件：否则本迭代的 ⑪ 会留一个悬空格子（I55 O2）。
     if results.is_empty() {
-        return Ok(());
+        tools_running(state, ctx);
+        tools_terminal(state, ctx, &[], true);
+        return Ok(Vec::new());
     }
     if !is_current(ctx) {
         log::warn!(
@@ -219,8 +317,10 @@ pub(super) async fn append_tool_results(
         if let Err(err) = ctx.store.fill_tool_messages(reqs).await {
             log::warn!("fill tool rows failed: {err}");
         }
-        return Ok(());
+        // 代际已失效：事件会在 `TurnEmitter::dispatch` 处被静默丢弃，不必发（§4.8 第 1 条）。
+        return Ok(Vec::new());
     }
+    tools_running(state, ctx);
     // 整批一次性落库：逐条提交时进程若在批中途退出，就会留下「有调用、无结果」的孤立行。
     let mut reqs = Vec::with_capacity(results.len());
     for result in &results {
@@ -245,15 +345,18 @@ pub(super) async fn append_tool_results(
             iteration: state.iteration,
         });
     }
-    match ctx.store.append_tool_messages(reqs).await {
+    let result = ctx.store.append_tool_messages(reqs).await;
+    match result {
         Ok(ids) => {
             if let Some(last) = ids.last() {
                 state.last_row_id = last.clone();
             }
-            Ok(())
+            tools_terminal(state, ctx, &ids, true);
+            Ok(ids)
         }
         Err(err) => {
             log::error!("append tool rows failed: {err}");
+            tools_terminal(state, ctx, &[], false);
             Err(err)
         }
     }
