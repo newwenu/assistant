@@ -3,11 +3,11 @@
 | 项 | 值 |
 |---|---|
 | 状态 | 草稿（P14 的 C5–C7 实施规格；任务级进度只在 [I52 tasklist](./I52-shell-sandbox-tasklist.md) 维护） |
-| 日期 | 2026-11-18 |
+| 日期 | 2026-11-19 |
 | 阶段 | P14（工具能力轴；见 [I38 roadmap](./I38-agent-roadmap.md) §2 / §3） |
 | 交接 | 本文接管 [I52](./I52-shell-sandbox-spec.md) 原 §5–§13 的 `shell` 工具职能。I52 保留阶段定义、术语与分层（两根轴 / 三层职责 / 封闭词汇）与沙箱指针，**不再复述工具细节**；两份文档的分工见本文 §2.3 |
 | 关联 | [I52](./I52-shell-sandbox-spec.md)（阶段规格与术语唯一来源）、I53（已归档）（沙箱准备：后端抽象 / 三平台实现 / 探测收口）、[I52-Ext](./I52-ext-background-task.md)（后台任务改动面，未立项）、[I38g](./I38g-agent-approval-advisor-spec.md)（P10 顾问与三个接入点）、[I38f](./I38f-agent-subagent-spec.md)（子代理输出域）、I18 design §3.17 / I50（均已归档，分别给检测分层与审计词表）、[OSCALLDESIGN](../designed/OSCALLDESIGN.md)（Shell 洋葱模型）、[agent-sandbox-reference-analysis](./agent-sandbox-reference-analysis.md)（Codex / OpenHuman / DSH 实现细节） |
-| 影响范围 | `assistant-tools`：`os/tools/agent_shell/`（新增）、`os/mod.rs`（`register_shell_tools`）、`runtime/storage.rs`（sink，已落地）、`runtime/compact`（信封分支）、`runtime/policy.rs`（`readToolOutput` 规则，已落地）、`runtime/gateway`（键与求值顺序，已落地）、`contract/trait.rs`（`sandbox_enforcement`，已落地）、`os/shared/path/resolve.rs`（`resolve_readable`，已落地）；`src-tauri/src/tool_setup.rs`（注册门禁，分支已就位）；前端 i18n 与模式预置 |
+| 影响范围 | `assistant-tools`：`os/tools/agent_shell/`（新增；`spawn.rs` 内做 `program` 候选解析，复用 `sandbox/windows/mod.rs` 已有的 `is_cmd_program`，**不改沙箱后端**）、`os/mod.rs`（`register_shell_tools`）、`runtime/storage.rs`（sink，已落地）、`runtime/compact`（信封分支）、`runtime/policy.rs`（`readToolOutput` 规则，已落地）、`runtime/gateway`（键与求值顺序，已落地）、`contract/trait.rs`（`sandbox_enforcement`，已落地）、`os/shared/path/resolve.rs`（`resolve_readable`，已落地）；`src-tauri/src/tool_setup.rs`（注册门禁，分支已就位）；结果 `data.sandbox.shell` 走契约生成（`npm run contract:gen`）；前端 i18n 与模式预置 |
 
 > 一句话：把 `shell` 从「一个能跑命令的工具」写成「一份可逐条验收的契约」——身份、输入、审批、执行、输出、失败、文案七个面各有唯一判据，
 > 且每个判据都能落到一个具体文件与一条具体断言上。
@@ -315,13 +315,34 @@ grant_store.is_granted(key)
 
 | 字段 | 取值 | 约束 |
 |---|---|---|
-| `program` | 平台固定 shell 的**绝对路径**（不查 `PATH`） | Windows `%SystemRoot%\System32\cmd.exe`；Unix `/bin/sh` |
+| `program` | 平台固定 shell 的**绝对路径**，由**有序候选 + 存在性校验**解析（见下） | Windows `%SystemRoot%\System32\cmd.exe` → `%COMSPEC%`；Unix `/bin/sh` |
 | `args` | Windows `["/d", "/C", command]`；Unix `["-c", command]` | `/C` 之后是**一段脚本**而非参数，引号与元字符由 shell 自己解析 |
 | `cwd` | 已 canonicalize 且落在 `writable_root` 内 | 传给子进程前剥掉 `\\?\` / `\\?\UNC\` 前缀（否则 `cmd.exe` 当成 UNC 起始，回退到 `Windows` 目录） |
 | `writable_root` | 会话解析结果 | **不可**由模型输入指定 |
 | `env` | §7.4 的白名单 + 强制注入 | 不做用户自定义 env 入口 |
 | `network` | P14 恒 `false` | 不代表「命令不能联网」，见 §8.4 |
 | `stdin` | 恒 `None` | 无 stdin 通道 |
+
+**`program` 的解析**（有序候选，任一步失败即 fail-closed）：
+
+| 步 | Windows | Unix |
+|---|---|---|
+| 1 | `%SystemRoot%\System32\cmd.exe`（`SystemRoot` 缺失时按 `C:\Windows`） | `/bin/sh` |
+| 2 | `%COMSPEC%`——**仅当 basename 为 `cmd.exe`**（大小写不敏感）时采用 | — |
+| 3 | 候选全不存在 → 并入探测结论判为不可用：走 §3.2 规则 1 的同一道闸，`shell` **不注册**，不降级为裸名 | 同左 |
+
+**为什么是「候选」而不是「单一常量」**：三处参考实现都用有序候选（DSH `candidatePwshPaths`、Codex `get_shell_path` 的 fallback 列表、OpenHuman `bash_path()`），没有一家把 shell 路径写成编译期常量（§16.4）。本文采纳的是**解析方式**，不是它们的 shell 种类。收益只有两条，且都不涉及隔离强度：
+
+| 收益 | 说明 |
+|---|---|
+| 失败前移 | cmd 缺失时是「工具未注册」，而不是用户批准后 `spawn_failed` |
+| 环境异常兜底 | 父进程 `SystemRoot` 被裁剪 / 篡改时，`COMSPEC` 是独立来源 |
+
+**三条约束必须同时成立**，否则原不变式（§7.7）会被绕过：
+
+1. **候选集只含系统目录与 `COMSPEC`，不遍历 `PATH`**：裸名交给 `CreateProcessW` 时搜索顺序第一项是**应用自身目录**，比 `PATH` 更容易被工作区或应用目录里的同名文件顶替；
+2. **`COMSPEC` 必须校验 basename**：它是用户可改写的环境变量，不校验等于「shell 种类可被环境变量替换」，与 §4.1「可执行程序不接受模型输入」并列的硬约束形同失效。沙箱后端已有 `is_cmd_program`（basename 大小写不敏感比较，`sandbox/windows/mod.rs`），解析处直接复用，不写第二份判定；
+3. **解析结果不进审批键**：键仍是整串命令行 + `cwd` + `enforcement`（§6.1 / §6.2）；解析来源（`system32` / `comspec`）只进 `data.sandbox.shell`（§8.4）与日志，**不进审批卡**（卡片不写绝对路径，§6.5）。
 
 ### 7.4 环境变量
 
@@ -388,9 +409,10 @@ grant_store.is_granted(key)
 
 ### 7.7 不做
 
-不做 `PATH` 查找（`program` 是绝对路径）、不写脚本临时文件、不注入 `cd` 前缀（用 `cwd` 字段）、**不 source 用户 profile / 非 login shell**、不分配 PTY、不提供 stdin 写入通道、不做 `yield_time_ms` 式中途返回。
+不做 `PATH` 遍历（`program` 只取系统目录与 `COMSPEC` 候选，§7.3；结果仍是绝对路径）、不写脚本临时文件、不注入 `cd` 前缀（用 `cwd` 字段）、**不 source 用户 profile / 非 login shell**、不分配 PTY、不提供 stdin 写入通道、不做 `yield_time_ms` 式中途返回。
 
 - **不 source profile**：参考实现（Codex `shell_snapshot`）会抓取并 source 用户 shell 配置；本阶段**不做**——它让「同一命令在不同机器上行为不同」，与「命令效果只由沙箱与命令文本决定」冲突，且抓取结果还要落盘、还要随配置变更失效。代价是 `PATH` 之外的别名 / 函数不可用，由白名单环境变量与绝对路径兜底；
+- **不跟随用户默认 shell**：Codex 探测 `$SHELL`（Windows 上探测 PowerShell），并允许模型传 `shell` / `login`（`login` 默认 `true`）；本文**不采纳**——shell 种类随机器漂移会让「同一条命令文本在不同机器上语法不同」，模型无法预知该写 cmd 还是 PowerShell，审批键也无法描述执行体。代价是 Windows 上只有 cmd 方言，由工具描述（§11.2 第 3 条）与 `data.sandbox.shell` 回显兜底；
 - **Windows 固定 `cmd.exe` 且带 `/d`**：`/d` 关闭 `HKCU\Software\Microsoft\Command Processor\AutoRun`——否则每次调用都会先执行注册表里配置的一段命令，污染输出并改变行为。由此 **Windows 上的命令语法是 `cmd` 而非 PowerShell**（`Get-ChildItem` / `$env:X` 不可用），这是工具描述必须写明的硬约束（§11.2）。独立 `pwsh` 工具列为 S1 候选。
 
 ---
@@ -477,6 +499,7 @@ pub trait ToolResultSink: Send {
   "outputEncoding": "utf8",
   "sandbox": {
     "backend": "landlock",
+    "shell": "sh",
     "enforcement": "full",
     "network": false,
     "fsRead": true,
@@ -485,13 +508,16 @@ pub trait ToolResultSink: Send {
 }
 ```
 
-`sandbox` 里三个布尔是**本次调用的真实边界**，不是注册期结论的复述：
+`sandbox` 里三个布尔是**本次调用的真实边界**，不是注册期结论的复述；`shell` 是本次执行的方言标签：
 
 | 字段 | 含义 | 来源 |
 |---|---|---|
 | `network` | 命令**能否**联网 | `SandboxPlan.network` 与后端 `missing` 求交——Windows / Landlock ABI<4 恒 `false`（边界不存在，命令实际可联网） |
 | `fsRead` | 读侧是否有隔离 | 同上（Windows 恒 `false`：可读任意用户可读文件） |
 | `denied` | 本次是否被沙箱拒绝 | §8.5 |
+| `shell` | 本次实际执行的 shell **种类**（`cmd` / `sh`），不是路径 | `SandboxPlan.program` 的解析结果（§7.3） |
+
+`shell` 是**诊断字段**，唯一用途是让模型在命令失败后能区分「方言不对」与「沙箱拒绝 / 路径不存在」——工具描述（§11.2 第 3 条）只能事前告知，模型拿到 stderr 后仍需要一条事后证据。三条约束：只写种类（**不得**写绝对路径）、**不进审批键**（§7.3 约束 3）、不进审批卡（§6.5）。封闭集合用枚举，新增种类（如 `pwsh`）时同步契约生成。
 
 **退出状态二选一**：Unix 被信号杀死时 `exitCode = null`、`signal` 为信号号；Windows 恒有 `exitCode`、`signal` 恒 `null`。**不得**用 `-1` 冒充「没有退出码」——`-1` 是合法退出码，混淆后模型会把正常退出读成崩溃。
 
@@ -639,7 +665,7 @@ pub trait ToolResultSink: Send {
 |---|---|---|
 | 1 | **非零退出码不是工具失败**：结果里带 `exitCode`，按 stderr 纠错重试 | 模型把 `grep` 无匹配（退出 1）当工具坏了，换工具绕路 |
 | 2 | **无 stdin / 无 PTY**：交互式命令（`git commit` 不带 `-m`、`vim`、`npm login`、`ssh` 首连）会挂到超时 | 模型写出必挂的命令，白等 120s |
-| 3 | **Windows 是 `cmd` 语法**（Unix 是 `sh`）：`Get-ChildItem` / `$env:X` 不可用 | 模型按开发机惯例写 pwsh，命令直接报错 |
+| 3 | **Windows 是 `cmd` 语法**（Unix 是 `sh`）：`Get-ChildItem` / `$env:X` / `$VAR` 不可用；单引号不是引号、`;` 不是分隔符（用 `&`）、`\` 不是转义符。结果 `data.sandbox.shell` 回显本次实际种类，以它为准 | 模型按开发机惯例写 pwsh 或 bash 语法，命令或直接报错、或**静默错误**（§15 R12） |
 | 4 | **`cwd` 缺省为工作区根**，且只能落在工作区内；越界路径不会执行 | 模型猜工作目录，或写绝对路径被拒后不理解原因 |
 | 5 | **输出会落盘**，结果里给 `outputPath`，需要更多内容就用 `read` 读它（不要重复跑命令） | 模型为看全日志反复重跑同一命令 |
 | 6 | **长任务需显式调大 `timeout_ms`**（默认 120s、上限 1800000），超时会杀掉整棵进程树但保留已写输出 | 模型以为超时是环境问题，或不知道可以调大 |
@@ -659,7 +685,7 @@ os/tools/agent_shell/
                 preview_for_approval / execute（只做编排，不写 IO 细节）
   schema.rs     输入解析与校验（§4.1 / §4.2），返回结构化 ShellInput
   classify.rs   CommandClass 纯函数（§5.2）
-  spawn.rs      SandboxPlan 推导 + 环境变量块 + 命令拼装（§7.3 / §7.4）
+  spawn.rs      SandboxPlan 推导 + `program` 候选解析 + 环境变量块 + 命令拼装（§7.3 / §7.4）
   run.rs        execute 的 11 步编排、超时/取消竞争、守卫（§7.1 / §7.5）
   deny.rs       沙箱拒绝判定（§8.5，纯函数，可单测）
 ```
@@ -701,6 +727,8 @@ pub fn is_sandbox_denied(
 | 编码 | UTF-8 / GBK 双流、跨块切分（汉字被 chunk 边界切开）、`GetOEMCP` 分支 | A29 |
 | 落盘 | 空输出删文件、60 MiB 截断、stderr 保留区不被进度条挤掉 | A11 / A25 / A26 |
 | 终态 | 超时 / 取消各自保留 `outputPath` 且文件可读；正常结束补扫尾 | A12 / A28 |
+| 解析 | `program` 候选：`SystemRoot` 正常 → `System32\cmd.exe`；`SystemRoot` 缺失 → 取 `COMSPEC`；`COMSPEC` 指向非 `cmd.exe` / 两变量皆缺 → 判不可用 | A37 |
+| 回显 | `data.sandbox.shell` 只写种类、不含路径；审批卡扩展数量仍为 2（§6.5） | A38 |
 
 ---
 
@@ -741,6 +769,8 @@ pub fn is_sandbox_denied(
 | A34 | 真实边界可见 | `data.sandbox` 的 `network` / `fsRead` / `denied` 与探测 `missing` 一致：Windows `network = false`、`fsRead = false`；Linux ABI≥4 `fsRead = true` |
 | A35 | 注册门禁不得绕过 | `probe.enforcement == none` 时构造 `ShellTool` 即失败（或注册函数拒绝），且 `shell` 不出现在 `list_tool_catalog` 与模型 `tools` 中 |
 | A36 | 参数不可越权 | 模型给出 `shell` / `program` / `env` / `stdin` 字段 → schema 拒绝（`additionalProperties: false`），**不得**静默忽略 |
+| A37 | shell 解析 fail-closed | 令 `SystemRoot` 与 `COMSPEC` 同时不可用（单测注入空 env）→ 判探测不可用、`shell` 不注册；**不得**退化为裸名 `cmd` / `sh`。另测 `COMSPEC` 指向非 `cmd.exe` 时被拒 |
+| A38 | 方言回显 | `data.sandbox.shell` 为 `cmd`（Windows）/ `sh`（Unix），且**不含路径**；审批卡（§6.5）无该字段；契约生成后前端类型为封闭枚举 |
 
 ---
 
@@ -779,6 +809,8 @@ pub fn is_sandbox_denied(
 | R9 | 编码判定只在首 4 KiB 做一次：Windows 单条命令混用 OEM 码页与 UTF-8 时另一段含 `U+FFFD`；Unix 非 UTF-8 locale 一律按 UTF-8 解会乱码 | 接受：按行重判会让同一文件内容随读取时机变化（`read` 每次拿到不同结果），比偶发乱码更难排查；`outputEncoding` 让问题可观测（A29）。彻底解法（按 locale 探测 / 逐段记录编码）列为 S1 |
 | R10 | 凭据文件可读性取决于沙箱的读拒绝列表：`HOME` / `USERPROFILE` 在白名单内，`~/.npmrc` 能否被 `cat` 到完全看 `sensitive_read_deny` 是否覆盖 | Windows 读侧本就无隔离（`fsRead = false` 已暴露）。**不在本文补第二份路径黑名单**（两份列表必然漂移）；处置是审批卡按 `partial` 展示 + `fsRead` 可见，S1 评估把凭据文件纳入读拒绝列表 |
 | R11 | 调用级临时目录残留：崩溃或删除失败时 `.assistant-tmp/<call_id>` 留在工作区（`git status` 可见） | 接受：目录名以 `.` 开头、调用结束即删、删除失败只记日志；同名目录下次调用前复用并清空。彻底解法需改「单一可写根」不变式，列为 S1 |
+| R12 | 方言静默失败：模型按 bash 习惯写 `'msg'`（单引号不是引号）、`cmd1; cmd2`（`;` 不是分隔符）、`\"x\"`（`\"` 翻转引号），cmd 不报错但语义不同；pwsh 侧同理（`$VAR` 未定义时**静默展开为空**） | 接受：**不改写命令文本**（§4.3 / §6.1），因此无自动修补手段。缓解是 §11.2 第 3 条（事前）+ `data.sandbox.shell`（事后）；验收只能覆盖显式失败场景，静默错误靠 S1「方言可观测性」补 |
+| R13 | `program` 解析依赖 `SystemRoot` / `COMSPEC` 两个环境变量：两者都被裁剪或篡改时工具不可用；`COMSPEC` 指向非 `cmd.exe` 时被拒 | 接受：候选顺序固定、basename 校验、解析失败即不注册（A37）；不改用 `PATH` 探测（§7.3 约束 1） |
 
 ---
 
@@ -789,7 +821,7 @@ pub fn is_sandbox_denied(
 - [I52](./I52-shell-sandbox-spec.md)：阶段定义、术语分层与三层职责（本文引用不复述）；
 - I53（已归档）：沙箱后端抽象、三平台实现、探测收口与 `kill_tree` 语义；
 - [OSCALLDESIGN](../designed/OSCALLDESIGN.md)：Shell 洋葱模型（SafetyBelt / 结构守卫 / 环境隔离 / 命令分类），[I52 §2.3](./I52-shell-sandbox-spec.md) 与本文 §7.4 与其边界划分一致；
-- [agent-sandbox-reference-analysis](./agent-sandbox-reference-analysis.md)：Codex / OpenHuman / DSH 的实现细节；
+- [agent-sandbox-reference-analysis](./agent-sandbox-reference-analysis.md)：Codex / OpenHuman / DSH 的**沙箱后端**实现细节（后端抽象、平台选择、升级阶梯、`kill_tree`）；**shell 种类选择与方言契约**的事实只在 §16.2 与 §16.4 维护，两处不互相复述；
 - [I38g](./I38g-agent-approval-advisor-spec.md)：P10 单向顾问与失败矩阵；
 - [I38f](./I38f-agent-subagent-spec.md)：子代理输出域；
 - I50（已归档）：审计词表（本文不改）。
@@ -801,13 +833,17 @@ pub fn is_sandbox_denied(
 | 主题 | Codex | DSH | OpenHuman |
 |---|---|---|---|
 | `tool-schema` | `exec_command`：`cmd` / `workdir` / `tty` / `yield_time_ms` / `max_output_tokens` / `shell` / `login` + `sandbox_permissions` / `justification` / `prefix_rule`（`CX/core/src/tools/handlers/shell_spec.rs`） | `bash`：`command` / `description` / `timeoutMs` / `workdir` / `run_in_background` + 同样的 `sandbox_permissions` / `justification`（`DSH/shell/tool-bash/src/index.ts`） | `shell` 仅 3 参：`command` / `category`（只能抬高审批要求）/ `timeout_secs` 1–3600（`OH/tools/impl/system/shell.rs`） |
-| `shell-selection` | `ShellType`：zsh/bash/sh 走 `-lc`（login）或 `-c`；pwsh 走 `-NoProfile -Command`；cmd 走 `/c`；默认取检测到的用户默认 shell（`CX/core/src/shell.rs`） | bash 固定 `bash -c`（非 login）；pwsh `-NoLogo -NoProfile -NonInteractive -Command`（`DSH/shell/*-local/src/index.ts`） | Windows `cmd /C`；Unix 有 bash 则 `bash -lc "set -o pipefail\n<cmd>"`，否则 `sh -lc`（`OH/agent/platform_shell.rs`） |
+| `shell-selection` | `ShellType` 五值（zsh/bash/sh/pwsh/cmd）；`derive_exec_args`：zsh/bash/sh 走 `-lc`（`login = true` 时）或 `-c`；pwsh 走 `-NoProfile -Command`（**仅** `login = false` 才加 `-NoProfile`）；cmd 走 `/c`；默认取 `default_user_shell_from_path`——Windows 上**不读 `$SHELL`**，直接探测 PowerShell（`CX/core/src/shell.rs`、`CX/shell-command/src/shell_detect.rs`） | 平台整组换包：POSIX 固定裸名 `bash -c`（非 login）；win32 固定 `[pwshPath, '-NoLogo', '-NoProfile', '-NonInteractive', '-Command', ENCODING_PREAMBLE + command]`（`DSH/shell/bash-local/src/index.ts`、`DSH/shell/pwsh-local/src/index.ts`） | Windows 固定裸名 `cmd /C`（`raw_arg` 直传）；Unix 有 bash 则 `bash -lc`（调用方要求时前置 `set -o pipefail\n`），否则 `sh -lc`（`OH/agent/platform_shell.rs`） |
+| `shell-resolution` | `get_shell_path`：`$SHELL`（类型匹配且存在）→ `which` → 常量 fallback 列表（`PWSH_FALLBACK_PATHS = [C:\Program Files\PowerShell\7\pwsh.exe]`、`POWERSHELL_FALLBACK_PATHS = [C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe]`）；全失败返回**裸名**（`cmd.exe` / `/bin/sh`） | `candidatePwshPaths`：`%ProgramFiles%\PowerShell\7\pwsh.exe` → 各 `PATH` 目录下 `pwsh.exe` → `%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe` → 裸 `pwsh`；存在性用 `lstatSync`（Store 别名走 `stat` 会命中目标 ACL 报 `EACCES`）（`DSH/shell/pwsh-local/src/resolve.ts`） | `bash_path()`：`/usr/bin/bash` → `/bin/bash`，`OnceLock` 缓存，否则退回 `sh`；Windows 恒裸名 `cmd`（`OH/agent/platform_shell.rs`） |
+| `shell-dialect` | 一个工具、多方言：`shell` 参数**只用于判定类型**，可执行文件仍自行探测（`get_shell_by_model_provided_path` 注释 "uses the model-provided path only to select a shell type, then discovers its executable"）；当**执行环境**平台为 Windows 时拼入 `windows_shell_guidance`（`CX/core/src/tools/handlers/shell_spec.rs`、`CX/core/src/tools/spec_plan.rs` 的 `should_include_windows_shell_guidance`） | **两个工具、不互译**：`bash` 与 `pwsh` 各带方言契约，`cordis.patch.yml` 按 `process.platform` 整组启停；`tool-pwsh/README.md` 原文 "there is no dialect translation" | 单一方言：Windows cmd、Unix sh/bash；无方言参数、无 `login` 参数 |
+| `login-profile` | `login` 默认 `true`：POSIX 走 `-lc`，PowerShell 默认**不加** `-NoProfile`（即加载 profile）；另有 shell 快照抓取 + `derive_exec_args_with_path_prepends` 把执行环境目录回注 `PATH`（`CX/shell-command/src/shell_detect.rs`） | 恒不加载：`bash -c`（非 login）、`pwsh -NoProfile` | Unix 恒 `-lc`（login）；Windows 无此概念 |
+| `sandbox-coupling` | Store 版 PowerShell 位于 `WindowsApps` 下、受限令牌不可读 → `fallback_powershell_shell_for_windows_sandbox` 在沙箱需要时换成未打包路径；`ShellInfo.path` 注释明写 fallback 如 `cmd.exe` **不必是绝对路径**（命令可能跑在附加 / 远程执行环境） | `pwsh-sandbox` 只在 win32 装载、`bash-sandbox` 只在非 win32；Windows 上被强杀结算为 exit 1 且无 signal，故 `[killed by signal: …]` 是 POSIX-only | jail 是可选路径；`wrap_with_output_redirection` 负责把 `> "out" 2> "err"` 拼进命令行（Windows 靠 `/C` 尾部重定向绑定整段，Unix 靠 `{ … ; }` 分组），并依赖 `raw_arg` 避免 MSVCRT 引号转义 |
 | `approval` | `SandboxPermissions` 三值；`justification` 必须配显式 `sandbox_permissions`；`prefix_rule` 仅升级模式可用（`CX/protocol/src/models.rs`） | `sandbox_permissions` 与 `justification` 必须成对、非空，违规报 `SANDBOX_ESCALATION_INVALID_ARGUMENT`；只允许向更宽方向升级（`DSH/sandbox/sandbox/src/escalation.ts`） | `classify_command` → `gate_decision(class) == Prompt` 才提示；模型自报 `category` 只取 `max()`（`OH/tools/impl/system/shell.rs`） |
 | `timeout` | 默认 10 000 ms；`EXEC_TIMEOUT_EXIT_CODE = 124`；取消后终止宽限 50 ms、IO 抽取超时 2 s（`CX/core/src/exec.rs`） | 默认 120 000 ms，上限 600 000 ms（`clampTimeout`），`onExpiry` 默认 `kill`（`DSH/shell/bash-local/src/index.ts`） | **无默认超时**（缺省或 0 → `Unbounded`），上限 3600 s，沙盒路径用 86 400 s 代替无界（`OH/tools/impl/system/shell.rs`、`OH/tools/timeout/mod.rs`） |
 | `cancellation` | `CancellationToken` + `ExecExpiration` 三态 `select`；TERM → 宽限 → SIGKILL，按进程组杀（`CX/core/src/exec.rs`） | `deadline(signal, timeoutMs, 'BASH_TIMEOUT')`；SIGTERM → SIGKILL 宽限 3 000 ms（`DSH/shell/bash-local/src/index.ts`） | 仅 `tokio::time::timeout(...)` 包住 `cmd.output()`，未见进程组 kill 或信号升级 |
 | `output-limit` | 1 MiB，**截中间**（保留头尾）；unified_exec 另有 1 MiB / `max_output_tokens = 10 000`（`CX/utils/output-truncation/src/lib.rs`） | 前台 64 000 字节/流，**保留尾部**；工具描述写明 "truncated to its tail" | 1 MiB，**截尾部**并追加 `... [output truncated at 1MB]`；进历史前再按 30 000 字符限一次 |
 | `output-storage` | 未见溢出落盘通道（截断即丢） | 每流溢出到临时文件，`maxSpillBytes = 64 MiB`，结果带 `spillPath`（`DSH/shell/bash-local/src/index.ts`） | 未见（`MAX_OUTPUT_BYTES` 后直接截断） |
-| `encoding` | PowerShell 前置 `[Console]::OutputEncoding = UTF8`（`CX/shell-command/src/powershell.rs`） | pwsh 每条命令前拼 `ENCODING_PREAMBLE`（同一个属性赋值，为 5.1 的 OEM 码页兜底） | 未见 |
+| `encoding` | PowerShell 前置 `[Console]::OutputEncoding = UTF8`（`CX/shell-command/src/powershell.rs`） | pwsh 每条命令前拼 `ENCODING_PREAMBLE`：`[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); $OutputEncoding = …; `——注释写明「为 5.1 的 OEM 码页兜底，pwsh 7 默认 UTF-8 不受影响」，并刻意用 `; ` 留在**第 1 行**以免报错行号偏移（`DSH/shell/pwsh-local/src/index.ts`） | 未见转码：cmd 侧靠 `raw_arg` + `>` / `2>` 做**字节透明**重定向（PowerShell 5.1 的 `>` 写 UTF-16LE 正是被排除的理由），解码侧未处理 OEM 码页 |
 | `env-vars` | 策略式：`ShellEnvironmentPolicy`（inherit 三态 + 默认排除 `*KEY*` / `*SECRET*` / `*TOKEN*` + 不可继承名单）；启动时抓 shell 快照并 source 回来（`CX/protocol/src/shell_environment.rs`） | 继承父进程后叠三层覆盖，`ENV_OVERRIDES = {NO_COLOR:1, TERM:dumb, PAGER:cat, GIT_PAGER:cat}`；凭据清洗由 subprocess 服务独立负责 | `env_clear()` + 23 项白名单；`TMPDIR` / `TMP` / `TEMP` 改指 scratch 目录（`OH/tools/impl/system/shell.rs`） |
 | `cwd` | `workdir` 可选，缺省取 turn cwd | `workdir` 可选，缺省 `config.cwd` → `process.cwd()` | **模型不能传 cwd**，由 `effective_action_dir_for_context()` 决定 |
 | `denial-detection` | `is_likely_sandbox_denied`：先排除 `[2,126,127]`，`128 + SIGSYS` 判 seccomp，否则 7 条关键词匹配（`CX/sandboxing/src/denial.rs`） | 统一拒绝词 `[sandbox: file access denied under <mode> mode]`；另产出 `[sandbox: escalation available …]` 提示行 | 事后按错误文本分类：先认策略标记，再 timeout，再 policy 关键词，OS 权限词归 `MissingPermission`（`OH/tools/status/ops.rs`） |
@@ -820,8 +856,59 @@ pub fn is_sandbox_denied(
 | 默认超时 | 10 s（Codex）/ 120 s（DSH）/ 无默认（OpenHuman） | **120 s，上限 1800 s** | 本仓是 Rust 工作区，10 s 会让常规构建必然超时；无默认则挂死无兜底。上限放宽到 30 min 只改单次占用，不改并发（§15 R8） |
 | 前台超时之后 | 转后台继续跑（DSH `promoteOnTimeout`）/ 杀进程组（Codex）/ 仅 timeout（OpenHuman） | **杀树 + 保留已写输出** | P14 无后台任务（§1.2）：转后台要求把进程归属从调用栈上移，属 P9（[I52-Ext](./I52-ext-background-task.md)）；保留输出让超时退化为「有现场可查」 |
 | 输出策略 | 内存截断：1 MiB 截中间（Codex）/ 64 KB/流 截尾（DSH）/ 1 MiB 截尾（OpenHuman） | **落盘 60 MiB + 2 MiB stderr 保留区 + 尾窗口预览** | 截断会让「日志很大但合法」被判失败；落盘消掉内存放大，stderr 保留区保证错误行不被进度条挤掉（§8.1） |
-| login shell / source profile | 三家都 source 或 login（Codex 抓 shell 快照、OpenHuman 恒 `bash -lc`） | **不 source、非 login** | 同一命令在不同机器上行为不同，与「命令效果只由沙箱与命令文本决定」冲突；代价由白名单 env 与绝对路径兜底（§7.7） |
+| login shell / source profile | Codex 默认 `login = true`（PowerShell 默认加载 profile，另有 shell 快照抓取）；OpenHuman Unix 恒 `bash -lc`；DSH 两者都**不**加载（`bash -c`、`pwsh -NoProfile`） | **不 source、非 login** | 同一命令在不同机器上行为不同，与「命令效果只由沙箱与命令文本决定」冲突；代价由白名单 env 与绝对路径兜底（§7.7） |
+| shell 可执行文件如何解析 | 有序候选 + 存在性探测（三家一致），差别只在候选集与最后兜底：Codex 兜底为裸名，DSH 兜底为裸 `pwsh`，OpenHuman 兜底为 `sh` | **有序候选**：`%SystemRoot%\System32\cmd.exe` → `%COMSPEC%`（校验 basename），全失败即不注册 | 采纳「候选」这一解析方式、不采纳「种类探测」；候选集不含 `PATH` 与工作区（§7.3） |
+| Windows 方言选哪个 | Codex 默认 PowerShell（另留 `shell` 参数可切）；DSH 用 pwsh 并另设 bash 工具；OpenHuman 固定 cmd | **cmd**（带 `/d` 抑制 AutoRun） | 重定向字节透明、系统自带且路径确定；pwsh 的 profile / 编码 / 引号规则都更重，另立工具列为 S1（§7.7） |
 | 环境变量来源 | 继承 + 排除（Codex/DSH）/ `env_clear` + 白名单（OpenHuman） | **白名单 + 强制注入** | 继承会把 `*TOKEN*` 一类凭据带进子进程；白名单的漏项按「如实报错 + 模型纠错」处理（§15 R4） |
 | 审批升级通道 | Codex `sandbox_permissions` 三值 + `prefix_rule`；DSH `WIDER_MODES` + escalation 提示行 | **不提供**：三档是探测结论，不是可申请档位 | 没有更宽档位可升；因此 §8.5 只给拒绝标记、不给 escalation hint（否则模型会反复尝试不可能的升级） |
 | 后台任务原语 | session + `write_stdin`（Codex）/ job registry（DSH） | **不做**，登记 P9 | 见 §1.2 与 [I52 §8](./I52-shell-sandbox-spec.md)：判据是「进程归属由谁持有」，不是加参数 |
 
+### 16.4 shell 选择与方言：逐家展开
+
+§16.2 的 `shell-selection` / `shell-resolution` / `shell-dialect` / `login-profile` 四行压缩过度，本节展开，回答三个问题：**它们为什么这样选**、**Windows 端具体怎么落地**、**哪些做法本文不采纳**。沙箱后端的事实见 [agent-sandbox-reference-analysis](./agent-sandbox-reference-analysis.md)，此处不重复。
+
+#### 16.4.1 DSH：平台整组换包，没有运行时种类探测
+
+- **种类由部署层决定**：`bundle/base/cordis.patch.yml` 里 `bash-sandbox` / `tool-bash` 标 `disabled: !!js process.platform === 'win32'`，`pwsh-sandbox` / `tool-pwsh` 标 `disabled: !!js process.platform !== 'win32'`；`shell/README.md` 把这条写成原则：「A profile layer selects exactly one executor implementation (the win32 layer swaps the POSIX rows for the pwsh ones; mounting two fails loudly at load time on the duplicate service registration)」。一个进程里不可能同时存在两种方言的执行器，因此**不存在「该写 cmd 还是 PowerShell」的歧义**。
+- **Windows 端具体形态**：`pwsh-local` 的 `argv()` 返回 `[pwshPath, '-NoLogo', '-NoProfile', '-NonInteractive', '-Command', ENCODING_PREAMBLE + command]`。命令**整体作为一个 argv 元素**交给 `-Command`，模块头注释写明「no intermediate shell exists, so there is no shell-quoting layer to escape」——这是不走 `cmd` 路径时避免引号二次解析的做法。
+- **路径解析是纯函数**：`resolvePwshPath(configured, env, platform)` 可注入 `env` 单测；顺序为 PowerShell 7 安装目录 → `PATH` 各项 → Windows PowerShell 5.1 → 裸 `pwsh`；用 `lstatSync` 而非 `statSync`，因为 Store 的 app execution alias 在 `stat` 上会命中目标 ACL 报 `EACCES`。
+- **方言不翻译**：`tool-pwsh/README.md` 原文「PowerShell-dialect contract — the model must write PowerShell (native paths, `$env:` variables), not bash; **there is no dialect translation**」。代价被接受为「两个工具、两套描述、两套测试」。
+- **环境变量按平台分化**：bash 侧 `ENV_OVERRIDES = {NO_COLOR, TERM: 'dumb', PAGER, GIT_PAGER}`；pwsh 侧**刻意去掉** `TERM`（注释：`TERM=dumb` is a POSIX concept）。
+- **退出状态语义**：Windows 上被强杀结算为 exit 1、无 signal，因此 `[killed by signal: …]` 是 POSIX-only——与本文 §8.4「Windows 恒有 `exitCode`、`signal` 恒 `null`」是同一事实，两家独立得出。
+
+#### 16.4.2 Codex：探测用户 shell + 模型可覆盖
+
+- **默认取用户 shell，但 Windows 上不读 `$SHELL`**：`default_user_shell_from_path` 在 Windows 分支直接 `get_shell(PowerShell)`（pwsh 7 → 5.1 → fallback 列表），全失败才 `ultimate_fallback_shell()`（裸名 `cmd.exe`）；Unix 分支读 `$SHELL` 并匹配类型，macOS 兜 zsh、Linux 兜 bash，最后 `/bin/sh`。
+- **`login` 默认 `true`**：`derive_exec_args` 里 POSIX 走 `-lc`；PowerShell 分支只在 `!use_login_shell` 时才加 `-NoProfile`——即**默认加载用户 profile**。此外有 shell 快照与 `derive_exec_args_with_path_prepends`（login 之后把执行环境目录回注 `PATH`）。
+- **模型给路径、系统给类型**：`get_shell_by_model_provided_path` 的注释是「Uses the model-provided path only to select a shell type, then discovers its executable」——模型不能塞任意可执行文件，但**能选择方言**。
+- **方言混淆是已知问题**：`windows_shell_guidance` 在**执行环境**平台为 Windows 时拼进工具描述（`should_include_windows_shell_guidance` 读 `executor_platform_os`，不是宿主 `cfg!(windows)`——命令可能跑在附加 / 远程环境），首条即「Do not enumerate paths in PowerShell and then pass them to `cmd /c` … Use one shell end-to-end」。这是「shell 可切」的直接代价，也是本文 §11.2 第 3 条的同源动机。
+- **沙箱反向约束 shell**：Store 版 PowerShell 在受限令牌下不可读，`fallback_powershell_shell_for_windows_sandbox` 只在沙箱需要时把它换成未打包路径（`which_all` 逐个过滤 + fallback 列表），正常探测顺序不变。
+- **路径不必是绝对路径**：`ShellInfo.path` 注释「Fallbacks such as `cmd.exe` need not be absolute, so this is not a `PathUri`」——因为命令可能跑在**附加 / 远程执行环境**，shell 是那个环境上报的事实（`from_environment_shell_info` 按 `name` 反解 `ShellType`）。
+
+#### 16.4.3 OpenHuman：固定平台 shell，且把理由写进模块头
+
+- **唯一一家把「为什么不是 PowerShell」写成代码注释**：`%VAR%` 展开符合 Windows 用户与模型预期；`>` / `2>` 需要**字节透明**重定向供输出捕获路径使用；而 PowerShell 5.1 的 `>` 写 UTF-16LE 且不展开 `%VAR%`。
+- **`raw_arg` 是这条理由的实现要求**：`cmd.arg("/C").raw_arg(command)`——`arg` 会按 MSVCRT 规则把内部 `"` 转成 `\"`，而 `cmd` 只认裸 `"`，结果是 `>` / `2>` 落进引号区间、捕获文件永不生成。这与本文 §4.3「不改写命令文本」同源，只是它写在 spawn 层。
+- **Unix 侧反而用 login shell**：`bash -lc`，并在调用方要求时前置 `set -o pipefail\n`；理由是管道中段失败会被最后一段掩盖，导致「反复失败但不触发熔断」。`/bin/sh` 在 Debian / Ubuntu 是 dash、拒绝 `set -o pipefail`，故先探测 bash（`OnceLock` 缓存 `/usr/bin/bash` → `/bin/bash`）。
+- **无方言参数、无 `login` 参数、模型不能传 cwd**：选择权全部在服务端，模型只能写 `command` / `category` / `timeout_secs`。
+
+#### 16.4.4 三家共同点与本文的取法
+
+| 观察 | 三家事实 | 本文取法 |
+|---|---|---|
+| shell 路径如何得到 | **都是有序候选 + 存在性探测**，没有一家用编译期常量 | 采纳（§7.3），但候选集只含系统目录与 `COMSPEC` |
+| 谁决定 shell 种类 | Codex 模型可指定；DSH 部署层；OpenHuman 服务端常量 | 服务端常量（§4.1 / §7.7），理由见 §16.3 |
+| 是否加载 profile | Codex 默认加载；OpenHuman Unix 加载；DSH 不加载 | 不加载（§7.7） |
+| 方言混淆如何处置 | Codex 写 Windows 指引；DSH 拆两个工具；OpenHuman 只写 cmd 方言 | 一个工具 + §11.2 第 3 条 + `data.sandbox.shell` 回显 |
+| 编码 | Codex / DSH 前置改写命令；OpenHuman 靠字节透明重定向 | **不前置改写**，首 4 KiB 探测 + 落盘转码（§8.3） |
+
+**为什么采纳「候选」而不采纳「种类探测」**：三家的路径探测都只发生在**本机文件系统**上，结果只影响「跑的是哪一个同名 shell」；而种类探测（Codex `$SHELL`、模型 `shell` 参数）会影响**命令语法**与**审批键语义**。前者是解析细节，后者是契约变化——本文只跟前者。
+
+**方言失败的两种形态**（直接决定本文的处置方式）：
+
+| 形态 | 典型例子 | 是否可自愈 | 本文处置 |
+|---|---|---|---|
+| 显式失败 | `Get-ChildItem` 在 cmd 里报「不是内部或外部命令」 | 可：模型读 stderr 一次即改 | §11.2 第 1 / 3 条 + `data.sandbox.shell` |
+| 静默错误 | `git commit -m 'msg'`（单引号不是引号）、`a; b`（`;` 不是分隔符）、`echo \"x\"`（`\"` 翻转引号）、pwsh 的 `$VAR` 未定义展开为空 | **不可**：退出码 0，模型看不到错 | 只能事前预防；**禁止**自动修补（会改写命令文本、污染审批键，§4.3）；登记 §15 R12 |
+
+两者频率上并不对称：显式失败频率更高但代价一次纠错；静默错误频率低但会直接产出**看似成功的错误结果**——这正是本文宁可在工具描述里多写一行方言约束、也不做「按平台改写命令」的原因。
