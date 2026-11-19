@@ -232,6 +232,9 @@ async fn enable(
     if request.tools.is_empty() {
         data.insert("enabled".into(), Value::from(Vec::<String>::new()));
         data.insert("rejected".into(), Value::from(Vec::<Value>::new()));
+        // F13：仍要附可升级段，否则模型拿到错误却不知道该申请什么。
+        insert_escalatable(&mut data, Source::Turn, escalatable);
+        text.push_str(&escalation_section(escalatable));
         return Ok(ToolResult::err_with_data(
             ToolErrorKind::Business,
             "'detail = \"enable\"' requires a non-empty 'tools' list",
@@ -243,6 +246,7 @@ async fn enable(
     let Some(port) = port else {
         data.insert("enabled".into(), Value::from(Vec::<String>::new()));
         data.insert("rejected".into(), Value::from(Vec::<Value>::new()));
+        // 端口缺失时可升级段恒为空（候选本身由端口算出），因此不插入。
         return Ok(ToolResult::err_with_data(
             ToolErrorKind::Business,
             "tool escalation is unavailable this turn: request_tool cannot enable tools here",

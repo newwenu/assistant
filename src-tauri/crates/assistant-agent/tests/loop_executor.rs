@@ -1962,3 +1962,156 @@ async fn a15_output_limit_truncation_is_not_retried() {
     assert_eq!(run.outcome.model_calls, 1, "输出上限截断不得重发");
     assert_eq!(run.adapter.calls(), 1);
 }
+
+// ---------------------------------------------------------------------------
+// I58 §3.8 / §10 G22·G4：轮内升级的尾部追加与生效时机
+// ---------------------------------------------------------------------------
+
+/// 升级端口替身：记录每次执行看到的工具集，并把给定声明登记进本轮收集器。
+struct EscalatingToolExec {
+    spec: ToolSpec,
+    seen: Mutex<Vec<Vec<String>>>,
+}
+
+impl EscalatingToolExec {
+    fn new(spec: ToolSpec) -> Self {
+        Self {
+            spec,
+            seen: Mutex::new(Vec::new()),
+        }
+    }
+
+    fn seen(&self) -> Vec<Vec<String>> {
+        match self.seen.lock() {
+            Ok(guard) => guard.clone(),
+            Err(poisoned) => poisoned.into_inner().clone(),
+        }
+    }
+}
+
+#[async_trait]
+impl ToolExecutionPort for EscalatingToolExec {
+    async fn execute(
+        &self,
+        calls: Vec<FinalizedToolCall>,
+        ctx: &ToolExecCtx<'_>,
+    ) -> Vec<ToolExecResult> {
+        let names: Vec<String> = ctx
+            .tools
+            .map(|tools| tools.iter().map(|tool| tool.name.clone()).collect())
+            .unwrap_or_default();
+        if let Ok(mut guard) = self.seen.lock() {
+            guard.push(names);
+        }
+        if let Some(sink) = &ctx.escalations {
+            sink.push(self.spec.clone());
+        }
+        calls
+            .iter()
+            .map(|call| ok_result(&call.tool_id, &call.tool_name, "a"))
+            .collect()
+    }
+}
+
+fn super_read_tool() -> ToolSpec {
+    tool_spec(
+        "super_read",
+        "read by line index",
+        serde_json::json!({"type": "object", "properties": {"path": {"type": "string"}}}),
+    )
+}
+
+fn spec_names(tools: Option<&Vec<ToolSpec>>) -> Vec<String> {
+    tools
+        .map(|tools| tools.iter().map(|tool| tool.name.clone()).collect())
+        .unwrap_or_default()
+}
+
+/// G4：申请发生在批次内，本迭代的请求与工具集不变；G22：下一迭代尾部追加并可见。
+#[tokio::test]
+async fn g22_escalation_takes_effect_from_the_next_iteration() {
+    let port = Arc::new(EscalatingToolExec::new(super_read_tool()));
+    let run = run_loop(
+        LoopArgs::new(vec![
+            tool_call_script("call-1", "echo", "{\"q\":\"a\"}"),
+            ScriptedResponse::text(&["done"]),
+        ])
+        .with_tools(vec![echo_tool()])
+        .with_iterations(2)
+        .with_port(port.clone()),
+    )
+    .await;
+
+    assert_eq!(run.outcome.status, TurnStatus::Completed);
+    assert_eq!(run.outcome.text, "done");
+    assert_eq!(run.outcome.tool_calls, 1);
+
+    let requests = run.requests();
+    assert_eq!(requests.len(), 2);
+    assert_eq!(
+        spec_names(requests[0].tools.as_ref()),
+        vec!["echo"],
+        "the iteration that asked must keep its own tool set"
+    );
+    assert_eq!(
+        spec_names(requests[1].tools.as_ref()),
+        vec!["echo", "super_read"],
+        "the escalation is appended at the tail, old entries keep their order"
+    );
+
+    let seen = port.seen();
+    assert_eq!(seen.len(), 1, "只有一个迭代真正执行了工具");
+    assert_eq!(
+        seen[0],
+        vec!["echo"],
+        "ToolExecCtx.tools 是批次开始时的快照，不含本批次刚登记的项"
+    );
+}
+
+/// G4：没有申请时不重建请求——两次请求的工具集逐项相同。
+#[tokio::test]
+async fn g4_no_escalation_keeps_the_request_tool_set_stable() {
+    let run = run_loop(
+        LoopArgs::new(vec![
+            tool_call_script("call-1", "echo", "{\"q\":\"a\"}"),
+            ScriptedResponse::text(&["done"]),
+        ])
+        .with_tools(vec![echo_tool()])
+        .with_results(vec![ok_result("call-1", "echo", "a")])
+        .with_iterations(2),
+    )
+    .await;
+
+    let requests = run.requests();
+    assert_eq!(requests.len(), 2);
+    assert_eq!(spec_names(requests[0].tools.as_ref()), vec!["echo"]);
+    assert_eq!(
+        spec_names(requests[1].tools.as_ref()),
+        vec!["echo"],
+        "an empty escalation batch must not rebuild the tool set"
+    );
+}
+
+/// §3.8 ④：重复登记同名工具只保留一份，provider 请求里不出现重复声明。
+#[tokio::test]
+async fn g22_duplicate_escalation_is_merged_once() {
+    let port = Arc::new(EscalatingToolExec::new(echo_tool()));
+    let run = run_loop(
+        LoopArgs::new(vec![
+            tool_call_script("call-1", "echo", "{\"q\":\"a\"}"),
+            ScriptedResponse::text(&["done"]),
+        ])
+        .with_tools(vec![echo_tool()])
+        .with_iterations(2)
+        .with_port(port),
+    )
+    .await;
+
+    let requests = run.requests();
+    assert_eq!(requests.len(), 2);
+    assert_eq!(
+        spec_names(requests[1].tools.as_ref()),
+        vec!["echo"],
+        "a tool already in the set is not appended twice"
+    );
+}

@@ -293,6 +293,73 @@ async fn a_char_column_beyond_the_cap_is_f6() {
     assert!(at_cap.ok, "{:?}", at_cap.error);
 }
 
+/// F1：索引文件将超过 `MAX_INDEX_FILE_BYTES` → 业务错误，且**不**暗示「换工具就能读」。
+///
+/// 用 8 MiB 纯换行文件构造：每行 1 字节，行数 ≈ 8.39 M，起点表 `8 * (lines + 1)`
+/// 已经超过 64 MiB，因此不必真造 64 MiB 的索引文件。
+#[tokio::test]
+async fn an_index_over_the_capacity_cap_is_f1() {
+    let dir = tempfile::tempdir().unwrap();
+    let indexes = tempfile::tempdir().unwrap();
+    let ctx = context(dir.path(), indexes.path());
+    write_bytes(dir.path(), "huge.txt", &vec![b'\n'; 8 * 1024 * 1024]);
+
+    let result = super_tool()
+        .execute(&json!({ "path": "huge.txt" }), &ctx)
+        .await
+        .expect("execute");
+    assert!(!result.ok, "超容量必须报业务错误");
+    let error = result.error.unwrap_or_default();
+    assert!(error.contains("byte cap"), "必须给出上限: {error:?}");
+    assert!(
+        error.contains("too large to index"),
+        "必须说清原因: {error:?}"
+    );
+    assert!(!error.contains("`read`"), "不得暗示换工具就能读: {error:?}");
+}
+
+/// F2：二进制文件与 `read` 同判据、同文案（复用 `DecodeError` 与二进制探测）。
+#[tokio::test]
+async fn a_binary_file_is_f2() {
+    let dir = tempfile::tempdir().unwrap();
+    let indexes = tempfile::tempdir().unwrap();
+    let ctx = context(dir.path(), indexes.path());
+    write_bytes(dir.path(), "binary.bin", b"alpha\x00beta\n");
+
+    let result = super_tool()
+        .execute(&json!({ "path": "binary.bin" }), &ctx)
+        .await
+        .expect("execute");
+    assert!(!result.ok, "二进制文件必须报业务错误");
+    let error = result.error.unwrap_or_default();
+    assert!(
+        error.contains("binary"),
+        "文案须与 `read` 同口径: {error:?}"
+    );
+}
+
+/// F3：工作区外的路径 → 与 `read` 共用 `resolve_readable` 的同一条判据。
+#[tokio::test]
+async fn a_path_outside_the_workspace_is_f3() {
+    let dir = tempfile::tempdir().unwrap();
+    let indexes = tempfile::tempdir().unwrap();
+    let other = tempfile::tempdir().unwrap();
+    let ctx = context(dir.path(), indexes.path());
+    let outside = other.path().join("outside.txt");
+    std::fs::write(&outside, "x\n").unwrap();
+
+    let result = super_tool()
+        .execute(&json!({ "path": outside.display().to_string() }), &ctx)
+        .await
+        .expect("execute");
+    assert!(!result.ok, "越界路径必须报业务错误");
+    let error = result.error.unwrap_or_default();
+    assert!(
+        error.contains("outside workspace"),
+        "文案须与 `read` 同口径: {error:?}"
+    );
+}
+
 /// 伴随工具门控：`read` 只在**确实做不到**、且本轮存在申请入口（`request_tool`）时才提示升级。
 #[tokio::test]
 async fn read_hints_super_read_only_when_it_cannot_express_the_result() {

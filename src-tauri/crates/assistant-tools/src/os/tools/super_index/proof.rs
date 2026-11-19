@@ -382,6 +382,20 @@ mod tests {
         assert!(matches!(error, IndexError::StaleIndex { line: 2 }));
     }
 
+    /// F4 文案：调用方重建一次后仍自证失败时，直接把这段文本透出给模型。
+    #[test]
+    fn the_stale_message_names_the_line_and_the_cause() {
+        let message = IndexError::StaleIndex { line: 3 }.message(Path::new("doc.txt"));
+        assert!(
+            message.contains("line 3 does not start where the index says"),
+            "{message}"
+        );
+        assert!(
+            message.contains("the file changed while it was being read"),
+            "{message}"
+        );
+    }
+
     #[test]
     fn a_byte_column_inside_a_character_is_rejected() {
         let text = "你好";

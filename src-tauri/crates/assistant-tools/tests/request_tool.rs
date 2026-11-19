@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use assistant_tools::gateway::{
     InMemoryAuditStore, InMemoryGrantStore, ScriptedApprovalPrompter, ToolGateway,
@@ -11,9 +11,10 @@ use assistant_tools::storage::{
     ToolResultStorage,
 };
 use assistant_tools::{
-    ApprovalDecision, PermissionEffect, PermissionRule, ResolvedPermissionPolicy, Tool,
-    ToolAudience, ToolCatalog, ToolRegistry, ToolResult, ToolTier, ToolUseContext,
-    ValidationResult,
+    ApprovalDecision, EscalationCandidate, EscalationOutcome, EscalationRejectReason,
+    EscalationRejection, PermissionEffect, PermissionRule, ResolvedPermissionPolicy, Tool,
+    ToolAudience, ToolCatalog, ToolEscalationPort, ToolRegistry, ToolResult, ToolTier,
+    ToolUseContext, ValidationResult,
 };
 use async_trait::async_trait;
 use serde_json::{json, Value};
@@ -320,11 +321,11 @@ fn an_unknown_detail_is_rejected_at_validation() {
     let context = ToolUseContext::default();
     let validation = tool.validate_input(&json!({ "detail": "everything" }), &context);
     assert!(!validation.ok);
-    assert!(validation
-        .message
-        .as_deref()
-        .unwrap_or_default()
-        .contains("\"list\" or \"manual\""));
+    let message = validation.message.as_deref().unwrap_or_default();
+    assert!(
+        message.contains("\"enable\""),
+        "the closed set must list every accepted value: {message}"
+    );
 }
 
 #[derive(Debug, Default)]
@@ -383,5 +384,377 @@ async fn the_pipeline_injects_the_catalog() {
     assert!(
         text.contains("Available tools (6, source: registry)"),
         "the injected catalog must be the registry itself: {text}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// 升级通道（I58 §3.8 / §10 G21·G23）
+// ---------------------------------------------------------------------------
+
+/// 脚本化端口：可升级段与申请结果都由用例给定，只记录被调用的入参。
+struct ScriptedEscalationPort {
+    candidates: Vec<EscalationCandidate>,
+    outcome: EscalationOutcome,
+    requested: Mutex<Vec<Vec<String>>>,
+}
+
+impl ScriptedEscalationPort {
+    fn new(candidates: Vec<EscalationCandidate>, outcome: EscalationOutcome) -> Self {
+        Self {
+            candidates,
+            outcome,
+            requested: Mutex::new(Vec::new()),
+        }
+    }
+
+    fn requested(&self) -> Vec<Vec<String>> {
+        match self.requested.lock() {
+            Ok(guard) => guard.clone(),
+            Err(poisoned) => poisoned.into_inner().clone(),
+        }
+    }
+}
+
+#[async_trait]
+impl ToolEscalationPort for ScriptedEscalationPort {
+    async fn candidates(&self, _available: &[String]) -> Vec<EscalationCandidate> {
+        self.candidates.clone()
+    }
+
+    async fn request(&self, requested: &[String], _available: &[String]) -> EscalationOutcome {
+        match self.requested.lock() {
+            Ok(mut guard) => guard.push(requested.to_vec()),
+            Err(poisoned) => poisoned.into_inner().push(requested.to_vec()),
+        }
+        self.outcome.clone()
+    }
+}
+
+fn candidate(id: &str, brief: &str) -> EscalationCandidate {
+    EscalationCandidate {
+        id: id.to_string(),
+        name: id.to_string(),
+        brief: brief.to_string(),
+    }
+}
+
+fn context_with_port(
+    available: Vec<&str>,
+    catalog: Arc<ToolRegistry>,
+    port: Arc<dyn ToolEscalationPort>,
+) -> ToolUseContext {
+    ToolUseContext {
+        available_tool_names: Some(available.into_iter().map(str::to_string).collect()),
+        tool_catalog: Some(catalog as Arc<dyn ToolCatalog>),
+        escalation: Some(port),
+        ..Default::default()
+    }
+}
+
+fn escalatable(result: &ToolResult) -> Vec<String> {
+    result
+        .data
+        .as_ref()
+        .expect("data")
+        .get("escalatable")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .map(|value| value.as_str().expect("name").to_string())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn enabled(result: &ToolResult) -> Vec<String> {
+    result.data.as_ref().expect("data")["enabled"]
+        .as_array()
+        .expect("enabled array")
+        .iter()
+        .map(|value| value.as_str().expect("name").to_string())
+        .collect()
+}
+
+fn rejected(result: &ToolResult) -> Vec<(String, String)> {
+    result.data.as_ref().expect("data")["rejected"]
+        .as_array()
+        .expect("rejected array")
+        .iter()
+        .map(|value| {
+            (
+                value["id"].as_str().expect("id").to_string(),
+                value["reason"].as_str().expect("reason").to_string(),
+            )
+        })
+        .collect()
+}
+
+/// G23 ⑤ / G19：可升级段只下发 `brief`（一句用途），不含 schema 与手册正文。
+#[tokio::test]
+async fn the_escalatable_section_carries_the_brief_only() {
+    let registry = readonly_registry();
+    let port: Arc<dyn ToolEscalationPort> = Arc::new(ScriptedEscalationPort::new(
+        vec![candidate("super_read", "Read by line index.")],
+        EscalationOutcome::default(),
+    ));
+    let context = context_with_port(vec!["read", "request_tool"], registry, port);
+
+    let result = request(json!({}), &context).await;
+    assert!(result.ok, "{:?}", result.error);
+    assert_eq!(escalatable(&result), vec!["super_read"]);
+
+    let text = assistant_text(&result);
+    assert!(
+        text.contains("- super_read: Read by line index."),
+        "the candidate line must be the brief: {text}"
+    );
+    assert!(
+        text.contains("detail = \"enable\""),
+        "the section must name the only way to enable: {text}"
+    );
+    assert!(
+        !text.contains("input_schema") && !text.contains("\"properties\""),
+        "the escalatable section must not carry a schema: {text}"
+    );
+    assert!(
+        !text.contains("## super_read"),
+        "the manual belongs to detail = \"manual\", not to the escalation section: {text}"
+    );
+}
+
+/// G23 ④：已在本轮的伴随工具既不进 `listed`，也不进可升级段。
+#[tokio::test]
+async fn an_available_companion_is_not_escalatable() {
+    let registry = readonly_registry();
+    // 端口按真实判据返回空段：`super_read` 已在可用名里。
+    let port: Arc<dyn ToolEscalationPort> = Arc::new(ScriptedEscalationPort::new(
+        Vec::new(),
+        EscalationOutcome::default(),
+    ));
+    let context = context_with_port(vec!["read", "super_read", "request_tool"], registry, port);
+
+    let result = request(json!({}), &context).await;
+    assert!(result.ok, "{:?}", result.error);
+    assert!(escalatable(&result).is_empty());
+    assert!(!assistant_text(&result).contains("detail = \"enable\""));
+}
+
+/// §3.8 ⑥：没有升级端口时不猜、不用目录代算——可升级段整段不出现。
+#[tokio::test]
+async fn without_a_port_there_is_no_escalatable_section() {
+    let registry = readonly_registry();
+    let context = context(Some(vec!["read", "request_tool"]), Some(registry));
+
+    let result = request(json!({}), &context).await;
+    assert!(result.ok, "{:?}", result.error);
+    assert!(
+        result
+            .data
+            .as_ref()
+            .expect("data")
+            .get("escalatable")
+            .is_none(),
+        "a missing port must not produce a second source of truth"
+    );
+    assert!(!assistant_text(&result).contains("detail = \"enable\""));
+}
+
+/// F13：`detail = "enable"` 缺 `tools` → 业务错误，但仍带可升级段（否则模型无从纠正）。
+#[tokio::test]
+async fn enable_without_tools_is_a_business_error_that_keeps_the_candidates() {
+    let registry = readonly_registry();
+    let port: Arc<dyn ToolEscalationPort> = Arc::new(ScriptedEscalationPort::new(
+        vec![candidate("super_read", "Read by line index.")],
+        EscalationOutcome::default(),
+    ));
+    let context = context_with_port(vec!["read", "request_tool"], registry, port);
+
+    let result = request(json!({ "detail": "enable" }), &context).await;
+    assert!(!result.ok);
+    assert_eq!(
+        result.error_kind,
+        Some(assistant_tools::ToolErrorKind::Business)
+    );
+    assert!(enabled(&result).is_empty());
+    assert!(rejected(&result).is_empty());
+    assert_eq!(
+        escalatable(&result),
+        vec!["super_read"],
+        "the business error must still tell the model what it can ask for"
+    );
+    assert!(result
+        .error
+        .as_deref()
+        .unwrap_or_default()
+        .contains("non-empty 'tools'"));
+}
+
+/// §3.8 ⑥：端口缺失时 `enable` 是业务错误，不是「静默成功但没生效」。
+#[tokio::test]
+async fn enable_without_a_port_is_a_business_error() {
+    let registry = readonly_registry();
+    let context = context(Some(vec!["read", "request_tool"]), Some(registry));
+
+    let result = request(
+        json!({ "detail": "enable", "tools": ["super_read"] }),
+        &context,
+    )
+    .await;
+    assert!(!result.ok);
+    assert_eq!(
+        result.error_kind,
+        Some(assistant_tools::ToolErrorKind::Business)
+    );
+    assert!(enabled(&result).is_empty());
+    assert!(result
+        .error
+        .as_deref()
+        .unwrap_or_default()
+        .contains("escalation is unavailable"));
+}
+
+/// F14：全部被拒 → `ok = false`，逐条原因进 `data.rejected`。
+#[tokio::test]
+async fn enable_all_rejected_reports_every_reason() {
+    let registry = readonly_registry();
+    let port: Arc<dyn ToolEscalationPort> = Arc::new(ScriptedEscalationPort::new(
+        Vec::new(),
+        EscalationOutcome {
+            enabled: Vec::new(),
+            rejected: vec![EscalationRejection {
+                id: "super_read".to_string(),
+                reason: EscalationRejectReason::BaseNotAvailable,
+            }],
+        },
+    ));
+    let context = context_with_port(vec!["edit", "request_tool"], registry, port);
+
+    let result = request(
+        json!({ "detail": "enable", "tools": ["super_read"] }),
+        &context,
+    )
+    .await;
+    assert!(!result.ok);
+    assert_eq!(
+        result.error_kind,
+        Some(assistant_tools::ToolErrorKind::Business)
+    );
+    assert!(enabled(&result).is_empty());
+    assert_eq!(
+        rejected(&result),
+        vec![("super_read".to_string(), "base_not_available".to_string())]
+    );
+    let text = assistant_text(&result);
+    assert!(
+        text.contains("super_read (base_not_available): its base tool is not available"),
+        "the reason code and its message must both be shown: {text}"
+    );
+}
+
+/// §3.8 ⑤：部分通过 → `ok = true`，`enabled` 与 `rejected` 同时非空。
+#[tokio::test]
+async fn enable_partial_pass_is_ok_and_reports_both_lists() {
+    let registry = readonly_registry();
+    let scripted = Arc::new(ScriptedEscalationPort::new(
+        Vec::new(),
+        EscalationOutcome {
+            enabled: vec!["super_read".to_string()],
+            rejected: vec![EscalationRejection {
+                id: "read".to_string(),
+                reason: EscalationRejectReason::NotCompanion,
+            }],
+        },
+    ));
+    let port: Arc<dyn ToolEscalationPort> = scripted.clone();
+    let context = context_with_port(vec!["read", "request_tool"], registry, port);
+
+    let result = request(
+        json!({ "detail": "enable", "tools": ["super_read", "read"] }),
+        &context,
+    )
+    .await;
+    assert!(result.ok, "a registered item makes the call a success");
+    assert_eq!(enabled(&result), vec!["super_read"]);
+    assert_eq!(
+        rejected(&result),
+        vec![("read".to_string(), "not_companion".to_string())]
+    );
+
+    let text = assistant_text(&result);
+    assert!(
+        text.contains("effective from the next tool call")
+            && text.contains("the current iteration's tool set is unchanged"),
+        "the reply must state when the change takes effect: {text}"
+    );
+    assert!(text.contains("Not enabled:"), "{text}");
+
+    let port = scripted
+        .requested()
+        .into_iter()
+        .next()
+        .expect("the port must receive the request");
+    assert_eq!(port, vec!["super_read".to_string(), "read".to_string()]);
+}
+
+/// G4 / G21：`enable` 不改本轮工具集——生效只发生在批次结束后的尾部追加。
+#[tokio::test]
+async fn enable_does_not_touch_the_turn_tool_set() {
+    let registry = readonly_registry();
+    let before = registry.entries().await;
+    let port: Arc<dyn ToolEscalationPort> = Arc::new(ScriptedEscalationPort::new(
+        Vec::new(),
+        EscalationOutcome {
+            enabled: vec!["super_read".to_string()],
+            rejected: Vec::new(),
+        },
+    ));
+    let context = context_with_port(vec!["read", "request_tool"], registry.clone(), port);
+
+    let result = request(
+        json!({ "detail": "enable", "tools": ["super_read"] }),
+        &context,
+    )
+    .await;
+    assert!(result.ok, "{:?}", result.error);
+
+    assert_eq!(
+        registry.entries().await,
+        before,
+        "the registry is never mutated by an escalation"
+    );
+    assert_eq!(
+        context.available_tool_names.as_deref(),
+        Some(&["read".to_string(), "request_tool".to_string()][..]),
+        "the turn tool set changes only when the loop appends after the batch"
+    );
+}
+
+/// G23 ④：已生效的项从可升级段里移除（同一份回复里不能自相矛盾）。
+#[tokio::test]
+async fn enabled_items_leave_the_escalatable_section() {
+    let registry = readonly_registry();
+    let port: Arc<dyn ToolEscalationPort> = Arc::new(ScriptedEscalationPort::new(
+        vec![
+            candidate("super_edit", "Replace by line range."),
+            candidate("super_read", "Read by line index."),
+        ],
+        EscalationOutcome {
+            enabled: vec!["super_read".to_string()],
+            rejected: Vec::new(),
+        },
+    ));
+    let context = context_with_port(vec!["read", "edit", "request_tool"], registry, port);
+
+    let result = request(
+        json!({ "detail": "enable", "tools": ["super_read"] }),
+        &context,
+    )
+    .await;
+    assert!(result.ok, "{:?}", result.error);
+    assert_eq!(
+        escalatable(&result),
+        vec!["super_edit"],
+        "a just-enabled tool must not stay in the escalatable list"
     );
 }
