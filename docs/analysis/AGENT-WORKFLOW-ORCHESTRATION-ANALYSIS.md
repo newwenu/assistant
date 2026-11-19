@@ -1,9 +1,9 @@
 # 可编排 Agent（ComfyUI 类图编排）：可行性分析
 
-> 日期：2026-11-18｜性质：**预先分析**（只判定「能不能做、做成什么形状、哪些口径必须先定案」；不含实施步骤与排期）
+> 日期：2026-11-18（初稿）｜2026-11-19（增补 §12 被编排性与统一编排能力对照）｜性质：**预先分析**（只判定「能不能做、做成什么形状、哪些口径必须先定案」；不含实施步骤与排期）
 > 判据来源：`docs/principle/CODE-REVIEW-PRINCIPLE.md`、`docs/principle/CODE-SPLIT-PRINCIPLE.md`
 > 事实基线：仓库当前代码（2026-11-18）；I55 观测规格（已归档）、I38 阶段总纲 §2.1（`docs/store/I38-agent-roadmap.md`）、I38f 子代理规格（`docs/store/I38f-agent-subagent-spec.md`）、I36a 内核基线（`docs/store/I36a-agent-kernel-baseline.md`）
-> 参考实现：`references/9-workflow-orchestration/` 的稀疏检出——ComfyUI（`comfy_execution/graph.py`、`progress.py`、`execution.py`）、n8n（`packages/core/src/execution-engine/workflow-execute.ts`）、langgraph（`libs/langgraph/pregel/`）、Dify（`api/core/workflow/`：`graph_topology.py`、`node_execution.py`、`nodes/agent_v2/`、`nodes/human_input/`）、litegraph.js（画布）。凡标「参考」的形态判断只出自上述检出部分，不外推到未检出的部分。
+> 参考实现：`references/9-workflow-orchestration/` 的稀疏检出——ComfyUI（`nodes.py`、`comfy_execution/graph.py`、`comfy_execution/caching.py`、`comfy_execution/jobs.py`、`execution.py`、`progress.py`、`validation.py`）、n8n（`packages/core/src/execution-engine/workflow-execute.ts`）、langgraph（`libs/langgraph/pregel/`）、Dify（`api/core/workflow/`：`graph_topology.py`、`node_execution.py`、`nodes/agent_v2/`、`nodes/human_input/`）、litegraph.js（画布）。凡标「参考」的形态判断只出自上述检出部分，不外推到未检出的部分。
 > 范围界定：本文主体是**编排层的结构可行性**——节点是什么、图由谁调度、状态存在哪、控制从哪进，以及它与现有内核 / 观测面 / 审批 / 预算 / 取消的边界。**不含**画布交互细节、**不含**具体 DAG 编辑器设计、**不含**排期。
 > 范围例外：§7 的取舍表虽接近实施决策，但它决定 schema、wire 与 DTO 字段，必须与结构一并定案。
 > 引用已归档规格时只写「文档名 +（已归档）」，不给路径。
@@ -32,6 +32,8 @@
 | 16 | 编排可以不等 P8.1 / P8.2 | **不成立** | 子代理与子会话是图里的天然节点类型；跳过 P8.1 会出现「图内子代理不受 `max_depth` 限制」（§4.11、§9） |
 | 17 | 只串 turn 的编排也有独立价值 | **不成立** | 串 turn ≈ 多轮提示链，现有「会话 + 模式」可近似；不可替代的价值只在三件事：**并行分支**、**条件路由**、**人在环节点**（§4.12） |
 | 18 | 技术上可行 | **成立** | 缺的是三件基础设施——run 级键与取消、run 落库、编排控制端口；不缺架构（§6） |
+| 19 | 现有单元已具备「被编排性」 | **不成立** | 九条自述里，类型化输出、运行时注册表、变更签名、动态生长四条全缺；调度侧另八项全缺（§12） |
+| 20 | 调度能力可以与被编排性并行补齐 | **不成立** | 缺那四条自述时，调度器无类型可校验、无积木可列举、无跳过判据、无生长入口（§12.2） |
 
 一句话：**本项目的「可编排 Agent」不是把 ComfyUI 的画布搬过来，而是新增一个位于内核之上的编排层：它把 turn 与工具调用当成节点，用一张可编辑的工作流图决定「何时发起哪个 turn、并行到哪、在哪个节点停下来等人」，而它读的是 I55 已经规格化的只读事件流、写的是自己的 run 台账、控制只经既有命令入口。可行，但不是增量特性——它要求先补齐 run 键、run 落库、控制端口三件基础设施，并且必须先通过 §4.12 的价值门槛，否则会得到一个「用画布串多轮提示」的空壳。**
 
@@ -319,6 +321,8 @@ P8.1（`spawn_agent`）与 P8.2（Worker 会话）在编排语境下不是「另
 | **G10** | 多 run 并行的事件路由 | 前端按活跃会话过滤（N11） | **阻塞**（并行时事件被丢） |
 | **G11** | 图级 HITL 节点 | HITL 只有审批与 `ask_user`（N15） | 不阻塞（价值门槛之一，可放后批） |
 
+> 本表回答「本项目要不要做编排、哪些缺了会阻塞立项」。若换一个问题——「一个单元凭什么能被当成积木、调度器凭什么能驱动一张图」——则见 §12 的九条自述对照与八项调度能力对照；两表口径不同，不合并计数。
+
 ---
 
 ## 7 必须现在定案的取舍
@@ -418,6 +422,100 @@ P8.1（`spawn_agent`）与 P8.2（Worker 会话）在编排语境下不是「另
 
 ---
 
+## 12 附：被编排性与统一编排能力对照
+
+> 本节回答「参考 ComfyUI，我们还缺哪些被编排与统一编排的能力」。§6 是从「本项目要不要做编排」出发的立项视角；本节从「单元凭什么能被当成积木」出发，是同一问题的另一个切面。
+
+### 12.1 判据：ComfyUI 的「可编排」是两侧之和
+
+| 侧面 | 回答什么 | 本项目现状 |
+|---|---|---|
+| **被编排性** | 一个单元凭什么能被当成积木 | 有**参数面**（`input_schema`），无**契约面**（吐什么、何时不必跑、能否生长） |
+| **统一编排** | 调度器凭什么能驱动一张图 | 没有调度器，因为还没有图（§5 判定先 L2） |
+
+ComfyUI 的节点能成为积木，靠的不是「有 `execute` 函数」，而是**九条自述**。逐条对照如下。
+
+### 12.2 被编排性：4 缺 + 3 半缺
+
+| # | ComfyUI 机制 | 作用 | 本项目对应物 | 状态 |
+|---|---|---|---|---|
+| 1 | `RETURN_TYPES`（类型化输出声明） | 编排器可静态校验「这个节点的输出能否接那个节点的输入」 | `ToolSpec` 只有 `input_schema`；`ToolResult.data` 是开放 JSON | **缺（最关键）** |
+| 2 | `NODE_CLASS_MAPPINGS`（运行时注册表）+ `CATEGORY` | 编排器可列举「有哪些单元、各自参数 schema」 | `TurnSpec` 是编译期常量 `chat()` / `agent()`；`ToolCatalog::register` 只注册工具，无执行体种类注册 | **缺** |
+| 3 | `IS_CHANGED`（变更签名） | 编排器可判定「这个单元要不要跑」 | 无。I36a G7「同一 turn 重跑不产生重复副作用」的判定用例尚未建立 | **缺** |
+| 4 | `expand` + `add_ephemeral_node`（运行时生长子图） | 模型运行时才知道要几个子任务，静态图表达不了 | 无。子代理 P8.1 暂缓 | **缺（结构性）** |
+| 5 | `ExecutionBlocker`（阻断传播） | 一个节点判定「下游不需要」→ 下游全跳过，整体仍算成功 | 观测面有 `skipped` 状态，但那是**报告**不是**调度** | 半缺 |
+| 6 | `INPUT_IS_LIST` + 短列表重复末项 | 「同一单元对一组输入逐项跑」 | `is_concurrency_safe` 回答的是「能否并行」，不是「对列表扇出」 | 缺 |
+| 7 | `VALIDATE_INPUTS` + `validate_node_input` | 图级类型对接校验 | 工具有 `coerce_to_schema`，但只在单次调用内；无图级校验 | 半缺 |
+| 8 | `add_external_block`（等外部值） | 人在环节点 | `ask_user` 工具存在（`AgentAskUserTool`），但它是**工具**不是节点 | 半缺 |
+| 9 | `lazy` 输入 + `check_lazy_status` | 节点运行时才决定需要哪些上游 | turn 有 `route`，但那是在 turn **结束后**路由，不是「运行中决定依赖」 | 缺 |
+
+**第 1、2、3、4 条不是锦上添花，而是「编排器能不能工作」的前提**：
+
+- 缺 **1** → 编排器无法做类型校验，连线只能靠人肉，图错误只能在运行时炸；
+- 缺 **2** → 编排器不知道有哪些积木，UI 只能硬编码节点表；
+- 缺 **3** → 任何节点都不能被跳过，每次 run 全量重跑，缓存 / 增量 / 去重全部失效；
+- 缺 **4** → agent 场景最核心的「运行时才知道要几个子任务」根本表达不了。
+
+### 12.3 统一编排：8 项全缺
+
+| # | ComfyUI | 本项目 |
+|---|---|---|
+| 1 | `TopologicalSort` + `blockCount` 就绪判定 | 无 |
+| 2 | 缓存（`CacheKeySetInputSignature` + classic / LRU / RAM 三档） | 无 |
+| 3 | `PromptQueue`（pending / running / history + `interrupt_if_running` + `delete_queue_item` + `wipe_queue`） | `TurnTasks` 是**互斥表**，不是队列 |
+| 4 | `execute_outputs` 部分执行（只跑指定输出节点的祖先） | 无 |
+| 5 | `ExecutionResult { SUCCESS, FAILURE, PENDING }` + 分支级错误处理 | turn 有终态，但无「只失败该分支、其余继续」 |
+| 6 | `DynamicPrompt`（`node_overrides` / `ephemeral_prompt` / display 映射） | 无 |
+| 7 | `normalize_outputs` + 媒体类型归一（images / video / audio / 3d / text） | 无（即模型级编排分析的 G5 产物链路） |
+| 8 | `validate_loops`（带 `start_nodes` / `end_nodes` 的环校验） | 无 |
+
+**第 3 项必须特别指出**：`TurnTasks` 的 `begin` / `is_busy` / `finish` 语义是「同一会话不许并发」，这是**互斥**；ComfyUI 的 queue 是「排队等执行」，这是**调度**。两者同名不同义，不能把 `TurnTasks` 当队列用——这也是 §7 D1 与模型级编排分析 D1「独立键」的共同来源。
+
+### 12.4 三项我们领先，不该去补 ComfyUI 的短板
+
+| # | 本项目 | ComfyUI | 判定 |
+|---|---|---|---|
+| 1 | 观测面：12 节点 + 7 值状态闭集（P15 已交付） | 只有 per-node `value/max` 进度与二进制预览 | **我们领先**：结构化状态是 agent 场景刚需，图像工作流不需要 |
+| 2 | 取消：代际令牌 + `child_token` 父子传播 | 全局 `interrupt` + per-prompt `interrupt_if_running` | **我们更细**：代际解决了「旧轮迟到写入」 |
+| 3 | 审批：`ApprovalScope` + 沙箱降级 | **完全没有** | **我们有而它没有**：这是 agent 与图像生成的根本差别 |
+
+### 12.5 三项不能照搬
+
+| ComfyUI 假设 | 为什么在本场景不成立 |
+|---|---|
+| **节点是纯函数**（缓存的前提） | 模型采样非确定、工具副作用不可重放、人工审批是外部介入（§4.2 已判死） |
+| **图无环**（`DependencyCycleError` + `add_external_block` 只解决「等外部值」） | agent 的重试、条件回退、反思循环都是环；turn 内部已有回边（§4.3 方案 A） |
+| **节点无副作用** | 我们的单元会写文件、跑命令、发网络；重试语义必须是「可判定幂等」而不是「重算即可」 |
+
+### 12.6 优先级三档
+
+**第一档——不做这三件，编排层就是空壳**
+
+1. run 级键与取消树（现有 `conversation_id` 键不够，§6 G1）
+2. run 台账（模板 + 结果落库，§6 G2）
+3. 动态生长（`expand` 的对应物，§12.2 第 4 条）——否则「运行时才知道几个子任务」永远无解
+
+**第二档——决定编排「有没有用」**
+
+4. 类型化输出契约（§12.2 第 1 条）——连线能不能校验
+5. 部分执行（只跑受影响分支，§12.3 第 4 项）
+6. 图级错误策略（跳过下游 / 只失败该分支 / 整体失败，§12.3 第 5 项）
+
+**第三档——可延后，但语义必须重新定义**
+
+7. 缓存（**必须换成「可判定幂等」而不是「纯函数签名」**，否则会缓存出错误结果，§4.2 D3）
+8. 扇出（`INPUT_IS_LIST` 的对应物，§12.2 第 6 条）
+9. 外部阻塞（人在环；`ask_user` 可作基础，§12.2 第 8 条）
+10. 循环校验（§12.3 第 8 项）
+
+### 12.7 收口
+
+> **ComfyUI 教给我们的不是「图怎么画」，而是「一个单元要被编排，必须先把自己说清楚」——能吃什么、吐什么、什么时候不用跑、跑的时候要不要长出新节点。这四条我们一条都没有。**
+
+反过来看，调度侧的八项全缺其实是**好消息**：它们可以一次性设计，不必像 ComfyUI 那样被图像工作流的需求拖着长成现在的形状。而观测、取消、审批这三件我们已经做对的东西，恰恰是 ComfyUI 架构里最难补的部分。
+
+---
+
 ## 参考
 
 - 观测面规格：I55 观测规格（已归档）
@@ -426,3 +524,4 @@ P8.1（`spawn_agent`）与 P8.2（Worker 会话）在编排语境下不是「另
 - 内核基线：I36a 内核基线（`docs/store/I36a-agent-kernel-baseline.md`）
 - 拆分原则：`docs/principle/CODE-SPLIT-PRINCIPLE.md`
 - 参考项目：`references/9-workflow-orchestration/`（ComfyUI / n8n / langgraph / Dify / litegraph.js）
+- §12 依据的 ComfyUI 源码：`references/9-workflow-orchestration/ComfyUI/` 下 `nodes.py`、`comfy_execution/graph.py`、`comfy_execution/caching.py`、`comfy_execution/jobs.py`、`execution.py`、`validation.py`
