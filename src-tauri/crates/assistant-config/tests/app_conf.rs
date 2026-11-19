@@ -1,6 +1,6 @@
 mod common;
 
-use assistant_config::app_conf::{AppConf, ThemeMode};
+use assistant_config::app_conf::{AppConf, ThemeMode, DEFAULT_SHORTCUT_PATTERNS};
 use common::conf_path;
 
 #[test]
@@ -11,7 +11,7 @@ fn new_returns_valid_and_matches_default() {
     assert_eq!(conf.hotkey, "");
     assert!(!conf.stay_on_top);
     assert!(conf.close_to_tray);
-    assert_eq!(conf.keybindings.len(), 3);
+    assert_eq!(conf.keybindings.len(), DEFAULT_SHORTCUT_PATTERNS.len());
     assert!(conf.auto_compact);
     assert!(conf.validate().is_ok());
 
