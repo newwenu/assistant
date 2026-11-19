@@ -1128,8 +1128,6 @@
       "collapse_all": "Collapse branches"
     },
     "detail": {
-      "view_read": "Read",
-      "view_raw": "Raw",
       "show_tool_rows": "Show tool rows",
       "coord": "T{{turn}} · i{{iteration}}",
       "coord_unknown": "Coord unknown",
@@ -1138,7 +1136,10 @@
       "status_failed": "Failed",
       "status_streaming": "Streaming",
       "toggle_details": "Toggle metadata",
+      "toggle_raw": "Raw record",
+      "toggle_raw_close": "Hide raw",
       "copy_record": "Copy record",
+      "source_loading": "Loading",
       "source_dto": "Frontend snapshot",
       "source_raw": "Stored raw row",
       "source_raw_failed": "Failed to load stored rows, showing frontend snapshot: {{reason}}",

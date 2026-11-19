@@ -5,7 +5,6 @@ import {
   Button,
   Dropdown,
   Empty,
-  Segmented,
   Spin,
   Tag,
   Popconfirm,
@@ -18,7 +17,6 @@ import {
 } from "@ant-design/icons";
 import type { Conversation, Message } from "../../chat/core/chatTypes";
 import { HistoryBranchView } from "./HistoryBranchView";
-import type { HistoryViewMode } from "./HistoryBranchRow";
 import { formatConversationTitle } from "../core/formatConversationTitle";
 import css from "./HistoryDetail.module.css";
 
@@ -56,7 +54,6 @@ export const HistoryDetail: React.FC<HistoryDetailProps> = React.memo(
       () => new Set<string>(),
     );
     const [showToolRows, setShowToolRows] = useState(false);
-    const [viewMode, setViewMode] = useState<HistoryViewMode>("read");
 
     useEffect(() => {
       setFocusLeafId(null);
@@ -178,15 +175,6 @@ export const HistoryDetail: React.FC<HistoryDetailProps> = React.memo(
         </div>
         {messages.length > 0 && (
           <div className={css.toolbar}>
-            <Segmented<HistoryViewMode>
-              size="small"
-              value={viewMode}
-              onChange={setViewMode}
-              options={[
-                { value: "read", label: t("history.detail.view_read") },
-                { value: "raw", label: t("history.detail.view_raw") },
-              ]}
-            />
             <span className={css.toolbarLabel}>
               {t("history.detail.show_tool_rows")}
             </span>
@@ -221,7 +209,6 @@ export const HistoryDetail: React.FC<HistoryDetailProps> = React.memo(
               focusLeafId={focusLeafId}
               expandedKeys={expandedKeys}
               showToolRows={showToolRows}
-              viewMode={viewMode}
               scrollTop={scrollTop}
               viewportHeight={viewportHeight}
               scrollContainerRef={messageListRef}

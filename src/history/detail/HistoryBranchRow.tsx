@@ -1,26 +1,29 @@
-import React, { useCallback, useMemo } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Button, Tag, Tooltip } from "antd";
 import { AimOutlined, CopyOutlined, DeleteOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import { MessageBubble } from "../../chat/message/MessageBubble";
-import type { MessageRecordDto } from "../../types/protocol.contract";
 import { BRANCH_COLORS, type HistoryMessageRow } from "./historyTree";
 import { MessageMetaLine } from "./MessageMetaLine";
-import { toRawRecordJson, type RecordSource } from "./recordSnapshot";
+import { formatStamp } from "./formatStamp";
+import { toRawRecordJson, type HistoryRecordState } from "./recordSnapshot";
 import css from "./HistoryBranchView.module.css";
 
 const MAX_INDENT = 6;
 
-export type HistoryViewMode = "read" | "raw";
-
 interface HistoryBranchRowProps {
   row: HistoryMessageRow;
-  viewMode: HistoryViewMode;
-  record: MessageRecordDto | null;
-  recordError: string | null;
+  recordState: HistoryRecordState;
   isFocusLeaf: boolean;
   onDeleteMessage: (id: string) => void;
   onFocusNode: (nodeId: string) => void;
+  onRequestRecords: () => void;
 }
 
 const INTERACTIVE_SELECTOR =
@@ -29,26 +32,29 @@ const INTERACTIVE_SELECTOR =
 export const HistoryBranchRow: React.FC<HistoryBranchRowProps> = React.memo(
   ({
     row,
-    viewMode,
-    record,
-    recordError,
+    recordState,
     isFocusLeaf,
     onDeleteMessage,
     onFocusNode,
+    onRequestRecords,
   }) => {
     const { t } = useTranslation();
     const message = row.node.message;
     const indent = Math.min(row.indent, MAX_INDENT);
     const color = BRANCH_COLORS[row.lane % BRANCH_COLORS.length];
     const isRawTool = message.role === "tool";
-
-    // 有落库原文用原文，否则退回前端快照（I51 §6.3 的降级路径）。
-    const recordSource: RecordSource = record ? "raw" : "dto";
+    const [rawOpen, setRawOpen] = useState(false);
+    const panelRef = useRef<HTMLDivElement | null>(null);
 
     const recordJson = useMemo(
-      () => (viewMode === "raw" ? toRawRecordJson(record, message) : ""),
-      [message, record, viewMode],
+      () => (rawOpen ? toRawRecordJson(recordState.record, message) : ""),
+      [message, recordState.record, rawOpen],
     );
+
+    useEffect(() => {
+      if (!rawOpen) return;
+      panelRef.current?.scrollIntoView?.({ block: "nearest" });
+    }, [rawOpen]);
 
     const coord =
       message.turnIndex == null
@@ -67,6 +73,11 @@ export const HistoryBranchRow: React.FC<HistoryBranchRowProps> = React.memo(
       [message.id, onFocusNode],
     );
 
+    const handleToggleRaw = useCallback(() => {
+      if (!rawOpen) onRequestRecords();
+      setRawOpen((value) => !value);
+    }, [onRequestRecords, rawOpen]);
+
     const handleCopyRecord = useCallback(() => {
       navigator.clipboard.writeText(recordJson).catch(() => {});
     }, [recordJson]);
@@ -84,45 +95,42 @@ export const HistoryBranchRow: React.FC<HistoryBranchRowProps> = React.memo(
       .join(" ");
 
     const sourceTag =
-      recordError !== null ? (
+      recordState.error !== null ? (
         <Tooltip
-          title={t("history.detail.source_raw_failed", { reason: recordError })}
+          title={t("history.detail.source_raw_failed", {
+            reason: recordState.error,
+          })}
         >
           <Tag color="error" style={{ margin: 0 }}>
             {t("history.detail.source_dto")}
           </Tag>
         </Tooltip>
+      ) : recordState.source === "loading" ? (
+        <Tag color="default" style={{ margin: 0 }}>
+          {t("history.detail.source_loading")}
+        </Tag>
       ) : (
         <Tag
-          color={recordSource === "raw" ? "blue" : "default"}
+          color={recordState.source === "raw" ? "blue" : "default"}
           style={{ margin: 0 }}
         >
-          {recordSource === "raw"
+          {recordState.source === "raw"
             ? t("history.detail.source_raw")
             : t("history.detail.source_dto")}
         </Tag>
       );
 
     const renderBody = () => {
-      if (viewMode === "raw") {
+      if (isRawTool) {
         return (
           <div className={css.rawRow}>
             <div className={css.rawHeader}>
               <Tag color="default" style={{ margin: 0 }}>
                 {message.role}
               </Tag>
-              <span>{new Date(message.timestamp).toLocaleString()}</span>
+              <span>{formatStamp(message.timestamp, true)}</span>
               <span>{coord}</span>
-              <span className={css.rawSpacer}>{message.id}</span>
-              {sourceTag}
-              <Tooltip title={t("history.detail.copy_record")}>
-                <Button
-                  size="small"
-                  type="text"
-                  icon={<CopyOutlined />}
-                  onClick={handleCopyRecord}
-                />
-              </Tooltip>
+              <span className={css.rawId}>{message.id}</span>
               <Tooltip title={t("common.actions.delete")}>
                 <Button
                   size="small"
@@ -132,20 +140,6 @@ export const HistoryBranchRow: React.FC<HistoryBranchRowProps> = React.memo(
                   onClick={handleDelete}
                 />
               </Tooltip>
-            </div>
-            <pre className={css.rawBody}>{recordJson}</pre>
-          </div>
-        );
-      }
-      if (isRawTool) {
-        return (
-          <div className={css.rawRow}>
-            <div className={css.rawHeader}>
-              <Tag color="default" style={{ margin: 0 }}>
-                {message.role}
-              </Tag>
-              <span>{new Date(message.timestamp).toLocaleString()}</span>
-              <span>{message.id}</span>
             </div>
             <div>{message.content}</div>
           </div>
@@ -157,6 +151,7 @@ export const HistoryBranchRow: React.FC<HistoryBranchRowProps> = React.memo(
           isStreaming={false}
           showIdentity={row.showIdentity}
           showBranchPicker={false}
+          showTimestamp={false}
           onDelete={onDeleteMessage}
         />
       );
@@ -177,8 +172,37 @@ export const HistoryBranchRow: React.FC<HistoryBranchRowProps> = React.memo(
           )}
         </div>
         <div className={css.bubbleWrap}>
-          <MessageMetaLine message={message} />
+          <MessageMetaLine
+            message={message}
+            rawOpen={rawOpen}
+            onToggleRaw={handleToggleRaw}
+          />
           {renderBody()}
+          {rawOpen && (
+            <div className={css.rawPanel} ref={panelRef}>
+              <div className={css.rawHeader}>
+                {sourceTag}
+                <span className={css.rawId}>{message.id}</span>
+                <Tooltip title={t("history.detail.copy_record")}>
+                  <Button
+                    size="small"
+                    type="text"
+                    icon={<CopyOutlined />}
+                    disabled={recordState.source === "loading"}
+                    onClick={handleCopyRecord}
+                  />
+                </Tooltip>
+                <button
+                  type="button"
+                  className={css.metaToggle}
+                  onClick={handleToggleRaw}
+                >
+                  {t("history.detail.toggle_raw_close")}
+                </button>
+              </div>
+              <pre className={css.rawBody}>{recordJson}</pre>
+            </div>
+          )}
           {isFocusLeaf && (
             <span className={css.focusBadge}>
               <AimOutlined /> {t("history.tree.focus_hint")}

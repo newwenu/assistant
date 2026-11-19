@@ -44,6 +44,11 @@ interface MessageBubbleProps {
   showBranchPicker?: boolean;
   /** true 时 assistant 侧 chrome 由 `TurnTail` 承接，本气泡不渲染（I46 §4.4）。 */
   suppressAssistantChrome?: boolean;
+  /**
+   * 是否在操作行渲染气泡时间戳：历史页由元数据行唯一承载时间（I51 §4.3），
+   * 传 `false` 避免同一消息出现两种时间格式。
+   */
+  showTimestamp?: boolean;
   /** 本行是所在 turn 的尾锚点：由它挂载唯一的 `TurnTail`。 */
   isTurnTail?: boolean;
   /**
@@ -73,6 +78,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
     showIdentity = true,
     showBranchPicker = true,
     suppressAssistantChrome = false,
+    showTimestamp = true,
     isTurnTail = false,
     chromeOnly = false,
     onDelete,
@@ -328,9 +334,11 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
           )}
           {!editing && !(suppressAssistantChrome && isAssistant) && (
             <div className={css.actionsWrapper}>
-              <span className={css.timestamp}>
-                {new Date(message.timestamp).toLocaleTimeString()}
-              </span>
+              {showTimestamp && (
+                <span className={css.timestamp}>
+                  {new Date(message.timestamp).toLocaleTimeString()}
+                </span>
+              )}
               {showBranchPicker && (
                 <BranchPicker
                   currentSiblingIndex={message.siblingIndex}

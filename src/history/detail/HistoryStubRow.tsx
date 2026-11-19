@@ -6,6 +6,7 @@ import {
   BRANCH_COLORS,
   type HistoryStubRow as HistoryStubRowModel,
 } from "./historyTree";
+import { formatStamp } from "./formatStamp";
 import css from "./HistoryBranchView.module.css";
 
 const MAX_INDENT = 6;
@@ -91,7 +92,7 @@ export const HistoryStubRow: React.FC<HistoryStubRowProps> = React.memo(
                     {previewText(message.content)}
                   </span>
                   <span className={css.stubPreviewMeta}>
-                    {new Date(message.timestamp).toLocaleTimeString()}
+                    {formatStamp(message.timestamp)}
                   </span>
                 </button>
               );

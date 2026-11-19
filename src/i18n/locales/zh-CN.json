@@ -1101,8 +1101,6 @@
       "collapse_all": "收起分支"
     },
     "detail": {
-      "view_read": "阅读",
-      "view_raw": "原始",
       "show_tool_rows": "显示工具行",
       "coord": "T{{turn}} · i{{iteration}}",
       "coord_unknown": "坐标未知",
@@ -1111,7 +1109,10 @@
       "status_failed": "失败",
       "status_streaming": "生成中",
       "toggle_details": "展开或收起元数据",
+      "toggle_raw": "记录原文",
+      "toggle_raw_close": "收起原文",
       "copy_record": "复制记录",
+      "source_loading": "加载中",
       "source_dto": "前端快照",
       "source_raw": "落库原文",
       "source_raw_failed": "落库原文拉取失败，已显示前端快照：{{reason}}",

@@ -1,9 +1,9 @@
-# I51 — 历史页检视能力规格（身份口径 / 元数据 / 原始视图 / 导出）
+# I51 — 历史页检视能力规格（身份口径 / 元数据 / 行内原文面板 / 导出）
 
 | 项 | 值 |
 |---|---|
 | 状态 | Draft（实施规格，不含进度记录） |
-| 日期 | 2026-11-15 |
+| 日期 | 2026-11-19 |
 | 依据 | 现状缺口 H1–H8 见 §1.3，全部来自本次对 `src/history/`、`src/chat/message/`、`src/services/`、`src-tauri/crates/assistant-storage/` 的实读；身份口径冲突见 §2.1 |
 | 落地对象 | 前端：`src/history/detail/`、`src/chat/message/`（仅新增可选 prop）、`src/services/historyService.ts`、`src/stores/historyStore.ts`、`src/i18n/locales/`；后端（仅 M2 / M3）：`src-tauri/src/cmd/conversation.rs`、`src-tauri/crates/assistant-storage/src/conversations/`、`src-tauri/src/protocol/dto/` |
 | 关联 | I46 节点布局规格（已归档）（坐标判据与 `turn` 语义唯一出处）、I46 紧凑消息格式设计（已归档）（`compact` 信封，仍在用）、I40-history-message-tree-spec（已归档，树渲染基线）、I50 运行时审计规格（已归档）（相邻域，**口径不通用**：审计是安全事件，本文是会话内容） |
@@ -43,7 +43,7 @@
 | H3 | `turnIndex` / `iteration` 已落库并在 `MessageDto` 上，历史页零展示 | 同上 | M1 |
 | H4 | `tokens` 已落库，全局无任何消息级消费方 | `src/chat/message/MessageBubble.tsx` | M1 |
 | H5 | 工具栏「原始行」开关（`history.tree.raw_rows`）真实语义只是「显示 `role === tool` 的链式行」，与「原始」无关；命名误导 | `src/history/detail/HistoryDetail.tsx`、`src/i18n/locales/` | M1 |
-| H6 | 无原始视图：`tool_calls_json` 原文在前端被 `toChatMessage` 解析为视图后即丢弃，`arguments` 只保留可解析快照 | `src/chat/core/toolCallView.ts` | M2 |
+| H6 | 无原文出口：`tool_calls_json` 原文在前端被 `toChatMessage` 解析为视图后即丢弃，`arguments` 只保留可解析快照 | `src/chat/core/toolCallView.ts` | M2 |
 | H7 | 详情页导出按钮硬编码 `"markdown"`，后端 `export_conversation` 已支持 `"json"` 却无人调用；markdown 导出只输出 `content_plain_text`，丢弃 `reasoning` / 工具调用 / 坐标 / 时间戳 | `src/history/detail/HistoryDetail.tsx`、`assistant-storage/src/conversations/ops.rs` | M1（UI）/ M2（内容） |
 | H8 | 侧栏导出菜单与详情页导出能力不一致（侧栏有 JSON，详情页没有） | `src/history/sidebar/ConversationListItem.tsx` | M1 |
 
@@ -52,6 +52,7 @@
 - 不做历史页写操作（编辑 / 重新生成 / 分叉 / 切换分支），`MessageBubble` 的这些回调在历史页继续保持不传；
 - 不做跨会话检索（`search_history` 工具仍属 roadmap 待排期项）；
 - 不改分支链拓扑、不改树渲染的折叠语义、不改 `HistoryVirtualList` 的虚拟化算法；
+- 不做整屏视图切换：记录原文是行内折叠面板（§4.1），不新增第二条整屏渲染路径；
 - 不做请求体采集（§7 单列为可选阶段，需独立规格）；
 - 不把元数据层做成「审计日志」：本页不承载任何安全事件语义（与 I50 的 `security_audit_log` / `permission_audit` 无交集）。
 
@@ -113,10 +114,15 @@ for (const row of rows) {
 ```ts
 interface MessageMetaLineProps {
   message: Message;
-  /** 是否展开为键值表；由行内局部状态持有，不进 store。 */
+  /** 元数据是否展开为键值表；由行内局部状态持有，不进 store。 */
   defaultExpanded?: boolean;
+  /** 原文面板开关状态（§4.2）。未传 onToggleRaw 即不渲染开关（stub 行）。 */
+  rawOpen?: boolean;
+  onToggleRaw?: () => void;
 }
 ```
+
+布局：`chips 区（flex: 1，可换行） + 右侧固定开关`。chips 区自身是元数据展开/收起按钮；原文开关是**同级**的独立按钮，二者禁止嵌套。
 
 ### 3.2 折叠态（默认）
 
@@ -135,7 +141,7 @@ interface MessageMetaLineProps {
 
 ### 3.3 展开态
 
-点击 chips 行（或行尾「详情」按钮）切换为键值表，字段与顺序固定：
+点击 chips 区切换为键值表，字段与顺序固定：
 
 | 键 | 值 | 说明 |
 |---|---|---|
@@ -148,7 +154,7 @@ interface MessageMetaLineProps {
 | `status` | 原始枚举串 | |
 | `tokens` | 数字或「—」 | |
 | `providerId` / `modelId` / `modeId` | 原始 id 或「—」 | |
-| `timestamp` | `YYYY-MM-DD HH:MM:SS`（本地时区，秒级） | 折叠态只显示时分秒，展开态补日期 |
+| `timestamp` | `YYYY-MM-DD HH:MM:SS`（本地时区，秒级） | 折叠态用同函数的短模式 `HH:MM:SS`；两种模式都由 `formatStamp` 产出（G15） |
 | `content` | `{chars} chars · {blocks} blocks` | **禁止**展开正文，正文由气泡承载 |
 | `reasoning` | `{chars} chars` | 同上 |
 | `toolCalls` | `{count} calls` | 同上 |
@@ -157,9 +163,10 @@ interface MessageMetaLineProps {
 
 ### 3.4 挂载位置
 
-- 挂载在 `HistoryBranchRow` 内、`MessageBubble` **之上**（身份行之下），顺序为：身份行（气泡内部）→ 元数据行 → 气泡；
+- 挂载在 `HistoryBranchRow` 内、`MessageBubble` **之上**（身份行之下），行内顺序为：身份行（气泡内部）→ 元数据行 → 气泡 → 原文面板（§4.3）；
 - 元数据行**必须**位于 `HistoryBranchRow` 而非 `MessageBubble` 内部，保证主会话 DOM 零变化（门禁 G3）；
-- `role === "tool"` 的原始工具行在 M1 保持现状（`rawRow` 渲染），但必须同时挂元数据行（它的 `content` 就是工具结果原文，无需进气泡）。
+- 元数据行横向排布：chips 区可换行、占满剩余宽度，右侧固定「原文」开关（§4.2），开关不得与 chips 的展开按钮共用同一 `<button>`；
+- `role === "tool"` 的原始工具行在 M1 保持现状（`rawRow` 渲染），但必须同时挂元数据行与原文面板（`rawRow` 是结构化结果，面板是逐列原文，二者同属一行、不互斥）。
 
 ### 3.5 与虚拟列表的协作
 
@@ -167,42 +174,63 @@ interface MessageMetaLineProps {
 
 ---
 
-## 4 原始视图（M1）
+## 4 记录原文层（M1 / M2，单视图）
 
-### 4.1 视图模式
+### 4.1 设计裁决：取消「阅读 / 原始」两视图
 
-`HistoryDetail` 工具栏由「原始行」单开关改为**两段式**：
+初版规格把原始层做成整屏替换的第二视图（工具栏 `Segmented`「阅读 / 原始」）。落地后实读代码，该结构在三处无法建立审查对应关系，且都不是可局部修补的缺陷：
 
-1. `视图`：分段控件「阅读 / 原始」（`history.detail.view_read` / `history.detail.view_raw`），默认「阅读」；
-2. `工具行`：开关「显示工具行」（`history.detail.show_tool_rows`），语义等于现状 `rawRows`（`role === "tool"` 的链式行是否作为独立行渲染），默认关。
+1. **滚动锚点丢失**：`HistoryDetail` 只保存像素 `scrollTop`，`HistoryVirtualList` 的行高缓存按 `data-row-key` 存且跨模式不失效，未测量行退回 `ESTIMATED_ROW_HEIGHT`。原始行高是气泡行的数倍 → 切到原始落到更早的消息，切回阅读被夹到底部；`rows.length <= VIRTUAL_SCROLL_THRESHOLD` 的非虚拟化路径根本不做测量，错位无法自愈。
+2. **行标识不共享**：阅读模式折叠态 chips 不含 `id`，原始块头部含 `id`；原始块时间走 `toLocaleString()`，元数据行走 `formatStamp`；坐标 `T{turn} · i{iteration}` 本身不唯一（`compact_summary` 与 `tool` 行可同坐标）。跨模式只能靠「数第几条」重建对应。
+3. **记录形状突变**：落库原文 `MessageRecordDto` 携带 `toolCallsJson` / `toolCallId` / `isError`，前端快照 `toRecordSnapshot` 携带已解析的 `toolCalls`；拉取在「进入原始模式」时才发起，返回前整屏显示快照、返回后整屏键集切换，且加载中与降级态外观相同 → 复制出来的可能是快照而被当成落库事实。
 
-命名修正依据：现状 `history.tree.raw_rows`（「原始行」）真实语义只是 H5 所述的工具行可见性，与原始视图无关。旧文案键必须删除，禁止保留同义重复键。
+**裁决**：删除视图模式切换。原始层改为挂在**同一行内、默认折叠、逐行展开**的面板。对应关系由 DOM 位置直接给出（同 `data-row-key`、同缩进、同轨道色），不需要任何跨视图匹配机制。
 
-### 4.2 原始模式下的行渲染
+### 4.2 交互与行内顺序
 
-「原始」模式下，`HistoryBranchRow` 必须替换 L0 气泡为原始块，结构固定：
+工具栏只保留「显示工具行」开关（`history.detail.show_tool_rows`，语义等于原 `rawRows`：`role === "tool"` 的链式行是否作为独立行渲染，默认关）；删除「视图」分段控件，`history.detail.view_read` / `view_raw` 文案键随之删除，禁止保留同义重复键（旧 `history.tree.raw_rows` 的删除依据不变：其真实语义只是工具行可见性，与原文无关）。
+
+行内顺序固定：身份行（气泡内部）→ 元数据行（chips + 原文开关）→ 气泡 → 记录原文面板。
+
+- 原文开关是元数据行右侧的独立图标按钮，**禁止**嵌进 chips 的 `<button>` 内（按钮嵌套非法，点击会被 chips 的展开/收起吞掉）；每行独立状态，默认折叠；
+- **禁止**提供「全部展开」全局开关：一次展开 N 行会让视口内所有行高同时变化，等于重新引入整屏位移；逐行展开只改一行，其它行偏移不变，无需滚动补偿；
+- `HistoryVirtualList` 的 `heightsRef` 保持「每行一个高度」的单一口径（不区分视图状态），展开只更新该行条目；
+- `stub` 行（`HistoryStubRow`）**不提供**原文面板：它不是消息行，只有折叠占位语义，继续渲染 `extractDerivedText` 摘要。
+
+### 4.3 面板结构
+
+记录原文面板挂在气泡**下方**，与气泡同属一个行容器：
 
 ```tsx
-<div className={css.rawRow}>
-  <div className={css.rawHeader}>
-    <Tag>{role}</Tag>
-    <span>{完整时间戳}</span>
-    <span>{id}</span>
-    <span>{T{turnIndex} · i{iteration}}</span>
-    <CopyButton />            {/* 复制本行 JSON */}
-  </div>
-  <pre className={css.rawBody}>{recordJson}</pre>
+<div className={css.bubbleWrap}>
+  <MessageMetaLine message={message} />   {/* 含右侧原文开关 */}
+  <MessageBubble ... />                   {/* 或 tool 行的既有载体 */}
+  {rawOpen && (
+    <div className={css.rawPanel}>
+      <div className={css.rawHeader}>
+        <Tag>{sourceLabel}</Tag>
+        <span className={css.rawId}>{message.id}</span>
+        <CopyButton disabled={source === "loading"} />
+      </div>
+      <pre className={css.rawBody}>{recordJson}</pre>
+    </div>
+  )}
 </div>
 ```
 
 约束：
 
-- **必须**保留分支缩进、轨道色、`dimmed`、焦点徽标与「删除消息」入口——原始模式只换内容载体，不换树结构；
+- 面板**禁止**重复 `role` / 时间戳 / 坐标：这三项由同一行的元数据行唯一承载（消除同一条消息出现两种时间格式）；
+- 气泡侧必须关闭自身时间戳（历史行显式传 `MessageBubble` 的 `showTimestamp={false}`，默认 `true` 只服务聊天页），元数据行是历史页唯一的时间出口；
+- `id` 等宽、可选中复制；来源标签按 §4.5 的状态表取值；
+- 面板以左侧竖线（`--color-border`）贴附气泡下方；`dimmed` 行整体继承 `opacity`，不额外降透明度；
+- 面板与气泡同属一个 `data-row-key`，虚拟列表只测量一个整体高度；分支缩进、轨道色、焦点徽标、「删除消息」入口均不变（面板只换内容载体，不动树结构）；
 - `recordJson` 必须由 `JSON.stringify(record, null, 2)` 生成，等宽字体，`white-space: pre-wrap`，长行折行（沿用现状 `.rawRow` 的 CSS 口径）；
-- **禁止**在原始模式下渲染 markdown、推理块、工具卡片（避免双重呈现）；
-- 原始模式的 `stub` 行不变（`HistoryStubRow` 的预览文案仍走 `extractDerivedText` 摘要）。
+- 面板内**禁止**渲染 markdown / 推理块 / 工具卡片；气泡继续由 `MessageBubble` 承载。二者是同一行的上下两层，不再互斥。
 
-### 4.3 L1 记录快照的形状（M1）
+初版规格「原始模式下禁止渲染 markdown、推理块、工具卡片」的禁令在此废止（该条针对的是整屏替换视图，会双重呈现同一屏内容）；行内面板的双层对应关系由位置直接给出，双呈现即为检视目的。
+
+### 4.4 记录快照形状（M1）
 
 M1 无后端改动，快照由前端 `Message` 投影而来。**禁止**直接 `JSON.stringify(message)`：`Message` 携带前端本地字段（`error`、`toolCalls[].argsText`、`startedAt` 等），直接序列化会把运行期状态混进「落库记录」。
 
@@ -213,16 +241,32 @@ M1 无后端改动，快照由前端 `Message` 投影而来。**禁止**直接 `
 3. 缺值字段**必须**输出 `null`（键恒在），禁止 `undefined`（`JSON.stringify` 会整键丢弃）；
 4. 函数必须纯、无副作用、不缓存结果。
 
-### 4.4 序列化惰性
+### 4.5 来源状态机（M2）
 
-**禁止**在 `historyStore`、`buildHistoryTree`、`flattenHistoryRows` 或任何 selector 中预先序列化记录。序列化只允许发生在**已渲染行**的组件内（`useMemo` 依赖 `message` 引用），保证：
+`RecordSource` 由 `"dto" | "raw"` 扩为四态。加载态必须可与降级态区分——旧实现两者外观相同，会把快照误当落库事实：
 
-- 虚拟化只序列化可见窗口（`VIRTUAL_SCROLL_THRESHOLD` 之上尤其重要）；
-- 折叠态与「阅读」模式零序列化开销。
+| 状态 | 触发 | 标签 | 复制 |
+|---|---|---|---|
+| （不渲染面板） | 行未展开 | — | — |
+| `loading` | 已发起拉取、未返回 | `history.detail.source_loading`（中性色） | 禁用 |
+| `raw` | 命中 `MessageRecordDto` | `history.detail.source_raw`（主色） | 落库原文 |
+| `dto` | 拉取成功但该 id 无记录 | `history.detail.source_dto`（默认色） | 前端快照 |
+| `error` | 拉取失败 | `history.detail.source_dto` + `error` 色 + Tooltip `history.detail.source_raw_failed` | 前端快照 |
 
-### 4.5 复制
+- 拉取时机：**首次展开任一行**时触发一次，结果缓存于 `HistoryBranchView` 的 `Map<id, MessageRecordDto>`（**必须挂在此常驻组件**，虚拟列表会卸载滚出窗口的行）；会话切换时随 `HistoryDetail` 的 `selectedId` effect 清空；
+- 失败不留「已加载」标记：再次展开时允许重试，避免一次瞬时失败让该会话永久停在降级态；
+- 禁止静默空白：任何状态下展开都必须有内容（落库原文或前端快照）；
+- `loading` 期间展示快照内容但标签明确标注，**禁止**用 `source_dto` 标签冒充已降级。
 
-原始块头部的复制按钮复制**该行** JSON；`MessageActions` 的既有复制按钮继续复制 `buildCopyText(message)`（消息正文的可读文本：多模态消息按块派生 `[图片]` / `[文件 name]`，失败消息附错误标题与详情），**禁止**混入记录 JSON。两个复制入口必须在 tooltip 上区分（`common.actions.copy` vs `history.detail.copy_record`）。
+### 4.6 序列化惰性
+
+`recordJson` 只在该行**展开时**于行组件内 `useMemo` 生成（依赖 `message` 引用、展开态与记录引用）。折叠行零序列化开销——比初版「原始模式下序列化整个可见窗口」更强。
+
+**禁止**在 `historyStore`、`buildHistoryTree`、`flattenHistoryRows` 或任何 selector 中预先序列化记录。
+
+### 4.7 复制
+
+面板头部的复制按钮复制**该行**记录 JSON；`MessageActions` 的既有复制按钮继续复制 `buildCopyText(message)`（消息正文的可读文本：多模态消息按块派生 `[图片]` / `[文件 name]`，失败消息附错误标题与详情），**禁止**混入记录 JSON。两个复制入口必须在 tooltip 上区分（`common.actions.copy` vs `history.detail.copy_record`）。
 
 ---
 
@@ -353,22 +397,22 @@ pub include_records: bool,   // #[serde(default)]，默认 false
 - 数据源仍是 `get_messages` / `get_conversation_detail` 已取回的 `MessageRow`，`MessageRecordDto::from` 直接复用，不额外查库；
 - 会话不存在时 `get_conversation` 仍返回 `Ok(None)`，与既有空值口径一致；
 - 前端服务落点 `src/services/historyService.ts`：`getMessageRecords(conversationId)`，内部以 `mode: "all"` + `includeRecords: true` 调用 `get_conversation`，只返回 `records`；
-- **不新增独立命令**：逐条 IPC 在原始视图下会产生 N 次调用，合并到详情查询后一次拉全，且虚拟列表卸载行不会造成重复请求。
+- **不新增独立命令**：逐条 IPC 在展开原文面板时会产生 N 次调用，合并到详情查询后一次拉全，且虚拟列表卸载行不会造成重复请求。
 
-### 6.3 前端切换
+### 6.3 前端来源切换
 
-`recordSnapshot.ts` 增加第二种来源：
+`recordSnapshot.ts` 的来源枚举扩为三值（面板状态表见 §4.5）：
 
 ```ts
-type RecordSource = "dto" | "raw";
+type RecordSource = "loading" | "raw" | "dto";
 ```
 
-- `"dto"`（M1）：`toRecordSnapshot(message)`；
 - `"raw"`（M2）：`getMessageRecords(conversationId)` 的结果（一次拉全会话，按 `id` 取用）；
-- 原始块头部必须显示来源标签（`history.detail.source_dto` / `history.detail.source_raw`），让使用者知道当前看到的是「前端快照」还是「落库原文」；
-- 拉取失败必须降级回 `"dto"` 并在块内标注失败（禁止静默空白）；
-- 失败不留「已加载」标记：再次进入原始模式时允许重试，避免一次瞬时失败让该会话永久停在降级态；
-- 缓存于 `HistoryBranchView` 内的 `Map<id, MessageRecordDto>`（不进全局 store），会话切换时随 `HistoryDetail` 的 `selectedId` effect 一并清空。
+- `"loading"`（M2）：拉取在途，面板展示快照内容但标签明确标注，复制禁用；
+- `"dto"`（M1）：`toRecordSnapshot(message)`；同时承担「拉取成功但该 id 无记录」与「拉取失败」两种降级，失败原因由标签的 `error` 色 + Tooltip 承载；
+- 面板头部必须显示来源标签（`history.detail.source_loading` / `source_raw` / `source_dto`），让使用者知道当前看到的是「前端快照」还是「落库原文」；
+- 拉取时机是**首次展开任一行**（不是进入某个视图模式），一次拉全并缓存于 `HistoryBranchView` 内的 `Map<id, MessageRecordDto>`（不进全局 store），会话切换时随 `HistoryDetail` 的 `selectedId` effect 一并清空；
+- 失败不留「已加载」标记：再次展开时允许重试，避免一次瞬时失败让该会话永久停在降级态。
 
 ---
 
@@ -386,7 +430,7 @@ type RecordSource = "dto" | "raw";
 2. 必须有**默认关闭**的开关 + 明确容量上限与保留策略（按条数或按天），落盘前必须过脱敏（密钥、`Authorization` 头、`data:` 内联图截断）；
 3. 采集失败不得阻断请求（沿用 I50「审计不阻断业务」的失败语义）；
 4. 必须定义删除语义：删除消息 / 删除会话 / 清空会话时，请求记录同步删除（外键或事务内级联）；
-5. 必须定义导出语义：M3 的请求体只在「原始视图」按行展开时展示，禁止批量注入导出文件。
+5. 必须定义导出语义：M3 的请求体只在原文面板按行展开时展示，禁止批量注入导出文件。
 
 M3 不在本文验收范围内，本文只固定准入条件。
 
@@ -399,16 +443,19 @@ M3 不在本文验收范围内，本文只固定准入条件。
 | 文件 | 改动 |
 |---|---|
 | `src/history/detail/historyTree.ts` | `HistoryMessageRow` 加 `showIdentity`；`flattenHistoryRows` 末尾加身份归并 pass（§2.2） |
-| `src/history/detail/HistoryBranchRow.tsx` | 显式传 `showIdentity`；挂载 `MessageMetaLine`；新增原始模式分支（§4.2） |
-| `src/history/detail/MessageMetaLine.tsx` | 新增（§3） |
-| `src/history/detail/recordSnapshot.ts` | 新增 `toRecordSnapshot`（§4.3） |
-| `src/history/detail/HistoryBranchView.tsx` | 透传 `viewMode`；`rawRows` 更名为 `showToolRows` |
-| `src/history/detail/HistoryDetail.tsx` | 工具栏改「视图 / 工具行」两段（§4.1）；导出改 Dropdown（§5.1） |
-| `src/history/detail/HistoryBranchView.module.css` | 复用现有 `.rawRow` / `.rawHeader`（等宽、10px、`--color-text-tertiary` 已就位）；仅新增 `.rawBody` / `.metaLine` / `.metaTable` |
-| `src/chat/message/MessageBubble.tsx` | **仅改** `showIdentity` 的 JSDoc（§2.2 约束 3）；DOM 与行为零变化 |
+| `src/history/detail/HistoryBranchRow.tsx` | 显式传 `showIdentity`；挂载 `MessageMetaLine`；行内新增记录原文面板（§4.3） |
+| `src/history/detail/MessageMetaLine.tsx` | 新增（§3）；行尾独立原文开关按钮（§4.2） |
+| `src/history/detail/formatStamp.ts` | 新增：历史页唯一时间格式化函数（§3.3 / G15），供元数据行与 stub 预览共用 |
+| `src/history/detail/recordSnapshot.ts` | 新增 `toRecordSnapshot`（§4.4） |
+| `src/history/detail/HistoryBranchView.tsx` | `rawRows` 更名为 `showToolRows`；不再承载视图模式 |
+| `src/history/detail/HistoryDetail.tsx` | 工具栏只留「工具行」开关（§4.2）；导出改 Dropdown（§5.1） |
+| `src/history/detail/HistoryBranchView.module.css` | 复用现有 `.rawHeader` / `.rawBody`（等宽、10px、`--color-text-tertiary` 已就位）；新增 `.rawPanel` / `.rawId` / `.metaLine` / `.metaTable`；`.metaLine` 改横向（chips 撑满 + 右侧开关） |
+| `src/history/detail/HistoryStubRow.tsx` | 预览时间改走 `formatStamp`（去掉 `toLocaleTimeString`，G15）；不加原文面板 |
+| `src/chat/message/MessageBubble.tsx` | 改 `showIdentity` 的 JSDoc（§2.2 约束 3）；新增 `showTimestamp?: boolean`（默认 `true`，历史行传 `false`，§4.3）；主会话默认路径 DOM 与行为零变化 |
 | `src/i18n/locales/zh-CN.json`、`en-US.json` | 新增 `history.detail.*`；删除 `history.tree.raw_rows` |
 | `src/history/detail/__tests__/historyTree.test.ts` | 补身份归并用例（§9.2） |
 | `src/history/detail/__tests__/recordSnapshot.test.ts` | 新增（§9.2） |
+| `src/history/detail/__tests__/formatStamp.test.ts` | 新增：短 / 完整模式的格式与补零（§9.2 / G15） |
 
 ### 8.2 后端（M2）
 
@@ -429,13 +476,13 @@ M3 不在本文验收范围内，本文只固定准入条件。
 
 | 文件 | 改动 |
 |---|---|
-| `src/history/detail/recordSnapshot.ts` | 新增 `RecordSource` 枚举与 `toRawRecordJson(record, message)`（有落库原文用原文，无原文退回 `toRecordSnapshot` 快照） |
-| `src/history/detail/HistoryBranchView.tsx` | 新增 `conversationId` 入参；原始模式首次进入时一次性拉全并缓存 `Map<id, MessageRecordDto>`（**必须挂在此常驻组件**，禁止挂行组件）；会话切换清空 |
-| `src/history/detail/HistoryBranchRow.tsx` | 新增 `record` / `recordError` 入参；原始块头部加来源标签与失败提示 |
+| `src/history/detail/recordSnapshot.ts` | 新增 `RecordSource` 枚举（`loading` / `raw` / `dto` 三态）与 `toRawRecordJson(record, message)`（有落库原文用原文，无原文退回 `toRecordSnapshot` 快照） |
+| `src/history/detail/HistoryBranchView.tsx` | 新增 `conversationId` 入参；**首次展开任一行**时一次性拉全并缓存 `Map<id, MessageRecordDto>`（**必须挂在此常驻组件**，禁止挂行组件）；会话切换清空 |
+| `src/history/detail/HistoryBranchRow.tsx` | 新增 `record` / `recordState` 入参；面板头部按 §4.5 输出来源标签与失败提示；`loading` 期间禁用复制 |
 | `src/history/detail/HistoryDetail.tsx` | 透传 `conversationId`；导出菜单加 `jsonl` |
 | `src/history/sidebar/ConversationListItem.tsx`、`src/history/HistoryManager.tsx` | 右键菜单加 `jsonl`；导出文件后缀 / filter 名按 format 分支 |
-| `src/i18n/locales/zh-CN.json`、`en-US.json` | 新增 `history.export_jsonl`、`history.detail.source_dto` / `source_raw` / `source_raw_failed` |
-| `src/history/detail/__tests__/recordSnapshot.test.ts` | 补 `toRawRecordJson` 的「用原文」与「退回快照」两条用例 |
+| `src/i18n/locales/zh-CN.json`、`en-US.json` | 新增 `history.export_jsonl`、`history.detail.source_loading` / `source_dto` / `source_raw` / `source_raw_failed`；删除 `history.detail.view_read` / `view_raw` |
+| `src/history/detail/__tests__/recordSnapshot.test.ts` | 补 `toRawRecordJson` 的「用原文」与「退回快照」两条用例；补 `RecordSource` 三态取值 |
 
 ---
 
@@ -447,16 +494,19 @@ M3 不在本文验收范围内，本文只固定准入条件。
 |---|---|---|
 | G1 | 历史页同一 turn 内仅首个非 `dimmed` 的 assistant 行显示身份行 | 构造同 turn 多 iteration + 兄弟分支的树，断言 `rows` 中 `showIdentity` 为 true 的行数 = turn 数 |
 | G2 | `turnIndex === null` 的存量行逐行显示身份行，不推断轮次 | 构造全 `null` 坐标的树，断言所有 assistant 行 `showIdentity === true` |
-| G3 | 主会话渲染零回归 | `src/chat/message/__tests__/nodeLayoutGates.test.ts` 与 `groupNodeRows.test.ts` 不改断言即通过；`MessageBubble` DOM 除 JSDoc 外无 diff |
+| G3 | 主会话渲染零回归 | `src/chat/message/__tests__/nodeLayoutGates.test.ts` 与 `groupNodeRows.test.ts` 不改断言即通过；`MessageBubble` 在 `showTimestamp` 缺省（`true`）路径下 DOM 与改动前一致，历史行才传 `false` |
 | G4 | 元数据行只在历史页出现 | 全仓 `MessageMetaLine` 的引用点仅 `src/history/detail/` |
-| G5 | 原始视图惰性序列化 | `historyStore` / `historyTree.ts` / `groupNodeRows.ts` 无 `JSON.stringify` 调用 |
-| G6 | 原始快照键恒在 | 单测断言：缺值字段序列化为 `null` 而非键缺失；`toolCalls` 内无 `argsText` 等本地字段 |
+| G5 | 记录序列化惰性 | `historyStore` / `historyTree.ts` / `groupNodeRows.ts` 无 `JSON.stringify` 调用；`recordJson` 只在展开行的 `useMemo` 内生成 |
+| G6 | 记录快照键恒在 | 单测断言：缺值字段序列化为 `null` 而非键缺失；`toolCalls` 内无 `argsText` 等本地字段 |
 | G7 | 详情页导出可选 md / json | 手测 + 单测：两种 format 都调用 `exportConversationToFile` 且后缀正确 |
 | G8 | markdown 导出含 reasoning / 工具调用 / 坐标 / 时间；内联图片被占位 | 后端单测（M2） |
-| G9 | 复制语义不混 | 原始块复制的是记录 JSON；`buildCopyText` 只输出消息正文的可读文本（多模态按块派生，不混入记录 JSON） |
+| G9 | 复制语义不混 | 面板复制的是记录 JSON；`buildCopyText` 只输出消息正文的可读文本（多模态按块派生，不混入记录 JSON） |
 | G10 | 新增文案双语齐全且无硬编码 | 全仓搜索新增中文字面量；两 locale 键集一致 |
 | G11 | M1 无后端命令、无契约变更 | `git diff --stat` 不含 `src-tauri/` 与 `protocol.contract.ts`（M1 提交） |
 | G12 | 文案不称「原始模型消息」 | 两 locale 全文检索「原始模型消息 / raw model request」零命中 |
+| G13 | 单视图，无模式切换 | 全仓零 `viewMode` / `view_read` / `view_raw` 残留；原文面板与气泡同属一个 `data-row-key`（源文件结构断言，沿用 `readRepoFile` 读源文件的既有做法） |
+| G14 | 来源四态可区分 | `loading` 与 `dto` 降级态标签颜色不同；`loading` 期间复制禁用；`error` 态标签带 Tooltip 原因（§4.5 表逐行核对） |
+| G15 | 时间格式单一口径 | `src/history/` 内 `toLocaleString` / `toLocaleTimeString` 零命中；历史页时间一律走 `formatStamp` |
 
 ### 9.2 单测用例（M1 必须覆盖）
 
@@ -487,13 +537,13 @@ M3 不在本文验收范围内，本文只固定准入条件。
 
 | 阶段 | 内容 | 依赖 | 契约变更 | 可独立合并 |
 |---|---|---|---|---|
-| M1 | 身份归并、元数据行、原始视图（DTO 快照）、导出菜单接线、命名修正 | 无 | 无 | 是 |
-| M2 | `MessageRecordDto`（随 `get_conversation` 返回）、markdown/JSON 导出增强、原始来源切换、可选 JSONL | M1 的 `recordSnapshot` 抽象已就位（§6.3） | 有（`contract:gen`） | 是（在 M1 之后） |
+| M1 | 身份归并、元数据行（含原文开关）、行内记录面板（DTO 快照）、导出菜单接线、命名修正 | 无 | 无 | 是 |
+| M2 | `MessageRecordDto`（随 `get_conversation` 返回）、markdown/JSON 导出增强、面板来源切换（三态）、可选 JSONL | M1 的 `recordSnapshot` 抽象已就位（§6.3） | 有（`contract:gen`） | 是（在 M1 之后） |
 | M3 | 请求体采集 | 独立规格；需新表 + 开关 + 保留策略 | 有 | 否（需独立评审） |
 
 顺序约束：
 
-- M1 内必须按「§2 身份 → §3 元数据 → §4 原始视图 → §5.1 导出」推进，前三步同属渲染链路，拆开会产生中间态（元数据行没有身份行对齐、原始视图没有行结构支撑）；
+- M1 内必须按「§2 身份 → §3 元数据 → §4 行内面板 → §5.1 导出」推进，前三步同属渲染链路，拆开会产生中间态（元数据行没有身份行对齐、面板没有行结构支撑）；
 - M2 的 §6.3 来源切换必须在 §6.1/§6.2 落地后才可接线，禁止先接 UI 再补命令；
 - M3 与 M1/M2 无代码依赖，但文案禁令（§7.1）在 M1 即生效。
 
@@ -505,7 +555,7 @@ M3 不在本文验收范围内，本文只固定准入条件。
 |---|---|
 | I43-assistant-identity-spec（已归档） | 本文 §2.1 作废其 N7（历史树逐行显示身份），其余条款继续有效；该文档冻结，不再修改，本表即为替代声明 |
 | I46 节点布局规格（已归档） | 坐标语义（`turn_index` / `iteration`）与「不猜测未知坐标」的唯一出处，本文只引用不复述；本文 §2.2 是其在历史树上的等价判据，不改变聊天页的 `groupNodeRows` |
-| I46 紧凑消息格式设计（已归档） | `compact` 信封仍是工具结果渲染的唯一事实源；本文 §4.2 原始模式显示 `compact` 投影而非重新解析结果正文 |
+| I46 紧凑消息格式设计（已归档） | `compact` 信封仍是工具结果渲染的唯一事实源；本文 §4.3 面板内不重复渲染工具卡片，`compact` 投影仍由气泡承载 |
 | I40-history-message-tree-spec（已归档） | 树构建 / 折叠 / 轨道色的基线；本文不改变其语义，只在 `flattenHistoryRows` 输出上追加派生字段 |
 | I50 运行时审计规格（已归档） | 相邻但**不通用**：审计记录安全事件（`security_audit_log` / `permission_audit`），本文记录会话内容；禁止把本文的元数据行当作审计来源，也禁止把审计事件塞进历史页 |
 | [I38 Agent 阶段总纲](./I38-agent-roadmap.md) | 本文不进阶段门禁；`turn` 坐标的前置条件（I46 S1/S2 已落地）已满足 |

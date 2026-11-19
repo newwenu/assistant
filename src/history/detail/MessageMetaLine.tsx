@@ -1,13 +1,16 @@
 import React, { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { PushpinOutlined } from "@ant-design/icons";
+import { DatabaseOutlined, PushpinOutlined } from "@ant-design/icons";
 import type { Message, MessageStatus } from "../../chat/core/chatTypes";
 import { parseContent } from "../../chat/core/message/contentBlockUtils";
+import { formatStamp } from "./formatStamp";
 import css from "./HistoryBranchView.module.css";
 
 interface MessageMetaLineProps {
   message: Message;
   defaultExpanded?: boolean;
+  rawOpen?: boolean;
+  onToggleRaw?: () => void;
 }
 
 type StatusLabelKey =
@@ -21,21 +24,11 @@ const STATUS_LABEL_KEY: Partial<Record<MessageStatus, StatusLabelKey>> = {
   streaming: "history.detail.status_streaming",
 };
 
-function pad(value: number): string {
-  return value < 10 ? `0${value}` : String(value);
-}
-
-function formatStamp(timestamp: number, withDate: boolean): string {
-  const date = new Date(timestamp);
-  const time = `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
-  if (!withDate) return time;
-  const day = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
-  return `${day} ${time}`;
-}
-
 export const MessageMetaLine: React.FC<MessageMetaLineProps> = ({
   message,
   defaultExpanded = false,
+  rawOpen = false,
+  onToggleRaw,
 }) => {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(defaultExpanded);
@@ -100,36 +93,55 @@ export const MessageMetaLine: React.FC<MessageMetaLineProps> = ({
 
   return (
     <div className={css.metaLine}>
-      <button
-        type="button"
-        className={css.metaChips}
-        onClick={() => setExpanded((value) => !value)}
-        title={t("history.detail.toggle_details")}
-      >
-        <span className={coordKnown ? css.metaChip : css.metaChipWarn}>
-          {coord}
-        </span>
-        {message.tokens != null && (
-          <span className={css.metaChip}>
-            {t("history.detail.tokens", { value: message.tokens })}
+      <div className={css.metaHeader}>
+        <button
+          type="button"
+          className={css.metaChips}
+          onClick={() => setExpanded((value) => !value)}
+          title={t("history.detail.toggle_details")}
+        >
+          <span className={coordKnown ? css.metaChip : css.metaChipWarn}>
+            {coord}
           </span>
-        )}
-        {statusKey && <span className={css.metaChip}>{t(statusKey)}</span>}
-        {message.modelId && (
-          <span className={css.metaChip}>{message.modelId}</span>
-        )}
-        {message.providerId && (
-          <span className={css.metaChip}>{message.providerId}</span>
-        )}
-        {message.isPinned && (
-          <span className={css.metaChip}>
-            <PushpinOutlined />
+          {message.tokens != null && (
+            <span className={css.metaChip}>
+              {t("history.detail.tokens", { value: message.tokens })}
+            </span>
+          )}
+          {statusKey && <span className={css.metaChip}>{t(statusKey)}</span>}
+          {message.modelId && (
+            <span className={css.metaChip}>{message.modelId}</span>
+          )}
+          {message.providerId && (
+            <span className={css.metaChip}>{message.providerId}</span>
+          )}
+          {message.isPinned && (
+            <span className={css.metaChip}>
+              <PushpinOutlined />
+            </span>
+          )}
+          <span className={css.metaChipTime}>
+            {formatStamp(message.timestamp)}
           </span>
+        </button>
+        {onToggleRaw && (
+          <button
+            type="button"
+            className={[css.metaToggle, rawOpen ? css.metaToggleActive : ""]
+              .filter(Boolean)
+              .join(" ")}
+            onClick={onToggleRaw}
+            aria-expanded={rawOpen}
+          >
+            <DatabaseOutlined />
+            <span>
+              {rawOpen
+                ? t("history.detail.toggle_raw_close")
+                : t("history.detail.toggle_raw")}
+            </span>
+          </button>
         )}
-        <span className={css.metaChipTime}>
-          {formatStamp(message.timestamp, false)}
-        </span>
-      </button>
+      </div>
       {expanded && (
         <dl className={css.metaTable}>
           {fields.map(([label, value]) => (
