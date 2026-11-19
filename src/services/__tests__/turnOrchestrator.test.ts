@@ -353,6 +353,25 @@ describe("turnOrchestrator", () => {
       });
     });
 
+    it("error 载荷的可选字段为 null 时按后端码路由（不是 InternalError）", () => {
+      const payload: ProviderErrorPayloadDto = {
+        code: "Timeout",
+        message: "Request timeout: No chunk received for 30s (stream idle)",
+        retryAfterMs: null,
+        retryable: true,
+        httpStatus: null,
+        provider: null,
+        providerCode: null,
+      };
+      orchestrator.handleDeltaEvent(makeDelta({ error: payload }));
+      expect(mockDeps.state.errorStream).toHaveBeenCalledTimes(1);
+      const [error] = vi.mocked(mockDeps.state.errorStream).mock.calls[0];
+      expect(error.code).toBe("Timeout");
+      expect(error.message).toBe(payload.message);
+      expect(error.category).toBe("timeout");
+      expect(error.retryable).toBe(true);
+    });
+
     it("chat：finishReason → finishStream with business TokenUsage", () => {
       orchestrator.handleDeltaEvent(
         makeDelta({

@@ -57,9 +57,9 @@ export interface ChatError {
   message?: string;
   retryAfterMs: number | null;
   retryable: boolean;
-  httpStatus?: number;
-  provider?: string;
-  providerCode?: string;
+  httpStatus?: number | null;
+  provider?: string | null;
+  providerCode?: string | null;
   category?: ChatErrorCategory;
   details?: Record<string, unknown>;
 }
@@ -76,10 +76,17 @@ export function isChatError(value: unknown): value is ChatError {
     (obj.retryAfterMs === undefined ||
       obj.retryAfterMs === null ||
       typeof obj.retryAfterMs === "number") &&
-    (obj.httpStatus === undefined || typeof obj.httpStatus === "number") &&
-    (obj.provider === undefined || typeof obj.provider === "string") &&
-    (obj.providerCode === undefined || typeof obj.providerCode === "string") &&
+    (obj.httpStatus === undefined ||
+      obj.httpStatus === null ||
+      typeof obj.httpStatus === "number") &&
+    (obj.provider === undefined ||
+      obj.provider === null ||
+      typeof obj.provider === "string") &&
+    (obj.providerCode === undefined ||
+      obj.providerCode === null ||
+      typeof obj.providerCode === "string") &&
     (obj.details === undefined ||
+      obj.details === null ||
       (typeof obj.details === "object" && obj.details !== null))
   );
 }
