@@ -12,6 +12,7 @@ use crate::gateway::{AuditOutcome, GatewayDecision, ToolGateway};
 use crate::policy::ResolvedPermissionPolicy;
 use crate::registry::ToolRegistry;
 use crate::result::{ToolErrorKind, ToolResult};
+use crate::runtime::args;
 use crate::storage::{
     persisted_reference, select_persist_targets, PersistToolResult, PersistedRef, ToolResultStorage,
 };
@@ -332,6 +333,24 @@ impl ToolPipeline {
             }
         };
         let tool = registered.tool.as_ref();
+
+        // 模型常把数字写成字符串（`{"offset": "1"}`）。校验前按工具 schema 归一化，
+        // 只改写「语义等价、类型偏差」的值；`"abc"` 等真错值原样保留，仍走校验失败路径。
+        // 归一化后的参数同时用于校验、网关、执行与 outcome（紧凑信封展示同一份事实）。
+        let normalized_call;
+        let call = match args::coerce_to_schema(&tool.input_schema(), &call.arguments) {
+            Some(arguments) => {
+                log::debug!(
+                    "normalized argument types for tool '{}' (call {})",
+                    call.tool_name,
+                    call.tool_call_id
+                );
+                normalized_call =
+                    ToolCall::new(call.tool_call_id.clone(), call.tool_name.clone(), arguments);
+                &normalized_call
+            }
+            None => call,
+        };
 
         let mut call_context = context.clone();
         call_context.tool_call_id = Some(call.tool_call_id.clone());

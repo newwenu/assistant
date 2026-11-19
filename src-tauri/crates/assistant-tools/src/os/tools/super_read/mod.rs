@@ -26,6 +26,7 @@ use crate::r#trait::{
     ValidationResult,
 };
 use crate::result::ToolResult;
+use crate::runtime::args::optional_u64;
 use crate::storage::{
     ReadReceipt, ReadReceiptKey, ReadReceiptStore, DEFAULT_LINE_WINDOW_MAX_CHARS,
 };
@@ -450,16 +451,6 @@ impl Request {
                 max_line_chars,
             },
         })
-    }
-}
-
-fn optional_u64(object: &serde_json::Map<String, Value>, key: &str) -> Result<Option<u64>, String> {
-    match object.get(key) {
-        None | Some(Value::Null) => Ok(None),
-        Some(value) => value
-            .as_u64()
-            .map(Some)
-            .ok_or_else(|| format!("'{}' must be a non-negative integer", key)),
     }
 }
 

@@ -6,7 +6,7 @@ pub mod os;
 pub mod sandbox;
 
 pub use contract::{catalog, context, definition, escalation, r#trait, result};
-pub use runtime::{compact, exec, gateway, pipeline, policy, question, registry, storage};
+pub use runtime::{args, compact, exec, gateway, pipeline, policy, question, registry, storage};
 
 pub use catalog::*;
 pub use context::*;

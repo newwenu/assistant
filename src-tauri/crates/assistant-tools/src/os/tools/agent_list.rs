@@ -9,6 +9,7 @@ use crate::r#trait::{
     BehaviorHints, PermissionIntent, Tool, ToolAudience, ToolTier, ValidationResult,
 };
 use crate::result::ToolResult;
+use crate::runtime::args::{optional_bool, optional_u64};
 
 /// 内部唯一标识（注册表键、白名单匹配、审计）。模型可见名默认与它同名。
 const TOOL_ID: &str = "ls";
@@ -178,21 +179,13 @@ impl ListRequest {
 
         let path = path::parse_path_arg(object, "path")?;
 
-        let requested_depth = match object.get("depth") {
-            None | Some(Value::Null) => DEFAULT_DEPTH,
-            Some(value) => match value.as_u64() {
-                Some(0) => return Err("'depth' must be >= 1".to_string()),
-                Some(depth) => depth,
-                None => return Err("'depth' must be a non-negative integer".to_string()),
-            },
+        let requested_depth = match optional_u64(object, "depth")? {
+            Some(0) => return Err("'depth' must be >= 1".to_string()),
+            Some(depth) => depth,
+            None => DEFAULT_DEPTH,
         };
 
-        let all = match object.get("all") {
-            None | Some(Value::Null) => false,
-            Some(value) => value
-                .as_bool()
-                .ok_or_else(|| "'all' must be a boolean".to_string())?,
-        };
+        let all = optional_bool(object, "all")?.unwrap_or(false);
 
         let depth_clamped = requested_depth > MAX_DEPTH;
         Ok(Self {

@@ -5,6 +5,7 @@ use serde_json::Value;
 use crate::os::agent_glob;
 use crate::os::path;
 use crate::os::text_encoding::parse_optional_encoding;
+use crate::runtime::args::optional_u64;
 
 use super::{DEFAULT_CONTEXT, MAX_CONTEXT};
 
@@ -47,21 +48,13 @@ impl GrepRequest {
             ),
         };
 
-        let context = match object.get("context") {
-            None | Some(Value::Null) => DEFAULT_CONTEXT,
-            Some(value) => {
-                let value = value
-                    .as_u64()
-                    .ok_or_else(|| "'context' must be a non-negative integer".to_string())?;
-                if value > MAX_CONTEXT {
-                    return Err(format!(
-                        "'context' must be between 0 and {} (got {})",
-                        MAX_CONTEXT, value
-                    ));
-                }
-                value
-            }
-        };
+        let context = optional_u64(object, "context")?.unwrap_or(DEFAULT_CONTEXT);
+        if context > MAX_CONTEXT {
+            return Err(format!(
+                "'context' must be between 0 and {} (got {})",
+                MAX_CONTEXT, context
+            ));
+        }
 
         // label 校验与 `read` / `write` 共用一套（别名表与错误文案不分叉）；
         // searcher 只接受自己的 `Encoding` 类型，用规范化名重建即可。

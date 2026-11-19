@@ -327,9 +327,7 @@ fn validate_input_rejects_bad_arguments() {
         json!({ "path": 42 }),
         json!({ "path": "  " }),
         json!({ "path": "a.txt", "offset": -1 }),
-        json!({ "path": "a.txt", "offset": "1" }),
         json!({ "path": "a.txt", "limit": 0 }),
-        json!({ "path": "a.txt", "limit": "10" }),
         json!({ "path": "a.txt", "encoding": 42 }),
         json!({ "path": "a.txt", "encoding": "bogus-label" }),
     ];
@@ -343,6 +341,14 @@ fn validate_input_rejects_bad_arguments() {
 
     assert_eq!(
         tool.validate_input(&json!({ "path": "a.txt", "offset": 0 }), &ctx),
+        ValidationResult::ok()
+    );
+    // 模型把数字写成字符串是常见偏差：宽松解析接受，由管线归一化后执行。
+    assert_eq!(
+        tool.validate_input(
+            &json!({ "path": "a.txt", "offset": "1", "limit": "10" }),
+            &ctx
+        ),
         ValidationResult::ok()
     );
 }

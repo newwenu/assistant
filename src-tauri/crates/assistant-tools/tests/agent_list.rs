@@ -98,7 +98,6 @@ fn validate_input_rejects_bad_arguments() {
         json!({ "path": "  " }),
         json!({ "path": ".", "depth": 0 }),
         json!({ "path": ".", "depth": -1 }),
-        json!({ "path": ".", "depth": "2" }),
         json!({ "path": ".", "all": "yes" }),
     ];
     for input in cases {
@@ -110,6 +109,11 @@ fn validate_input_rejects_bad_arguments() {
     }
 
     assert!(tool.validate_input(&json!({ "path": "." }), &ctx).ok);
+    // 模型把数字 / 布尔写成字符串是常见偏差：宽松解析接受，由管线归一化后执行。
+    assert!(
+        tool.validate_input(&json!({ "path": ".", "depth": "2", "all": "true" }), &ctx)
+            .ok
+    );
 }
 
 #[test]

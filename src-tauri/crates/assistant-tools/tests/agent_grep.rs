@@ -118,7 +118,6 @@ fn validate_input_rejects_bad_arguments() {
         json!({ "pattern": "hit", "path": 42 }),
         json!({ "pattern": "hit", "include": 42 }),
         json!({ "pattern": "hit", "context": -1 }),
-        json!({ "pattern": "hit", "context": "2" }),
         json!({ "pattern": "hit", "context": MAX_CONTEXT + 1 }),
         json!({ "pattern": "hit(", "path": "." }),
         json!({ "pattern": "hit", "include": "*.{rs", "path": "." }),
@@ -134,6 +133,11 @@ fn validate_input_rejects_bad_arguments() {
     }
 
     assert!(tool.validate_input(&json!({ "pattern": "hit" }), &ctx).ok);
+    // 模型把数字写成字符串是常见偏差：宽松解析接受 `"2"`，由管线归一化后执行。
+    assert!(
+        tool.validate_input(&json!({ "pattern": "hit", "context": "2" }), &ctx)
+            .ok
+    );
     assert!(
         tool.validate_input(
             &json!({ "pattern": "hit", "path": ".", "include": "*.rs", "context": 2 }),

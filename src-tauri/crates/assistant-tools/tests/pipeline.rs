@@ -870,3 +870,112 @@ async fn production_os_tools_round_trip_through_the_pipeline() {
         "small results must not be persisted"
     );
 }
+
+/// 只接受整数 `offset` 的工具：锁「Pipeline 按 schema 归一化字符串数字」这条接缝。
+struct IntArgTool {
+    seen: Arc<Mutex<Option<Value>>>,
+}
+
+#[async_trait]
+impl Tool for IntArgTool {
+    fn id(&self) -> &str {
+        "int_arg"
+    }
+
+    async fn description(&self) -> Result<String, String> {
+        Ok("int arg probe".to_string())
+    }
+
+    fn input_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": { "offset": { "type": "integer" } },
+            "required": ["offset"]
+        })
+    }
+
+    fn tier(&self) -> ToolTier {
+        ToolTier::Os
+    }
+
+    fn validate_input(&self, input: &Value, _context: &ToolUseContext) -> ValidationResult {
+        match input.get("offset").and_then(Value::as_u64) {
+            Some(_) => ValidationResult::ok(),
+            None => ValidationResult::invalid("'offset' must be a non-negative integer"),
+        }
+    }
+
+    async fn execute(
+        &self,
+        input: &Value,
+        _context: &ToolUseContext,
+    ) -> Result<ToolResult, String> {
+        *self.seen.lock().unwrap() = Some(input.clone());
+        Ok(ToolResult::ok(json!({ "ok": true })))
+    }
+}
+
+#[tokio::test]
+async fn pipeline_coerces_string_numbers_before_validation() {
+    let h = harness(vec![]);
+    let seen = Arc::new(Mutex::new(None));
+    h.registry
+        .register(Arc::new(IntArgTool { seen: seen.clone() }));
+    let sink = InMemoryEventSink::new();
+
+    let outcomes = h
+        .pipeline
+        .execute(
+            &[ToolCall::new("c1", "int_arg", json!({ "offset": "3" }))],
+            &ctx(),
+            &allow_all(),
+            &sink,
+        )
+        .await;
+
+    assert_eq!(
+        outcomes[0].stage,
+        PipelineStage::Execute,
+        "字符串数字必须在校验前归一化：{:?}",
+        outcomes[0].result.error
+    );
+    assert!(outcomes[0].result.ok);
+    assert_eq!(
+        seen.lock().unwrap().clone().expect("must execute"),
+        json!({ "offset": 3 }),
+        "工具必须收到归一化后的整数"
+    );
+    assert_eq!(
+        outcomes[0].arguments,
+        json!({ "offset": 3 }),
+        "outcome 记录的是实际执行参数"
+    );
+}
+
+#[tokio::test]
+async fn pipeline_keeps_invalid_strings_for_validation() {
+    let h = harness(vec![]);
+    let seen = Arc::new(Mutex::new(None));
+    h.registry
+        .register(Arc::new(IntArgTool { seen: seen.clone() }));
+    let sink = InMemoryEventSink::new();
+
+    let outcomes = h
+        .pipeline
+        .execute(
+            &[ToolCall::new("c1", "int_arg", json!({ "offset": "abc" }))],
+            &ctx(),
+            &allow_all(),
+            &sink,
+        )
+        .await;
+
+    assert_eq!(outcomes[0].stage, PipelineStage::Validate);
+    assert!(outcomes[0]
+        .result
+        .error
+        .as_deref()
+        .unwrap()
+        .contains("'offset' must be a non-negative integer"));
+    assert!(seen.lock().unwrap().is_none(), "校验失败不得执行");
+}
