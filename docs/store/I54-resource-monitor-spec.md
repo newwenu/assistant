@@ -1,17 +1,17 @@
-# I54 — 资源监视器规格（存储 / 进程 / 自身占用）
+# I54 — 资源监视器规格（进程 / 自身占用）
 
 | 项 | 值 |
 |---|---|
-| 状态 | 草稿（观测层规格；不含回收动作与策略治理） |
+| 状态 | 草稿（观测层规格；存储 tab 已迁出至 [I61](./I61-storage-manager-spec.md)，本文只保留页面壳与进程 / 自身占用） |
 | 日期 | 2026-11-15 |
-| 关联 | [STORAGE-MONITOR-ANALYSIS](./../analysis/STORAGE-MONITOR-ANALYSIS.md)（存储观测机制的唯一事实基线）、[TASK-RESOURCE-MANAGER-ANALYSIS](./../analysis/TASK-RESOURCE-MANAGER-ANALYSIS.md)（进程与自身占用；其 §8 是自监控的唯一来源）、I44 应用目录管理规格（已归档）（目录归属与字面量门禁）、I53（已归档）（沙箱准备；进程树回收的判据来源）、feature-mount-traversal-spec（已归档）（可选能力挂载边界）、[CODE-SPLIT-PRINCIPLE](./../principle/CODE-SPLIT-PRINCIPLE.md)（拆分原则唯一来源，本文只引用不复述）。参考实现：Chromium（浏览器内核参考项目，按需稀疏检出、不在仓内；本文取其任务管理器与进程度量两处形态），本文中标注「参考实现」的形态判断均出自该处 |
-| 影响范围 | 前端：`src/settings/pages/StorageSettings.tsx`（改造为容器）、`src/settings/core/builtinRegistry.ts`（页面 label 与 keywords）、`src/services/storageService.ts`、i18n 两份 locale、`src/settings/__tests__/fixtures/*.json`（golden 投影）。后端：`src-tauri/src/cmd/storage.rs`（存储 tab 明细）、新增 `src-tauri/src/cmd/resource.rs`（能力声明与两条转发）、`src-tauri/src/protocol/dto/storage.rs`（DTO 扩展）、`src-tauri/src/ipc.rs`（命令注册）、新增 `src-tauri/crates/assistant-resource-probe/`（进程内采样缝，不依赖 `dirs`）、新增 `src-tauri/src/bin/resource_report.rs`（进程外诊断二进制，不进 bundle）、`src-tauri/crates/assistant-crash/`（补 stats 与保留上限，属该 crate 自身欠账）。进程与自身占用**本期交付树级数字与当前值，不交付任务级归因**（§5.4） |
+| 关联 | [I61 存储管理器规格](./I61-storage-manager-spec.md)（**存储 tab 的唯一维护方**：13 条资源监视条目 + 回收 + 策略）、[STORAGE-MONITOR-ANALYSIS](./../analysis/STORAGE-MONITOR-ANALYSIS.md)（存储观测机制的唯一事实基线，其结论现由 I61 引用）、[TASK-RESOURCE-MANAGER-ANALYSIS](./../analysis/TASK-RESOURCE-MANAGER-ANALYSIS.md)（进程与自身占用；其 §8 是自监控的唯一来源）、I44 应用目录管理规格（已归档）（目录归属与字面量门禁）、I53（已归档）（沙箱准备；进程树回收的判据来源）、feature-mount-traversal-spec（已归档）（可选能力挂载边界）、[CODE-SPLIT-PRINCIPLE](./../principle/CODE-SPLIT-PRINCIPLE.md)（拆分原则唯一来源，本文只引用不复述）。参考实现：Chromium（浏览器内核参考项目，按需稀疏检出、不在仓内；本文取其任务管理器与进程度量两处形态），本文中标注「参考实现」的形态判断均出自该处 |
+| 影响范围 | 前端：`src/settings/pages/StorageSettings.tsx`（改造为容器）、`src/settings/core/builtinRegistry.ts`（页面 label 与 keywords）、`src/services/storageService.ts`、i18n 两份 locale、`src/settings/__tests__/fixtures/*.json`（golden 投影）。后端：新增 `src-tauri/src/cmd/resource.rs`（能力声明与两条转发）、`src-tauri/src/ipc.rs`（命令注册）、新增 `src-tauri/crates/assistant-resource-probe/`（进程内采样缝，不依赖 `dirs`）、新增 `src-tauri/src/bin/resource_report.rs`（进程外诊断二进制，不进 bundle）。**存储 tab 的后端落点（`cmd/storage.rs`、`protocol/dto/storage.rs`、各 owner 的 stats / 回收方法）归 [I61](./I61-storage-manager-spec.md) §12 的迁移清单，本文不再维护**。进程与自身占用**本期交付树级数字与当前值，不交付任务级归因**（§5.4） |
 
-> 一句话：本规格把现有「存储管理」设置页升级为**资源监视器**，升级的不是能力而是**结构**——存储 tab 走「各 owner 报数」，进程与自身占用 tab 走「**一个进程内采样缝、一个根、一棵子树、两种投影**」；任何 tab 都不许用 `0` 冒充「读不到」，也不许把不同单位的数相加成一个「总占用」，更不许把不可加的量求和当作总量。
+> 一句话：本规格把现有「存储管理」设置页升级为**资源监视器**，升级的不是能力而是**结构**——页面壳内三个 tab，存储 tab 的条目与回收由 [I61](./I61-storage-manager-spec.md) 供数，进程与自身占用 tab 走「**一个进程内采样缝、一个根、一棵子树、两种投影**」；任何 tab 都不许用 `0` 冒充「读不到」，也不许把不同单位的数相加成一个「总占用」，更不许把不可加的量求和当作总量。
 
 本文中的「必须 / 禁止」为可验收约束；「应当」为默认做法，偏离需在代码注释里写明理由。
 
-**编号约定**：`D1–D6` 是**观测方向**（存储侧），`P1–P5` 是受管进程侧方向，`S1–S4` 是自身占用侧方向，`N1–N16` 是现状事实编号。方向编号与 [STORAGE-MONITOR-ANALYSIS](./../analysis/STORAGE-MONITOR-ANALYSIS.md) §4 / §7 对齐，不另立一套。
+**编号约定**：`P1–P5` 是受管进程侧方向，`S1–S4` 是自身占用侧方向，`N1–N16` 是现状事实编号。`D1–D6` 是**存储侧观测方向**，已随存储 tab 迁出至 [I61](./I61-storage-manager-spec.md)（§3–§4），本文保留编号不复用，仅为跨文档引用留锚点。方向编号与 [STORAGE-MONITOR-ANALYSIS](./../analysis/STORAGE-MONITOR-ANALYSIS.md) §4 / §7 对齐，不另立一套。
 
 ---
 
@@ -38,11 +38,13 @@
 | N15 | `assistant_crash::install` 在 `assistant_app::run()` **之前**、同一进程内调用；`install_crash_handler` 的回调在异常处理上下文内做 `fs::write` 与 minidump 写入 | `src-tauri/src/main.rs`、`crash_dump.rs` |
 | N16 | 仓库已有「独立二进制但不进 Tauri bundle」的先例：`dev_mcp_server` 以显式 `[[bin]]` 声明，注释写明「仅测试用，不进 Tauri bundle」 | `src-tauri/Cargo.toml` |
 
+**存储域事实已迁出**：`N2` / `N3` / `N4` / `N5` / `N6` / `N7` 只服务存储 tab，现由 [I61](./I61-storage-manager-spec.md) §2 以 `N1–N14` 维护（含 `indexes/` 这第 7 个 `AppDirs` 入口，本表 N6 的「6 个入口」已过时）。本表保留原编号不复用，仅为跨文档引用留锚点；**禁止**据本表推导存储结论，存储结论只以 I61 §2 为准。
+
 ### 1.2 目标
 
 1. 把设置页从「附件清理」升级为**多 tab 资源监视器**，页面身份从「存储管理」改为「资源监视器」；
-2. 三个 tab 各自由**自己的取数缝**供数：存储 tab 走「各 owner 报数」，进程 tab 与自身占用 tab 共用**同一个进程内采样缝**（根 = 自身 PID，一次全系统快照推导出整棵子树，§2.3）并投影成两种视图（§6.2）；三者不共用回收语义、不共用停止语义；
-3. 存储 tab 在 v1 交付 D1–D4 四个方向（体量 / 时间 / 分层归属 / 可用性状态）；
+2. 三个 tab 各自由**自己的取数缝**供数：存储 tab 由 [I61](./I61-storage-manager-spec.md) 的条目快照供数，进程 tab 与自身占用 tab 共用**同一个进程内采样缝**（根 = 自身 PID，一次全系统快照推导出整棵子树，§2.3）并投影成两种视图（§6.2）；三者不共用回收语义、不共用停止语义；
+3. 存储 tab 在 v1 交付 D1–D4 四个方向（体量 / 时间 / 分层归属 / 可用性状态）——**已迁出**，现由 [I61](./I61-storage-manager-spec.md) §3 交付 13 条资源监视条目并追加 D5 资格 / D6 策略；
 4. 进程 tab 与自身占用 tab 在 v1 交付**采样缝 + 树级数字 + 口径定案**，数字只到「树级、无任务归因」的粒度（§5.4、§6.6）；
 5. 任何数字必须携带「来源 owner 或采样器、口径、采样时刻、可用性状态」四件套；
 6. 任何读不到的对象显示**状态与原因**，禁止显示 `0`。
@@ -50,14 +52,13 @@
 ### 1.3 非目标
 
 - **不做跨 tab 汇总**：磁盘字节与内存字节不是同一维度，相加无意义（§3.4）；
-- 不做回收动作：`delete_attachments` 是既有能力，本期不新增任何删除入口（§4.2 末条）；
-- 不做资格（D5）与策略（D6）：二者是回收的下游，本期无回收即无落点（§10 第 1 项）；
+- **不做存储侧的回收、资格（D5）与策略（D6）**：已迁出至 [I61](./I61-storage-manager-spec.md) §3.3–§3.6，本文不重复定义，也不得在进程 / 自身占用侧自行引入删除入口；
 - 不做进程登记表、不做任务级归因（§5.2）；
 - 不做「峰值」的自采样实现：峰值只能由外部留痕（§6.5 约束 2）；
-- **不新建承载「存储观测」的 crate**：存储侧必须放应用层，因为它需要 `AppDirs` 与各 owner 的 stats（同 [STORAGE-MONITOR-ANALYSIS](./../analysis/STORAGE-MONITOR-ANALYSIS.md) §10 第 1 条）；
+- **不新建承载「存储观测」的 crate**：存储侧必须放应用层，因为它需要 `AppDirs` 与各 owner 的 stats（同 [STORAGE-MONITOR-ANALYSIS](./../analysis/STORAGE-MONITOR-ANALYSIS.md) §10 第 1 条；该结论现由 I61 承接）；
 - **允许新建承载「自身与子树采样」的 crate**：它只依赖 OS API、不读 `dirs`、路径与根 PID 由调用方注入（§6.4）；这条豁免的边界是「不得引用应用层任何模块」，越界即退回上一条；
 - 不自持目录清单：路径只从 `AppDirs` 与可选能力模块的 getter 来；
-- 不改 `get_storage_breakdown` 的既有 wire 语义：新增字段不改变 `totalBytes` / `totalCount` / `orphans` / `conversations` 的既有含义（§4.4 的账本闭合以新增字段实现，不重定义旧字段）。
+- 不改存储侧既有 wire 语义：`get_storage_breakdown` 的字段扩展与账本闭合归 [I61](./I61-storage-manager-spec.md) §6，本文只规定「扩展不重定义旧字段」这一条通用约束。
 
 ---
 
@@ -71,21 +72,25 @@
 | **观测者** | 读字节、条数、时间 | 各 owner 自己提供的只读方法 | 能，且只走方法 |
 | **回收者** | 删除、轮转、清空 | owner 的既有方法 | 只能**请求**，不能自己 `remove_*` |
 
-这条分工对应 I44（已归档）的两条门禁：目录字面量只允许命中 `app_dirs::dir_name` 与可选能力模块；`dirs::` 只允许出现在 `app_dirs` 与 `assistant-config`。监视器一旦自己 `read_dir` + `join`，两条门禁同时失效。
+这条分工对应 I44（已归档）的两条门禁：目录字面量只允许命中 `app_dirs::dir_name` 与可选能力模块；`dirs::` 只允许出现在 `app_dirs` 与 `assistant-config`。一旦自己 `read_dir` + `join`，两条门禁同时失效。
+
+**身份表在本文的适用范围**：三身份描述的是**存储侧**的分工，其完整落地（含「回收只能请求 owner」的 13 条条目 × 动作矩阵）见 [I61](./I61-storage-manager-spec.md) §1 与 §4。本文的进程 / 自身占用 tab 只有**观测者**一种身份，没有所有者也没有回收者——采样器不写任何受管目录（§6.5 约束 1）。
 
 ### 2.2 行与列：对象 ≠ 方向
 
 这是本规格最容易混淆的一处，必须先分清，否则「几个监视方向」会算错：
 
-- **观测对象**是**行**：`attachments/`、`tool-results/`、`security/audit/` 等，共 12 行（§4.1）；
-- **观测方向**是**列**：体量、时间、归属、状态、资格、策略，共 6 列（§4.2 只做前 4 列）；
+- **观测对象**是**行**：存储侧共 13 行，清单见 [I61](./I61-storage-manager-spec.md) §3.1；
+- **观测方向**是**列**：体量、时间、归属、状态、资格、策略，共 6 列（D1–D6，字段见 I61 §3.2，资格与策略见 I61 §3.4–§3.5）；
 - 一个「tab」是**一组行 + 一组合法列**，不是一根方向轴。
+
+本文的进程 / 自身占用 tab 不按「行 = 目录」建模：它的行是**进程**，列是 CPU / 内存 / 存在，没有「归属目录」这一列（§6.3）。**禁止**把进程行硬塞进上面这套「行 × 列」表以追求形式统一。
 
 ### 2.3 两条取数缝，不是三套采样器
 
 | 缝 | 观测对象 | 数据源 | 失败模式 |
 |---|---|---|---|
-| **缝 A：owner 报数** | 有稳定路径的目录 / 文件 | 文件系统 + 各 owner 的 stats | 单项不可读 → 该行标状态，整账仍返回 |
+| **缝 A：owner 报数** | 有稳定路径的目录 / 文件（**条目清单与失败降级由 [I61](./I61-storage-manager-spec.md) §3、§7 维护**） | 文件系统 + 各 owner 的 stats | 单项不可读 → 该行标状态，整账仍返回 |
 | **缝 B：进程内子树采样** | 自身进程 + 由父子链推导出的全部后代 | OS 的**一次全系统进程快照**（按 `root = 自身 PID` 在内存里过滤出子树） | 采样器与被观测者同生共死；PID 复用会误归属 |
 
 缝 B 只有**一个采样器、一个根、一次遍历**，输出**两种投影**：
@@ -115,22 +120,26 @@
 
 ### 2.4 可用性状态词表（封闭）
 
+本表是**跨 tab 唯一出处**：存储 tab 的条目可用性（[I61](./I61-storage-manager-spec.md) §3.2）与本文进程 / 自身占用 tab 共用同一词表，不得各立一套。
+
 | 状态 | 含义 | 典型来源 |
 |---|---|---|
-| `available` | 能出数 | owner 的 stats 正常返回 |
+| `available` | 能出数 | owner 的 stats 正常返回；采样器成功返回 |
 | `missing` | 目录/文件不存在 | 首次运行、旧位置迁移后；**计 0，不报错，不创建** |
-| `locked` | 存在但受保护读不到 | `security/` 未解锁 |
+| `locked` | 存在但受保护读不到 | 安全库 / 仓库未解锁 |
 | `unreadable` | 存在但不可读 | 权限不足、路径异常 |
-| `notImplemented` | owner 尚无 stats 入口 | `tool-results/`、安全域各子目录、`logs/`、`crashes/` |
+| `unavailable` | 本次取数失败但对象存在 | 采样超时、系统接口临时失败 |
+| `notImplemented` | owner 尚无 stats 入口 | 未补 stats 的条目、未定案的平台方案 |
 | `noReportYet` | 外部诊断产物尚不存在 | 进程外报告从未生成过 |
 | `staleReport` | 产物存在但已过期 | 报告生成时刻早于陈旧阈值 |
 
 约束：
 
 1. `missing` 与 `locked` **禁止**合并为 `0`：前者是「确实没有」，后者是「有但看不见」，用户对两者的下一步动作完全不同；
-2. `notImplemented` 必须带原因（缺少哪个 owner 的哪个方法），否则用户会把「未实现」误读为「系统认为没问题」；
+2. `notImplemented` 必须带原因（缺少哪个 owner 的哪个方法 / 哪个平台能力），否则用户会把「未实现」误读为「系统认为没问题」；
 3. 该词表是**封闭集合**，前端按枚举分支渲染，不做字符串兜底（与开放集合的处理相反）；
-4. `noReportYet` 与 `staleReport` 是**外部产物类**状态，**必须**随附产物生成时刻；只有 `staleReport` 允许展示产物里的数字，且必须同时显示「生成于 X 之前」——外部产物是历史快照，不是当前值。
+4. `noReportYet` 与 `staleReport` 是**外部产物类**状态，**必须**随附产物生成时刻；只有 `staleReport` 允许展示产物里的数字，且必须同时显示「生成于 X 之前」——外部产物是历史快照，不是当前值；
+5. `unavailable` 与 `unreadable` 的区别：前者是「这次没取到、下次可能取到」，后者是「结构性读不到」；展示上 `unavailable` 允许「重试」，`unreadable` 不允许。
 
 ---
 
@@ -140,7 +149,7 @@
 
 | tab | 取数缝 | v1 交付 | 不可用时的显示 |
 |---|---|---|---|
-| **存储** | 缝 A（owner 报数） | **数字**（12 行 × D1–D4） | —（v1 恒可用） |
+| **存储** | 缝 A（owner 报数；**条目与回收由 [I61](./I61-storage-manager-spec.md) 维护**） | **数字**（13 条资源监视条目 × D1–D6，见 I61 §3） | —（条目级降级，不按 tab 降级；见 I61 §7.1） |
 | **进程** | 缝 B 投影 B | **树级数字**（存在 / CPU / 内存 / `exeName`），**无任务归因、无角色列**；内存列名必须带口径（§6.3.2 约束 3） | `notImplemented` + 原因（平台方案未定案，§10 第 8 项） |
 | **自身占用** | 缝 B 投影 A + 外部报告 | **当前值**（宿主 + WebView）**+ 峰值区为报告阅读器** | 当前值 `notImplemented`；峰值区 `noReportYet` / `staleReport`（§6.6） |
 
@@ -180,85 +189,25 @@
 
 ---
 
-## 4 存储 tab
+## 4 存储 tab（已迁出）
 
-### 4.1 观测表（12 行）
+本节原定义 12 行观测表、D1–D4 四个方向、三个写死口径与账本闭合。**全部迁出至 [I61 存储管理器规格](./I61-storage-manager-spec.md)**：存储侧从「只观测」升级为「观测 + 回收 + 策略治理」，需要一份独立的管理器规格承载；若继续留在本文，就会出现两套 `StorageEntryDto` 与两条删除路径。
 
-| 行 | owner | stats 现状 | 状态判定 |
-|---|---|---|---|
-| `attachments/` | `AttachmentStore` | `list_all`（第一层） | `available` |
-| `attachments/derived/` | `AttachmentStore` | 无（`list_all` 跳过目录，N5） | `notImplemented` |
-| `tool-results/` | `FileToolResultStorage` | 无（只有 `persist` 与 `root()`） | `notImplemented` |
-| `mascot-assets/` | `cmd/mascot_asset` | 无 | `notImplemented` |
-| `assistant.db` | `setup` / `DbState` | 仅文件长度可得 | `available`（仅体量，无表级） |
-| `security/security.db` | `SecurityDbState` | 无 | `notImplemented`，未解锁时 `locked` |
-| `security/backups/` | `SecurityDbState` | 无（回收有 `prune_backups`） | `notImplemented` |
-| `security/vault/` | `VaultFileManager` | 无 | `notImplemented` |
-| `security/recovery/` | 可选能力模块 | 无 | `notImplemented`（瞬态） |
-| `security/audit/` | `SecurityDbState` | 无 | `notImplemented` |
-| `logs/` | `tauri-plugin-log` | 插件不暴露 | `notImplemented` |
-| `crashes/` | `assistant-crash` | 无（对外只有 `install`，N14） | 当前 `notImplemented`（缺 `list` / `stat` / `prune`）；**R4 补完后转 `available`** |
+| 原内容 | 现落点 |
+|---|---|
+| 观测表 12 行 | I61 §3.1 的 13 条资源监视条目（新增 `tool-index`） |
+| D1–D4 四个方向 | I61 §3.2 条目字段；D5 资格、D6 策略为新增方向 |
+| 字节 / 包含范围 / 时间三个口径 | I61 §3.9（唯一出处）；口径字段（如 `includesDerived`）仍进 DTO（I61 §3.2） |
+| 账本闭合（`sharedBytes` / `referencedOnceBytes` 与恒等式） | I61 §3.7 与验收判据 V5 |
+| 末条「回收不在本期」 | 由 I61 §3.3–§3.6 取代 |
+| `crashes/` 缺 `list` / `stat` / `prune` | I61 条目 `E13`，由该条目的 owner 欠账补 |
 
-**约束**：表的每一行由 owner 提供 stats；**禁止**为凑满 12 行而由监视器自己 `read_dir`。12 行里 11 行是 `notImplemented` 不是缺陷，是本期的**诚实结论**——它恰好告诉用户「这些目录现在看不到数」，而不是给一个假的 0。
+**本文仍保留的两条通用约束**（三个 tab 都受约束，存储 tab 也受约束）：
 
-**`crashes/` 这一行要单独说明**：它是 11 行里唯一「修它不需要监视器」的行。`assistant-crash` 已经是一个干净的独立 crate（N13），它欠的只是自己的两个缺口——**只读入口**（`list` / `stat`）与**保留上限**（`prune`，N14）。这两个缺口是 `crashes/` 作为 owner 的欠账，与监视器无关；先把它们补上，这一行才能从 `notImplemented` 变成 `available`。反过来，**禁止**把周期性快照写进 `crashes/`——那会让一个已经无轮转的目录再增一类无上限产物（§7）。
+1. **观测不得产生副作用**：不得为了出数而创建目录、写文件或触发清理；
+2. **数字必须带四件套**：口径、采样时刻、可用性、来源；不可用一律 `null`，禁止 `0` 冒充。
 
-**`crashes/` 的 `missing` 不可达**：`prepare_dir` 在启动时即 `create_dir_all`（[crash_dump.rs](../../src-tauri/crates/assistant-crash/src/crash_dump.rs)），故该行状态只可能是 `available` 或 `notImplemented`。
-
-### 4.2 四个方向（v1）
-
-| 方向 | 字段 | 口径约束 |
-|---|---|---|
-| **D1 体量** | `bytes`、`count` | 字节 = 文件长度之和；**禁止**目录 `metadata.len()`（Windows 上恒 0）；`count` 是条目数，不是会话数 |
-| **D2 时间** | `oldestAt`、`newestAt` | 取文件 `modified()`；审计侧取 JSONL 记录内 `at`（一个文件跨多事件），不取 mtime |
-| **D3 分层归属** | `layer`（`data` / `local`）+ 层内项 | 每层只对直接子项求和，不跨层累加；嵌套项在父层标 `includesDerived` 等标志 |
-| **D4 可用性状态** | `availability` + `availabilityReason` | 按 §2.4 封闭词表；`notImplemented` 必须带原因 |
-
-**D2 的一处既有缺陷必须先修**：`AttachmentEntry.created_at` 的取值是 `metadata.modified()`（N5），字段名却在断言「创建时间」。这是命名撒谎，不是口径争议——**必须**在实施时把字段语义改为「最后修改时间」并在 DTO 上以 `modifiedAt` 命名，或在 owner 侧改为真实创建时间（平台差异需另行定案）。两者择一，不允许保持现状。
-
-**回收不在本期**：`delete_attachments` 已在 [StorageSettings](../../src/settings/pages/StorageSettings.tsx) 中使用，本期**不新增**任何删除入口，也不改其全量校验语义（任一 ID 非法则整体失败）。
-
-### 4.3 三个必须写死的口径
-
-**4.3.1 字节口径**：用户可见数字一律用**文件长度之和**，文案写「文件大小」；磁盘簇占用不作为展示口径；目录 `metadata.len()` 禁止当体积。
-
-**4.3.2 包含范围**：以下四类逐条写死，不允许「看情况」：
-
-| 类 | 对象 | 本期定案 |
-|---|---|---|
-| 子布局 | `attachments/` 是否含 `derived/` | **不含**，且必须由 owner 以 `includesDerived: false` 自述，不允许靠「`is_file()` 顺手跳过」这种隐式行为 |
-| 子布局 | `security/` 是否含 `backups/`、`audit/`、`recovery/` | **父项与子项分别成行**，父项不吸收子项 |
-| 伴生文件 | 主库 `-journal` / 未来 `-wal` / `-shm` | **不计入**，由 DB 层自述，文件系统层不猜 |
-| 伴生文件 | 素材目录的 `custom.tmp` | **不计入**（`atomic_write` 产物归其 owner 管） |
-| 旧位置残留 | 迁移前落在 data 根的旧 `crashes` | **不计入**（I44（已归档）明确不迁移） |
-| 自身产物 | 监视器自己写进 `logs/` 的日志 | **计入但标注**「含本应用日志」，不做递归扣除 |
-
-**4.3.3 时间口径**：展示排序与（将来的）回收排序必须同源。本期无回收，但字段语义必须先定死，否则 v2 加资格时「显示最旧」与「允许删最旧」会错位。
-
-### 4.4 账本闭合（v1 必须满足）
-
-现有实现有一个可验证的不闭合（N4）：
-
-```
-顶层 totalBytes = 全部磁盘条目之和
-每会话 totalBytes = 该会话引用到的条目之和
-分组键 = (conversation_id, attachment_id) 去重
-```
-
-后果：**同一附件被两个会话引用时，其字节被计入两次会话合计**，于是
-
-```
-totalBytes ≠ Σ conversations.totalBytes + Σ orphans.bytes
-```
-
-**约束**：v1 必须以新增字段实现闭合，且**不重定义**旧字段含义：
-
-1. 新增 `sharedBytes`：被 ≥2 个会话引用的附件字节之和（同一附件只计一次）；
-2. 新增 `referencedOnceBytes`：仅被 1 个会话引用的附件字节之和；
-3. 必须满足恒等式：`totalBytes == referencedOnceBytes + sharedBytes + Σ orphans.bytes`；
-4. 前端在会话分组区**必须**标注「跨会话共享，会话合计大于物理占用」，否则用户会看到会话合计大于总量并判定数据造假。
-
-该恒等式应当写成断言（后端单测），而不是只写进文档。
+**存储 tab 的降级粒度是「条目」不是「tab」**：一条读不到不影响其余条目，也不影响本文的进程 / 自身占用 tab（I61 §7.1）。因此 §3.1 的「存储 tab 不可用」栏为空；能力声明对存储 tab 只表达「这个 tab 是否存在」，条目的可用性一律在 `entries[*].availability`（I61 §3.2），**禁止**在两处各存一份。
 
 ---
 
@@ -393,7 +342,7 @@ v1 的进程 tab 交付**树级数字、无任务归因**：
 | 提交量 / commit | 可加 | 含未驻留部分，不是「占了多少内存条」 |
 | 虚拟内存 | 可加（但对「占多少内存」无意义） | 禁止作展示口径 |
 
-**约束（与 §4.4 账本闭合对称）**：
+**约束（与存储侧账本闭合同构，见 [I61](./I61-storage-manager-spec.md) §3.7）**：
 
 1. **可加性是「按指标」的属性，不是「按视图」的属性**：同一个视图里可以同时有可加的指标（CPU 百分比）与不可加的指标（工作集）。因此 DTO 里该标志挂在**指标**上（`memoryAdditive`），不挂在 tab 或行上（§8.2）；
 2. 若展示内存合计，**必须**用私有工作集；若用工作集，**禁止**把子项求和当作总量，只能标注「各进程工作集之和（含共享页重复计数）」；
@@ -491,19 +440,15 @@ v1 的自身占用 tab 由两块组成，**两块的数据性质不同，必须�
 
 ## 7 反模式
 
+**存储侧反模式已迁出**：自行 `read_dir` 求和、自行 `remove_*`、自拼基根或目录名、把 `config.json` / 工作区根 / 系统 temp 纳入观测、用 `to_string_lossy` 拼比较键、缺失时间回退到当前时刻、自读配置当判据、为凑表自建目录清单——这些现在由 [I61](./I61-storage-manager-spec.md) §3.8 的门禁 `G1–G12` 逐条约束。**本文不重复定义**（两处措辞必然漂移），只允许引用门禁编号。
+
+下表只保留**跨 tab 通用**与**进程 / 自身占用专属**的反模式：
+
 | 反模式 | 后果 | 替代 |
 |---|---|---|
-| 自己 `read_dir` 遍历受管目录求和 | 绕过 owner，绕过 `is_plain_file_name` 与库内子布局约定 | 调 owner 的 stats |
-| 自己 `remove_file` / `remove_dir_all` | 引用与文件两套语义分叉 | 调 owner 的回收方法 |
-| 自己拼基根或目录名 | 第二套字面量，I44（已归档）门禁失效 | 调 `AppDirs` 的 getter |
-| **新建 crate 承载「存储观测」** | 反向依赖，无法注入 `AppDirs` 与 owner | 放应用层（`src-tauri/src/cmd/`）；采样类 crate 另有豁免（§1.3） |
 | **采样 crate 反向引用应用层** | 豁免被滥用，等于把应用层搬进 crate | crate 只依赖 OS API，路径与根 PID 由调用方注入（§6.4） |
-| 把 `config.json` 等纳入观测表 | 破坏 `assistant-config` 的既有例外 | 明确排除 |
-| 把工作区根 / 导入源 / WebView 缓存 / 系统 temp 纳入 | 造第 5 套基根 | 明确排除 |
-| 用 `to_string_lossy` 拼比较键 | 非 UTF-8 被改写，统计与去重失真 | 非 UTF-8 显式报错 |
-| **把读不到显示成 `0`** | 伪精确，用户据此做出错误清理决定 | `missing` / `locked` / `unreadable` / `notImplemented` 分开 |
-| **缺失时间回退到当前时刻** | 把「不知道」伪装成「刚刚更新」，比不显示更糟 | 输出 `null`，键恒在 |
-| **跨 tab 相加成一个「总占用」** | 单位不同、口径不同、归属不同，同时错两次 | 每 tab 独立数字 |
+| **把读不到显示成 `0`** | 伪精确，用户据此做出错误清理决定 | `missing` / `locked` / `unreadable` / `unavailable` / `notImplemented` 分开（§2.4） |
+| **跨 tab 相加成一个「总占用」** | 单位不同、口径不同、归属不同，同时错两次 | 每 tab 独立数字（§3.4） |
 | **把工作集求和当作物理占用** | 共享页被重复计数，合计必然偏高且无法解释 | 用私有工作集，或标注「含共享页重复计数」（§6.3.2） |
 | **把宿主进程登记进任务表** | 停止自己 = 应用自杀 | 独立 tab（§6.1） |
 | **在进程内采样自己的峰值** | OOM / 卡死时那次采样必然丢失，峰值永远是「还没崩的时候」 | 峰值由外部产物提供（§6.5 约束 2） |
@@ -518,8 +463,6 @@ v1 的自身占用 tab 由两块组成，**两块的数据性质不同，必须�
 | **让两个投影重叠**（进程 tab 里也列 WebView） | 同一进程出现在两个 tab，数字互相打架，且无法解释「自身占用 300 MB」为何不在此表中 | 投影互斥：A 归自身占用、B 归进程 tab（§6.2） |
 | **在投影 B 里设角色列** | 该列取值恒为 `otherChild`，等于没有这一列，还会让人以为「没有 WebView」 | 角色只用于投影 A 细分（§6.2） |
 | **把周期性快照写进 `crashes/`** | 给一个已无轮转的目录再增一类无上限产物 | 写 `logs()` 同级并复用 `KeepSome`（§6.5 约束 4） |
-| **让监视器自己读配置当判据** | 开第 6 个配置入口；且拥有「推出该删什么」的全部素材 | 策略由 owner 自述（v3） |
-| **为凑满观测表而自建目录清单** | 第二套字面量 | 允许 11 行为 `notImplemented` |
 
 ---
 
@@ -529,12 +472,15 @@ v1 的自身占用 tab 由两块组成，**两块的数据性质不同，必须�
 
 | 命令 | 职责 | 模块 |
 |---|---|---|
-| `get_storage_breakdown` | 存储 tab 明细（既有命令，扩展字段） | `src-tauri/src/cmd/storage.rs` |
 | `get_resource_capabilities`（新增） | 只返回三个 tab 的**可用性状态与原因**，**不含任何数字** | `src-tauri/src/cmd/resource.rs`（新增） |
 | `get_process_snapshot`（新增） | 缝 B 的一次采样结果：`sampledAt` + 整棵子树（两种投影聚合 + 逐进程明细），供进程 tab 与自身占用当前值共用 | `src-tauri/src/cmd/resource.rs` → `assistant-resource-probe` |
 | `get_self_usage_report`（新增） | 只读外部诊断产物（C），返回产物内容 + 产物生成时刻 + `availability` | `src-tauri/src/cmd/resource.rs` |
 
-**为什么能力声明要单独一条命令**：若把能力与数字塞进同一个响应，就必须有一个「跨 tab 聚合响应」，而那正是 §3.4 禁止的东西。分开后，每个 tab 各自取数、各自失败、互不影响——存储 tab 读失败不会让进程 tab 显示「不可用」。
+存储 tab 的命令（`get_storage_breakdown`、`reclaim_storage` 与既有的 `delete_attachments`）**全部归 [I61](./I61-storage-manager-spec.md) §6.1**，本文不登记、不改其签名。
+
+**为什么能力声明要单独一条命令**：若把能力与数字塞进同一个响应，就必须有一个「跨 tab 聚合响应」，而那正是 §3.4 禁止的东西。分开后，每个 tab 各自取数、各自失败、互不影响——存储 tab 的某个条目读失败不会让进程 tab 显示「不可用」。
+
+**能力声明里存储 tab 只回答一个问题**：「这个 tab 存不存在」。条目级可用性在 I61 的 `entries[*].availability` 里，**禁止**在能力声明里再存一份（两份必然漂移）。
 
 **为什么 `get_process_snapshot` 只有一条命令**：进程 tab 与自身占用 tab 的当前值**必须来自同一次采样**（§2.3）。若分成两条命令，两次调用之间的时间差会让「自身 + 子进程」不可加、不可解释。响应里同时带两种投影，前端各取所需。
 
@@ -546,36 +492,14 @@ v1 的自身占用 tab 由两块组成，**两块的数据性质不同，必须�
 
 ### 8.2 DTO 字段口径
 
-**存储侧新增字段**（追加到既有 `StorageBreakdownDto`，不改旧字段含义）：
-
-| 字段 | 类型 | 约束 |
-|---|---|---|
-| `sampledAt` | `i64` | 采样时刻（秒），遍历非原子，必须有 |
-| `byteBasis` | 封闭枚举 | 本期恒 `fileLength` |
-| `sharedBytes` | `u64` | §4.4 恒等式 |
-| `referencedOnceBytes` | `u64` | 同上 |
-| `entries` | `Vec<StorageEntryDto>` | 12 行观测表 |
-
-**`StorageEntryDto`**：
-
-| 字段 | 类型 | 约束 |
-|---|---|---|
-| `key` | `String` | 行标识（如 `attachments`、`security/audit`），**不是路径**，前端不据此拼路径 |
-| `layer` | 封闭枚举 | `data` / `local` |
-| `owner` | `String` | 提供 stats 的 owner 名，用于文案「由 X 提供」 |
-| `bytes` / `count` | `u64 \| null` | D1；**不可用时为 `null`，禁止填 `0`**（否则 §7 的「用 0 冒充读不到」从文案问题升级成契约问题）；键恒在 |
-| `oldestAt` / `newestAt` | `i64 \| null` | D2；**输出侧 `Option` 不加 `skip_serializing_if`**，键恒在、值 `null` |
-| `availability` | 封闭枚举 | §2.4 词表 |
-| `availabilityReason` | `String \| null` | `notImplemented` 时必填，键恒在 |
-| `includesDerived` | `bool` | 口径进 DTO，不只进文档 |
-| `countsSelfLogs` | `bool` | 自指标注（`logs/` 为 `true`） |
+**存储侧 DTO**（`StorageBreakdownDto`、`StorageEntryDto` 与 `reclaim` 视图）**全部归 [I61](./I61-storage-manager-spec.md) §6.2**，本文不列字段、不改字段。本文只保留一条通用约束：**任何 DTO 的 `Option` 输出字段都不加 `skip_serializing_if`**（键恒在、值 `null`），因为「缺键」与「值为空」在前端是两种完全不同的语义。
 
 **能力声明侧**：
 
 | 字段 | 类型 | 约束 |
 |---|---|---|
 | `tab` | 封闭枚举 | `storage` / `processes` / `selfUsage` |
-| `availability` | 封闭枚举 | §2.4 |
+| `availability` | 封闭枚举 | §2.4；存储 tab 恒 `available`（条目级状态不在此处） |
 | `reason` | `String \| null` | 键恒在 |
 
 **进程快照侧（`ProcessSnapshotDto`，一条命令同时供两个 tab）**：
@@ -636,11 +560,11 @@ v1 的自身占用 tab 由两块组成，**两块的数据性质不同，必须�
 
 | 项 | 变更 |
 |---|---|
-| `StorageSettings.tsx` | 改造为容器：内嵌 antd `Tabs`（`activeKey` + 三 tab），存储 tab 内容基本沿用现有渲染逻辑，只增加「观测表」区块与「共享引用」标注 |
+| `StorageSettings.tsx` | 改造为**容器**：内嵌 antd `Tabs`（`activeKey` + 三 tab）。本文只负责容器壳与另两个 tab 的挂载；**存储 tab 的内部结构（条目表、回收按钮、计划确认弹窗）由 [I61](./I61-storage-manager-spec.md) §6.3 定义** |
 | 进程 tab 组件 | 渲染 `get_process_snapshot` 中 `projection == children` 的明细（PID / 父 PID / `exeName` / CPU / 内存）+ 顶部 `sampledAt` 与 `coverage` / `truncated` 说明；**无停止按钮、无任务名、无角色列** |
 | 自身占用 tab 组件 | **两块分开渲染**：当前值（同一次 `get_process_snapshot` 的 `selfProjection` + `projection == self` 明细）+ 峰值区（`get_self_usage_report`，必须显示 `generatedAt` 与 `attributionNote`）；内存合计仅在 `memoryAdditive == true` 时显示，内存列名必须带口径（§6.3.2 约束 3） |
-| `storageService.ts` | 追加 `getResourceCapabilities()` / `getProcessSnapshot()` / `getSelfUsageReport()`；既有 `getStorageBreakdown` 返回类型随契约生成自动扩展 |
-| i18n | 两份 locale 同步新增 tab 标题、状态文案、原因文案、口径说明；`common.navigation.storage.title` 只改值不改键（§3.3） |
+| `storageService.ts` | 本文追加 `getResourceCapabilities()` / `getProcessSnapshot()` / `getSelfUsageReport()`；**存储相关调用（`getStorageBreakdown` / `reclaim_storage` / `deleteAttachments`）的封装与返回类型归 I61 §6.3**，同一文件内两部分不互相引用 |
+| i18n | 两份 locale 同步新增 tab 标题、状态文案、原因文案、口径说明；`common.navigation.storage.title` 只改值不改键（§3.3）；存储条目文案归 I61 |
 
 **前端必须按 `memoryAdditive` 分支**，不能无条件显示内存合计：`memoryAdditive == false` 时只显示各进程行，或显示合计但带「含共享页重复计数」标注（§6.3.2）。这条判断不能放在文案里靠人自觉，必须由字段驱动。CPU 合计不受此约束（天然可加），但必须注明「单核百分比之和，可超过 100」（§6.3.3）。
 
@@ -648,16 +572,12 @@ v1 的自身占用 tab 由两块组成，**两块的数据性质不同，必须�
 
 ## 9 失败模式
 
+**存储侧失败模式（目录不存在 / 不可读 / 安全库未解锁 / 遍历中被删 / 非 UTF-8 名 / owner 无 stats / 自指计数）已迁出**，逐条语义见 [I61](./I61-storage-manager-spec.md) §7。本文只保留跨 tab 的两条与进程 / 自身占用专属的行。
+
 | 失败模式 | 表现 | 必须的语义 |
 |---|---|---|
-| 目录不存在 | 首次运行、旧位置迁移后 | `missing`，计 0，**不报错、不创建目录**（观测不得产生副作用） |
-| 目录不可读 | 权限不足 | `unreadable`，单项标状态，**整账仍返回** |
-| 安全库未解锁 | `security/` 不可读 | `locked`，**不是 0 字节** |
-| 文件在遍历中被删除 | 并发回收 | 单项跳过，不计入错误 |
-| 非 UTF-8 文件名 | 少见但可能 | 跳过并计数，**禁止** `to_string_lossy` 混入展示键 |
-| owner 无 stats 入口 | 本期 11 行 | `notImplemented` + 原因 |
-| 自指 | 监视器日志落在 `logs/` | `countsSelfLogs: true`，文案标注「含本应用日志」，不做递归扣除 |
-| 采样阻塞 UI | 大目录遍历 | 异步执行；前端有 loading 与上次快照时刻 |
+| **任何 tab 的取数失败** | owner 抛错、采样器抛错、命令异常 | 只降级该 tab / 该条目；**禁止**让一个 tab 的失败连坐其它 tab（§8.1） |
+| 采样阻塞 UI | 全系统快照耗时 | 异步执行；前端有 loading 与上次快照时刻 |
 | 能力声明读取失败 | 新命令异常 | 前端降级为「状态未知」并保留上次快照，**不得**默认判为可用 |
 | **PID 复用** | 父进程死亡后 PID 被复用，而 `parent_pid` 是**创建时的快照值**、不会更新 | 校验 `child.startTime >= parent.startTime` 且父 PID 确实存活；不通过则**排除该进程并标注**，禁止静默并入子树 |
 | 进程在采样中退出 | 遍历期间进程消失 | 该行跳过，不报错；`sampledAt` 后已死的进程允许出现在快照里（快照是时刻值，不是持续状态） |
@@ -673,13 +593,11 @@ v1 的自身占用 tab 由两块组成，**两块的数据性质不同，必须�
 
 ## 10 待定案项
 
+**第 1–5 项已迁出**（D5 资格 / D6 策略、`tool-results` 可回收性、审计保留期、`derived/` 是否计入、`created_at` 语义）：它们都是存储侧判据，现由 [I61](./I61-storage-manager-spec.md) §3.4–§3.9 定案（资格词表、策略值、fail-closed 回退、`modifiedAt` 改名）。本表保留编号不复用，避免与其它章节的「§10 第 N 项」引用错位。
+
 | # | 待定 | 为什么必须定 | 本期态度 |
 |---|---|---|---|
-| 1 | D5 资格与 D6 策略 | 二者是回收的下游；无回收即无落点 | **本期不做**（见下） |
-| 2 | `tool-results` 是否允许回收 | 决定 `<persisted-output>` 跨进程重放是否仍成立 | **已定：允许**。现有 `cleanup_expired_results` 已按 mtime 年龄回收，代价是超过保留期的定位符失效；参考项目 deepseek-harness 的 spill 清理给出同一结论，并明确「不做定时器、不递归删会话目录、只删文件、符号链接永不跟随」。v1 只标 `notImplemented`，不新增动作 |
-| 3 | `security/audit/` 保留策略 | 唯一「会无限增长 + 不在归属表 + 无回收入口」的目录 | 推迟；v1 只标 `notImplemented` |
-| 4 | `derived/` 是否计入附件总量 | 影响用户对「删了没释放」的感知 | **已定：不含**，由 owner 自述 `includesDerived: false` |
-| 5 | `created_at` 语义修正方式 | 现字段名与取值不符（N5） | **必须修**；改名 `modifiedAt` 或改取真实创建时间，二者择一 |
+| 1–5 | **已迁出** | — | 见 I61 §3.4–§3.9 |
 | 6 | 自身占用默认口径 | 决定所有内存数字 | **已定：投影 A**（宿主 + WebView，§6.3.1） |
 | 7 | 内存单位与可加性 | 决定文案与能否显示「合计」 | **已定**：单进程用工作集；跨进程合计用私有工作集，否则必须标注不可加（§6.3.2） |
 | 8 | 平台方案 A（`sysinfo`）还是 B（手写三套） | 决定采样 crate 的依赖与工作量 | **待定**；倾向 A，但新增依赖需单独过审（§6.4） |
@@ -689,22 +607,22 @@ v1 的自身占用 tab 由两块组成，**两块的数据性质不同，必须�
 | 12 | 角色分类数据源：命令行 `--type=` 嗅探 vs WebView2 进程 API | 决定 §6.2 的角色表是否可靠 | 待定；嗅探零依赖但脆弱（命令行可被改写、读取有隐私面），WebView2 的 `ProcessFailed` 事件与新 SDK 的进程枚举只给 kind + pid。**两者只影响分类，不影响采样**——它们给不出内存与 CPU，替代不了缝 B 的任何工作量 |
 | 13 | 全系统快照的取得方式（是否复用 `NtQuerySystemInformation`） | 决定「一次遍历」能否真的做到单次系统调用 | 待定；`sysinfo` 内部已做一次全表遍历，需核实其 API 是否会因多次查询退化为多次系统调用（§2.3 约束 1） |
 
-**关于第 1 项为何本期不做**：资格（D5）与策略（D6）挂在「回收动作」下面。链路是「回收 → 需要资格 → 资格需要理由 → 理由常常是策略」。v1 没有回收入口，这条链路的第一环缺失，后两环就没有落点。提前做会付三笔代价：① 策略有 4 个来源（2 个配置项 + 3 个代码常量），一半不可调，显示等于假承诺；② 两处 owner 的降级方向相反（审计读配置失败 → 永不清理；工具结果读配置失败 → 照 30 天删），一旦把「策略来源」写进 DTO，这个不一致就从实现问题升级为契约承诺；③ `effectiveSince` 要求 owner 自述「本次启动生效值」，而多数 owner 连 stats 都没有。正确顺序是**先让数字自己说话**。
+**关于第 1 项为何迁出而不是「本期不做」**：资格（D5）与策略（D6）挂在「回收动作」下面——链路是「回收 → 需要资格 → 资格需要理由 → 理由常常是策略」。本文原判断是「v1 没有回收入口，这条链路的第一环缺失，后两环就没有落点」，但现有代码其实**已经有回收动作**（`delete_attachments`、`cleanup_expired_results`、`prune_backups`、`prune_before`、`cleanup_recovery_dir`），缺的是**统一的资格判定与策略自述**，不是动作本身。因此正确做法不是推迟，而是把这些动作收进一个管理器（I61），由它统一回答「谁可删、按什么判据、删多少」。本文仍不碰这条链路。
 
 ---
 
 ## 11 验收判据
 
+**存储侧判据 `V3` / `V4` / `V5` / `V8` 已迁出**至 [I61](./I61-storage-manager-spec.md) §10 的 `V1–V15`（条目不可用不出 0、账本恒等式、共享标注、`modifiedAt` 改名）。编号保留不复用，只为与其它文档的引用对齐。
+
 | 编号 | 判据 | 失败含义 |
 |---|---|---|
 | V1 | 页面 label 显示「资源监视器」，页面 id 仍为 `storage`，左侧导航仍为一项 | 误改成三个 page |
 | V2 | 页面内存在三个 tab，`activeKey` 可切换且切换不重新挂载页面壳 | tab 实现退化为路由跳转 |
-| V3 | 存储 tab 显示 12 行观测表，除 `available` 的行外全部为 `notImplemented` 且**带原因**（R4 前 11 行、R4 后 10 行） | 用 0 冒充读不到 |
-| V4 | 恒等式 `totalBytes == referencedOnceBytes + sharedBytes + Σ orphans.bytes` 在后端单测中成立 | 账本不闭合 |
-| V5 | 跨会话共享附件在会话分组区有「共享」标注 | 用户看到会话合计大于总量 |
+| V3–V5 | **已迁出**（见 I61 §10） | — |
 | V6 | 进程 tab 只显示树级数字（PID / 父 PID / `exeName` / CPU / 内存），**无任务名、无停止按钮、无排队态、无角色列** | 越界到任务归因 |
 | V7 | 页面内无「总占用」聚合数字 | 跨 tab 相加 |
-| V8 | `AttachmentEntry` 时间字段不再叫 `created_at` 却装 mtime | 命名撒谎 |
+| V8 | **已迁出**（`created_at` → `oldestAt` / `newestAt` 取 `modified()`，见 I61 §3.9） | — |
 | V9 | `get_resource_capabilities` 响应不含任何 `bytes` / `count` 字段 | 能力声明与数字混装 |
 | V10 | `settingsSnapshot.golden.test.ts` 通过，两份 fixture 已同步更新 | 用跳过测试替代 fixture 更新 |
 | V11 | 全后端 `AppDirs` 之外无新增目录字面量；无新增 `dirs::` 调用点 | I44（已归档）门禁失效 |
@@ -728,19 +646,16 @@ v1 的自身占用 tab 由两块组成，**两块的数据性质不同，必须�
 | 批次 | 内容 | 前置 |
 |---|---|---|
 | **R0** | 页面身份变更（label / keywords / golden fixture）+ 页内 tab 骨架 + `get_resource_capabilities` | 无 |
-| **R1** | 存储 tab 观测表 12 行 + D1/D2/D4 + 口径字段进 DTO | R0 |
-| **R2** | 账本闭合（`sharedBytes` / `referencedOnceBytes` + 恒等式断言 + 共享标注） | R1 |
-| **R3** | `created_at` 语义修正（§10 第 5 项定案后） | R1 |
-| **R4** | `assistant-crash` 补 `list` / `stat` / `prune`（含保留上限），`crashes/` 行转 `available` | **无**（可完全并行，与本监视器无依赖） |
+| **R1–R4** | **已迁出**：存储观测补全 / 账本闭合 / `modifiedAt` 改名 / `crashes/` 补 `list`·`stat`·`prune`，对应 [I61](./I61-storage-manager-spec.md) §11 的 `T1`–`T4` | 见 I61 |
 | **R5** | `assistant-resource-probe` 骨架 + 平台方案定案（§10 第 8 项）+ **一次全系统快照 + 内存父子表 + 从根 DFS**（§2.3）+ 角色分类 + PID 复用校验 + 空闲超时停表（§6.5.2）+ 指标位掩码（§6.5.1） | 平台方案定案 |
 | **R6** | 进程 tab 树级数字（投影 B）+ 同一 `sampledAt` 共用 + 首拍 `null` 的「待定」渲染态 | R5 |
 | **R7** | 自身占用 tab 当前值（投影 A）+ `memoryAdditive` 驱动内存合计显示 + 内存列名带口径 | R5 |
 | **R8** | 进程外报告二进制（C）+ `get_self_usage_report` + 峰值区报告阅读器（`noReportYet` / `staleReport`） | R7 |
-| **推迟** | 任务级归因（需登记表）、D5 资格、D6 策略 | — |
+| **推迟** | 任务级归因（需登记表） | — |
 
-**R0 必须先做**：页内 tab 骨架是后面所有内容区的容器；先改 label 与 fixture 也能让「资源监视器」这个名字在最早一批就生效，避免文档与 UI 长期不一致。
+**R0 必须先做**：页内 tab 骨架是后面所有内容区的容器；先改 label 与 fixture 也能让「资源监视器」这个名字在最早一批就生效，避免文档与 UI 长期不一致。**I61 的 `T1`–`T4` 同样以 R0 为前提**——它们要在容器里挂载存储 tab，容器不存在就无处可挂。
 
-**R4 可以插队**：它是 `crashes/` 作为 owner 的欠账（N14），不依赖监视器的任何东西，也不需要 R0。把它排在 R5 之前还有个额外好处——**先修好一个「无上限产物」的目录，再谈给自监控加落盘**，顺序反过来容易顺手把新产物写进 `crashes/`（§7）。
+**R1–R4 与 R5–R8 可以并行**：存储批次只动 `cmd/storage.rs`、各 owner 与 `StorageEntryDto`，本文批次只动 `cmd/resource.rs`、`assistant-resource-probe` 与两个进程侧组件；两者唯一的交点是 `StorageSettings.tsx` 的 tab 挂载点，**必须在 R0 就把三个 tab 的挂载位留好**，否则后开工的一侧要改另一侧的容器。
 
 **R8 不可提前**：峰值区是报告阅读器，报告由进程外二进制生成；先做阅读器而没有产物，UI 会长期停在 `noReportYet`，用户会以为功能坏了。
 
@@ -748,14 +663,14 @@ v1 的自身占用 tab 由两块组成，**两块的数据性质不同，必须�
 
 ## 13 开放问题
 
+**`OQ1` / `OQ2` / `OQ3` / `OQ9` 已迁出**（审计目录归属表、条目 key 命名、存储 tab 按层折叠、`crashes/` 保留上限）：均为存储侧问题，现由 [I61](./I61-storage-manager-spec.md) §9 跟踪。编号保留不复用。
+
 | # | 问题 | 影响 |
 |---|---|---|
-| OQ1 | `security/audit/` 是否先进 I44（已归档）的归属表 | 不进表则观测表以「代码事实」覆盖「规格事实」，漂移被固化 |
-| OQ2 | 观测表 12 行的 `key` 命名规范（`attachments` vs `attachments/derived` 混用层级分隔符） | 前端分组与 i18n 映射 |
-| OQ3 | 存储 tab 是否需要「按层折叠」（data 根 / local 根） | 12 行的纵向长度 |
+| OQ1–OQ3 | **已迁出** | 见 I61 §9 |
 | OQ4 | 能力声明是否需要缓存 | 每次打开设置页都调一次命令，成本可忽略，但需定案 |
 | OQ5 | 进程 tab 与「工具运行面板」是否共享组件 | 两处都展示子进程，重复实现风险 |
 | OQ6 | 采样 crate 的平台单测是否进 CI（Windows 专有部分如何门禁） | 三平台实现差异无法在单机验证 |
 | OQ7 | 外部报告产物是否需要 schema 版本号 | 产物是跨版本持久文件，格式演进会让旧报告解析失败 |
 | OQ8 | 进程 tab 是否将来扩展为「全机视图」 | 当前明确只覆盖子树（§5.4）；扩到全机需重新定案隐私与权限边界 |
-| OQ9 | `crashes/` 的保留上限取多少 | R4 需一个具体值，且必须与 `logs/` 的 `KeepSome(3)` 语义对齐或明确说明差异 |
+| OQ9 | **已迁出**（`crashes/` 保留上限，见 I61 §9） | — |

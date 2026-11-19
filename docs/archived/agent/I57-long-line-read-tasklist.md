@@ -3,7 +3,7 @@
 > 规格：[I57-long-line-read-spec.md](./I57-long-line-read-spec.md)（现状 §1 / 契约 §3 / 行为 §4 / 失败矩阵 §5 / 文案 §6 / 验收 §8 / 门禁 §10 / 切片 §11）
 > 事实基线：I57 §1 的 N1–N16（2026-11-18 已按代码逐条核对，见下方「前置核对」）
 > 前置：P5（OS 工具能力，`read` 分块扫描已就绪）、P13（落盘与预览口径）、P2（工具控制层）均已完成；本阶段不依赖 P17（I38 §3 的依赖是 P17 → P16 单向）
-> 阶段台账：[I38-agent-roadmap.md](./I38-agent-roadmap.md) §2 阶段表（唯一状态来源）
+> 阶段台账：[I38-agent-roadmap.md](../../store/I38-agent-roadmap.md) §2 阶段表（唯一状态来源）
 
 **方案：B（只做报告面，不做行内翻页）**。`column` / `maxLineChars` / `lineWindow` / `linesBeyondColumn` / `[column]` 已从本阶段整体移出，由 [I58](./I58-super-tool-spec.md) 的 `super_read` 承接（I57 §0.2 例外登记、§12 R10）。本清单只覆盖 `truncatedLines` 报告、整行计费、字节预算、回执与 `edit` 闸门。
 

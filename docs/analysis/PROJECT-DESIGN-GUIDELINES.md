@@ -66,7 +66,7 @@ pub struct XxxOutputDto {
 ```
 
 - 输出 DTO 的 `Option` **不加** `skip_serializing_if`：键恒在、值为 `null`，前端声明 `T | null` 必填。
-- 前端类型守卫对 wire 可空字段必须「`undefined` / `null` 双放行 + 精确类型」，只对必填字段做存在性与类型校验；改输出 DTO 序列化语义时，同一次提交内扫描前端守卫与可空字段消费点（详见 `docs/store/I59-chat-error-null-contract-spec.md` §3.3 / §14.2）。
+- 前端类型守卫对 wire 可空字段必须「`undefined` / `null` 双放行 + 精确类型」，只对必填字段做存在性与类型校验；改输出 DTO 序列化语义时，同一次提交内扫描前端守卫与可空字段消费点（详见 I59 chat-error-null-contract（已归档）§3.3 / §14.2）。
 - 输入 DTO 的 `Option` 加 `#[serde(default)]` + `#[ts(optional = nullable)]`，并加 `deny_unknown_fields` 拒绝未知字段。
 - 禁止 `json!({})` 手动构造 event payload
 - 禁止前端 `as` 强转 invoke 返回值，改用泛型 `invoke<T>`

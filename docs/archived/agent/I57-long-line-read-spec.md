@@ -5,8 +5,8 @@
 | 阶段 | **P16 长行读取（如实报告与扫描收口）**；切片 T1–T4 全部在本阶段内（§11），不拆子阶段 |
 | 状态 | 定稿（**B 方案**：只做报告面，不做行内翻页）；T1–T4 未开工 |
 | 日期 | 2026-11-18 |
-| 阶段台账 | [I38 §2](./I38-agent-roadmap.md)（阶段、前置、状态的唯一登记点）；本文 §10 的 G1–G12 即 P16 退出条件 |
-| 关联 | [I58](./I58-super-tool-spec.md)（**P17 阶段规格**：能力发现、索引型读取、行地址编辑；承接本文 §9 的 L1 / L2 / L3 / L6 / L7）、I38c read 分册（已归档）（§3.4 流式分块与单行截断的原始口径，本文**替代**其长行部分）、I38c P5 总规格（已归档）（§14.4 footer 五条规则继续有效）、I46 compact 分册（已归档）（§2.2 截断提示三态）、[I27](./I27-tool-data-store-spec.md)（落盘阈值与预览窗口） |
+| 阶段台账 | [I38 §2](../../store/I38-agent-roadmap.md)（阶段、前置、状态的唯一登记点）；本文 §10 的 G1–G12 即 P16 退出条件 |
+| 关联 | [I58](./I58-super-tool-spec.md)（**P17 阶段规格**：能力发现、索引型读取、行地址编辑；承接本文 §9 的 L1 / L2 / L3 / L6 / L7）、I38c read 分册（已归档）（§3.4 流式分块与单行截断的原始口径，本文**替代**其长行部分）、I38c P5 总规格（已归档）（§14.4 footer 五条规则继续有效）、I46 compact 分册（已归档）（§2.2 截断提示三态）、[I27](../../store/I27-tool-data-store-spec.md)（落盘阈值与预览窗口） |
 | 影响范围 | `src-tauri/crates/assistant-tools/src/os/tools/agent_read/{mod.rs,window.rs}`、`src-tauri/crates/assistant-tools/src/os/tools/agent_edit/{mod.rs,report.rs}`、`src-tauri/crates/assistant-tools/src/runtime/storage.rs`（`ReadReceipt`）、`src-tauri/crates/assistant-tools/tests/{agent_read.rs,agent_edit.rs}`。**不改** wire / DTO（`data` 是开放 JSON）、不改 `grep` / `ls` / `write`、不改前端 |
 
 > 一句话：`read` 现在的单行上限只解决「不进内存」，没解决**「截断之后会发生什么」**——第 2001 个字符起**静默消失**（无计数、无提示），单行文件**仍全量扫描到 EOF**（预算看不见真实行宽），且截断后 `edit` 会**静默**只替换前 2000 字符。本文把这三件事一次修掉：截断**如实报告**（`data.truncatedLines` + `[long-lines]` + 四态提示）、扫描成本**按整行计费**并收口到字节预算、`edit` 在截断回执上 **fail-closed**。行内翻页（`column` / `maxLineChars`）**不在本文**，由 [I58](./I58-super-tool-spec.md) 的 `super_read` 承接（§0.2 例外登记）。

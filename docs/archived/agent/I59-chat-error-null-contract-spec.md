@@ -6,7 +6,7 @@
 | 状态 | 已完成（T1–T4 落地，见 §15）；同类判据与同类文档已合并（§14） |
 | 日期 | 2026-11-19 |
 | 引入点 | `ddca9bb`（2026-11-03 20:19，`feat(dto): 协议契约生成与语义统一`）——该提交移除输出 DTO 的 `skip_serializing_if`、统一为「键恒在、值 `null`」，但**未同步放宽前端守卫** |
-| 关联 | I16 frontend-backend protocol spec（已归档）（契约生成的起点与 `null` 语义的来源）、I19 error-system-spec（已归档）（错误边界与日志系统）、I38d agent-frontend-modes-spec（已归档）（phase 由后端驱动，本文不改）、I55（观测面只读副本，不受本文影响）、dto-frontend-backend-sync-audit（已归档）（同一漂移的前史：声明 `\| null` 而运行时收 `undefined`）、command-error-contract-spec（已归档）（`toChatError` 为归一化单点）、compat-tech-debt-audit-1（已归档）（守卫过窄 → 静默退化 `InternalError` 的故障模式）、[PROJECT-DESIGN-GUIDELINES](../analysis/PROJECT-DESIGN-GUIDELINES.md)（「输出 DTO `Option` 不加 `skip_serializing_if`」为项目级硬规则） |
+| 关联 | I16 frontend-backend protocol spec（已归档）（契约生成的起点与 `null` 语义的来源）、I19 error-system-spec（已归档）（错误边界与日志系统）、I38d agent-frontend-modes-spec（已归档）（phase 由后端驱动，本文不改）、I55（观测面只读副本，不受本文影响）、dto-frontend-backend-sync-audit（已归档）（同一漂移的前史：声明 `\| null` 而运行时收 `undefined`）、command-error-contract-spec（已归档）（`toChatError` 为归一化单点）、compat-tech-debt-audit-1（已归档）（守卫过窄 → 静默退化 `InternalError` 的故障模式）、[PROJECT-DESIGN-GUIDELINES](../../analysis/PROJECT-DESIGN-GUIDELINES.md)（「输出 DTO `Option` 不加 `skip_serializing_if`」为项目级硬规则） |
 | 影响范围 | `src/chat/core/chatErrors.ts`（唯一生产改动）；新增 `src/chat/core/__tests__/chatErrors.test.ts`；`src/services/__tests__/turnOrchestrator.test.ts` 增一条断言。**零改动**：后端 DTO / `src/types/protocol.contract.ts` / `src/services/stream/*` / UI 组件 |
 
 > 一句话：流内 provider 错误的 wire 载荷自 `ddca9bb` 起把 `httpStatus` / `provider` / `providerCode` 三个可选字段改成**键恒在、值 `null`**，而前端类型守卫 `isChatError` 仍只接受 `undefined`。于是**凡是不带 HTTP 元信息的 provider 错误**（流空闲超时、SSE 断流、网络失败等）在守卫处判定失败，被 `toChatError` 兜底成 `InternalError` + 「未知错误」，**后端已分类的 `Timeout` 与原始文案被丢弃**。本文把守卫判据与生成契约对齐，并用最小样本把该对齐固化成测试。
@@ -342,7 +342,7 @@ T1 与 T2 是**串行**（测试要引用修复后的判据）；T3 与任何并
 
 | 编号 | 约束 | 来源 | 落点 |
 |---|---|---|---|
-| U1 | 输出 DTO 的 `Option` 字段**不加** `skip_serializing_if`：键恒在、值 `null`；前端对应声明为 `T \| null`（必填）或 `?: T \| null`（可选） | [PROJECT-DESIGN-GUIDELINES](../analysis/PROJECT-DESIGN-GUIDELINES.md)；I16（已归档） | §3.1 / §3.2；R1 |
+| U1 | 输出 DTO 的 `Option` 字段**不加** `skip_serializing_if`：键恒在、值 `null`；前端对应声明为 `T \| null`（必填）或 `?: T \| null`（可选） | [PROJECT-DESIGN-GUIDELINES](../../analysis/PROJECT-DESIGN-GUIDELINES.md)；I16（已归档） | §3.1 / §3.2；R1 |
 | U2 | 前端守卫对 wire 可空字段必须「`undefined` / `null` 双放行 + 精确类型校验」，**禁止** `typeof x !== "undefined"` 之类反向判断 | 本文 N3 / N4 的成因 | §3.3 |
 | U3 | 守卫只对**必填字段**做「存在 + 类型」校验；可选字段一律放行 `null` 与 `undefined`，不额外收窄 | `isVaultErrorDto` 范式（§14.1） | §3.3 |
 | U4 | 一致性由测试固定，不由文档约定：样本字面量必须能赋给生成契约类型（编译期），运行时行为由单测断言 | dto-frontend-backend-sync-audit（已归档）记录的「type lying」前史 | §3.5 / G5 / T2 |

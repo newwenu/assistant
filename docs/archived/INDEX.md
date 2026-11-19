@@ -8,7 +8,7 @@
 
 | 域 | 内容 | 文件数 |
 |---|---|---|
-| [agent/](./agent/) | Agent 运行时、工具框架与 MCP、Agent Loop、审批、压缩与节点布局、身份与能力事实、运行时审计、沙箱与代码规模审计、Turn 观测面 | 63 |
+| [agent/](./agent/) | Agent 运行时、工具框架与 MCP、Agent Loop、审批、压缩与节点布局、身份与能力事实、运行时审计、沙箱与代码规模审计、Turn 观测面、长行读取与超级工具、工具三阶段状态 | 69 |
 | [vault/](./vault/) | 密码箱：密钥体系、条目加密、同步、审计、生物识别、恢复与 IPC 契约 | 36 |
 | [chat/](./chat/) | 对话与消息链路：服务拆分、流事件、历史、分支、重试、附件/多模态、截图提问、Token Usage | 33 |
 | [ui/](./ui/) | Orb、主窗口与 mini 模式、设置系统、i18n、Mascot、时钟与布局 | 35 |
@@ -16,7 +16,7 @@
 
 ## 文档清单
 
-### agent/ (63)
+### agent/ (69)
 
 | 文档 | 原批次 | 标题 |
 |---|---|---|
@@ -83,6 +83,12 @@
 | [`agent-sandbox-research.md`](./agent/agent-sandbox-research.md) | achievement10 | Agent 命令行隔离环境开源项目调研（后端选型 ADR-1–ADR-4） |
 | [`I55-agent-turn-observability-spec.md`](./agent/I55-agent-turn-observability-spec.md) | achievement | I55 — Agent Turn 图观测规格（节点级事件与三投影；P15 V0–V2 已交付，V3 回放受闸未开工） |
 | [`I55-agent-turn-observability-tasklist.md`](./agent/I55-agent-turn-observability-tasklist.md) | achievement | I55 — Agent Turn 观测面任务清单（V1 / V2 全部勾选，V3 保留未开工原貌） |
+| [`I57-long-line-read-spec.md`](./agent/I57-long-line-read-spec.md) | achievement | I57 — P16 长行读取规格（字节口径扫描宽限 / 整行计费 / 截断报告 / 回执与 `edit` 闸门） |
+| [`I57-long-line-read-tasklist.md`](./agent/I57-long-line-read-tasklist.md) | achievement | I57 — P16 长行读取任务清单（T1–T4 全部勾选） |
+| [`I58-super-tool-spec.md`](./agent/I58-super-tool-spec.md) | achievement | I58 — P17 超级工具规格（能力发现 / 索引型读取 / 行地址编辑 / 门禁 G1–G23） |
+| [`I58-super-tool-tasklist.md`](./agent/I58-super-tool-tasklist.md) | achievement | I58 — P17 超级工具任务清单（T1–T8 全部勾选） |
+| [`I59-chat-error-null-contract-spec.md`](./agent/I59-chat-error-null-contract-spec.md) | achievement | I59 — 前端 ChatError null 语义与守卫对齐（含同类判据合并） |
+| [`I60-tool-running-status-spec.md`](./agent/I60-tool-running-status-spec.md) | achievement | I60 — 工具调用三阶段状态（preparing / running / 终态与全局活动指示器） |
 
 ### vault/ (36)
 
