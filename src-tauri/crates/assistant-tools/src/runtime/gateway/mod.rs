@@ -23,7 +23,7 @@ pub use decision::{
     AuditOutcome, GatewayDecision,
 };
 pub use stores::{
-    redact_resource, AuditEntry, ChildGrantStore, GrantScope, InMemoryAuditStore,
+    redact_resource, redact_secrets, AuditEntry, ChildGrantStore, GrantScope, InMemoryAuditStore,
     InMemoryGrantStore, PermissionAuditStore, PermissionGrantStore,
 };
 pub use testing::ScriptedApprovalPrompter;
@@ -348,7 +348,7 @@ impl ToolGateway {
         let entry = AuditEntry {
             tool: tool.to_string(),
             action: action.to_string(),
-            resource: redact_resource(resource),
+            resource: redact_resource(&redact_secrets(resource)),
             outcome,
             at_millis: now_millis(),
             conversation_id: context.session_id.clone(),

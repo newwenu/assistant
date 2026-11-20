@@ -9,7 +9,8 @@ pub(crate) use shared::test_support;
 
 pub use tools::{
     agent_ask_user, agent_delete, agent_edit, agent_glob, agent_grep, agent_list, agent_mkdir,
-    agent_move, agent_read, agent_request_tool, agent_write, fs_link, super_edit, super_read,
+    agent_move, agent_read, agent_request_tool, agent_shell, agent_write, fs_link, super_edit,
+    super_read,
 };
 
 use std::sync::Arc;
@@ -18,7 +19,8 @@ use crate::os::agent_ask_user::QuestionTimeoutSource;
 use crate::question::QuestionPrompter;
 use crate::r#trait::Tool;
 use crate::registry::ToolRegistry;
-use crate::storage::ReadReceiptStore;
+use crate::sandbox::{SandboxEnforcement, SandboxProbe};
+use crate::storage::{ReadReceiptStore, ToolResultStorage};
 
 /// `TOOLBOX_ONLY` 桥接工具：只服务工具箱入口，不进 Agent 白名单。
 /// 新工具不得混进本函数（见 I38c §7 注册门禁）。
@@ -66,4 +68,28 @@ pub fn register_interactive_tools(
     registry.register(
         Arc::new(agent_ask_user::AgentAskUserTool::new(prompter, timeout)) as Arc<dyn Tool>,
     );
+}
+
+/// 命令执行组：`shell`。
+///
+/// 两条前置条件缺一即**不注册**（不注册空工具、不降级为无沙箱执行）：
+/// 探测结论 `enforcement != none`（门禁判据由调用方传入，这里复核一次），
+/// 以及 shell 程序能被解析到绝对路径（否则工具存在但必然报错）。
+pub fn register_shell_tools(
+    registry: &ToolRegistry,
+    storage: Arc<dyn ToolResultStorage>,
+    probe: &'static SandboxProbe,
+) {
+    if probe.enforcement == SandboxEnforcement::None {
+        log::warn!(
+            "shell not registered: enforcement is none (detail={:?})",
+            probe.detail
+        );
+        return;
+    }
+    if !agent_shell::spawn::program_available() {
+        log::warn!("shell not registered: no usable shell program");
+        return;
+    }
+    registry.register(Arc::new(agent_shell::ShellTool::new(probe, storage)) as Arc<dyn Tool>);
 }

@@ -213,6 +213,54 @@ async fn a_lone_meta_tool_still_resolves() {
     assert_eq!(names(&tools), vec!["request_tool"]);
 }
 
+/// A18：`shell` 的可见性 = 注册门禁 ∩ 勾选 ∩ 层级上限。
+///
+/// 三段串联才是用户看到的事实：探测不可用 → 不注册（`register_shell_tools` 直接返回）；
+/// 注册了但没勾 → 白名单落空；勾了但 `max_tool_tier < os` → 被层级硬上限过滤。
+#[tokio::test]
+async fn shell_visibility_needs_registration_checkbox_and_tier() {
+    use assistant_tools::os::register_shell_tools;
+    use assistant_tools::sandbox::{detect, SandboxEnforcement, SandboxHostPaths};
+    use assistant_tools::storage::FileToolResultStorage;
+
+    let storage = tempfile::tempdir().expect("storage tempdir");
+    let backend: Arc<dyn assistant_tools::ToolResultStorage> =
+        Arc::new(FileToolResultStorage::new(storage.path()));
+    let probe = detect(&SandboxHostPaths::default());
+    assert_ne!(
+        probe.enforcement,
+        SandboxEnforcement::None,
+        "sandbox unavailable on this machine: {:?}",
+        probe.detail
+    );
+    let probe: &'static assistant_tools::sandbox::SandboxProbe = Box::leak(Box::new(probe));
+
+    let registry = ToolRegistry::new();
+    register_shell_tools(&registry, backend, probe);
+    let enabled = vec!["shell".to_string()];
+
+    let checked = resolve_available_tools(&registry, &enabled, &[], ToolTier::Os).await;
+    assert_eq!(
+        names(&checked),
+        vec!["shell"],
+        "checked shell above its tier must reach the model"
+    );
+
+    let below_tier = resolve_available_tools(&registry, &enabled, &[], ToolTier::Sandbox).await;
+    assert!(
+        below_tier.is_empty(),
+        "an os tool must stay hidden below its tier, got {:?}",
+        names(&below_tier)
+    );
+
+    let unchecked = resolve_available_tools(&registry, &[], &[], ToolTier::Os).await;
+    assert!(
+        unchecked.is_empty(),
+        "deny-by-default: an unchecked shell must not be injected, got {:?}",
+        names(&unchecked)
+    );
+}
+
 #[test]
 fn the_tool_config_dto_round_trips_through_json() {
     let config = ConversationToolConfigDto {

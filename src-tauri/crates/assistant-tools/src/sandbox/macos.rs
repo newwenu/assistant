@@ -15,8 +15,9 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
 
 use crate::sandbox::{
-    enforcement_from_missing, is_executable, paths_overlap, SandboxBackend, SandboxChild,
-    SandboxChildOps, SandboxError, SandboxHostPaths, SandboxKind, SandboxPlan, SandboxProbe,
+    enforcement_from_missing, is_executable, paths_overlap, KillHandle, SandboxBackend,
+    SandboxChild, SandboxChildOps, SandboxError, SandboxHostPaths, SandboxKind, SandboxPlan,
+    SandboxProbe,
 };
 
 /// 启动器路径硬编码：不经 `PATH` 查找，防同名劫持（§5.3）。
@@ -180,6 +181,13 @@ impl SandboxChildOps for SeatbeltChild {
             libc::kill(-self.pgid, libc::SIGKILL);
         }
         let _ = self.child.kill();
+    }
+
+    fn kill_handle(&self) -> KillHandle {
+        let pgid = self.pgid;
+        KillHandle::new(move || unsafe {
+            libc::kill(-pgid, libc::SIGKILL);
+        })
     }
 }
 

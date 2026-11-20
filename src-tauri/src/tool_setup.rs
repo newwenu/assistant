@@ -207,10 +207,7 @@ pub fn init(handle: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>>
         probe.missing,
         probe.detail
     );
-    if shell_registration_allowed(probe) {
-        // I52 C5 归属：`register_shell_tools` 尚未存在，本批只落门禁与分支占位。
-        // 禁止在此注册任何空工具或临时 `shell`。
-    } else {
+    if !shell_registration_allowed(probe) {
         log::warn!(
             "sandbox unavailable (detail={:?}): shell tool not registered",
             probe.detail
@@ -265,6 +262,11 @@ pub fn init(handle: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>>
     let results_dir = dirs.tool_results();
     spawn_result_cleanup(results_dir.clone());
     let storage: Arc<dyn ToolResultStorage> = Arc::new(FileToolResultStorage::new(results_dir));
+    // C5：`shell` 的注册点必须晚于 registry 与 storage（两者都是它的构造输入），
+    // 门禁判据仍在注册期探测结论上：`enforcement == none` 时整组不注册。
+    if shell_registration_allowed(probe) {
+        os::register_shell_tools(&registry, storage.clone(), probe);
+    }
     let pipeline = Arc::new(ToolPipeline::new(registry.clone(), gateway, storage));
 
     // 工作区根目录按 I38h §4 #1 按会话解析：每次执行现算，切换绑定后下一轮立即生效。

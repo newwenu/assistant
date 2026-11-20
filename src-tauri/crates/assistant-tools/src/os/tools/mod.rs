@@ -8,6 +8,7 @@ pub mod agent_mkdir;
 pub mod agent_move;
 pub mod agent_read;
 pub mod agent_request_tool;
+pub mod agent_shell;
 pub mod agent_write;
 pub mod fs_link;
 pub mod super_edit;

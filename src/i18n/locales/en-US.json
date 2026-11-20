@@ -1034,7 +1034,8 @@
           "ask_user": "Ask you questions mid-run and wait for answers",
           "super_read": "Read by line index: any range, in-line position, exact total lines",
           "super_edit": "Replace a text range by line/column address; duplicates do not matter",
-          "request_tool": "List this turn's tools and request extra tools on demand"
+          "request_tool": "List this turn's tools and request extra tools on demand",
+          "shell": "Run one command in the sandbox; returns the exit code and an output file path"
         },
         "set_default_done_title": "Default updated",
         "set_default_done_desc": "New conversations with this mode start from the current tool configuration.",

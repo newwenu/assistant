@@ -3,10 +3,11 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use assistant_tools::gateway::{
-    request_with_timeout, ApprovalContext, ApprovalDecision, ApprovalExtensionSeverity,
-    ApprovalKey, ApprovalPrompter, ApprovalReason, ApprovalRequest, ApprovalScope, ApprovalWait,
-    AuditEntry, AuditOutcome, ChildGrantStore, GrantScope, InMemoryAuditStore, InMemoryGrantStore,
-    PermissionAuditStore, PermissionGrantStore, ScriptedApprovalPrompter, ToolGateway,
+    redact_secrets, request_with_timeout, ApprovalContext, ApprovalDecision,
+    ApprovalExtensionSeverity, ApprovalKey, ApprovalPrompter, ApprovalReason, ApprovalRequest,
+    ApprovalScope, ApprovalWait, AuditEntry, AuditOutcome, ChildGrantStore, GrantScope,
+    InMemoryAuditStore, InMemoryGrantStore, PermissionAuditStore, PermissionGrantStore,
+    ScriptedApprovalPrompter, ToolGateway,
 };
 use assistant_tools::os::agent_read::AgentReadTool;
 use assistant_tools::os::path::{canonicalize_lenient, ensure_within_root};
@@ -1156,6 +1157,7 @@ struct PreviewingTool {
     intents: Vec<PermissionIntent>,
     preview: Option<ApprovalPreview>,
     preview_calls: Arc<Mutex<usize>>,
+    sandbox: Option<SandboxEnforcement>,
 }
 
 impl PreviewingTool {
@@ -1164,7 +1166,14 @@ impl PreviewingTool {
             intents,
             preview,
             preview_calls: Arc::new(Mutex::new(0)),
+            sandbox: None,
         }
+    }
+
+    /// 让替身扮演 `shell` 一类的沙箱工具（A14 需要 `sandbox_enforcement() = Some`）。
+    fn with_sandbox(mut self, enforcement: SandboxEnforcement) -> Self {
+        self.sandbox = Some(enforcement);
+        self
     }
 
     fn preview_calls(&self) -> usize {
@@ -1196,6 +1205,10 @@ impl Tool for PreviewingTool {
             destructive: true,
             open_world: false,
         }
+    }
+
+    fn sandbox_enforcement(&self) -> Option<SandboxEnforcement> {
+        self.sandbox
     }
 
     fn permission_intents(
@@ -1436,6 +1449,210 @@ async fn output_scope_extension_is_absent_without_an_output_root() {
     );
 }
 
+/// A14：`shell` 一类的沙箱工具在 `Ask` 时卡片带两条扩展，且只写末段目录名。
+///
+/// 断言的是「卡片说了什么」，不是决策：用户据此判断这条命令会动到哪。
+#[tokio::test]
+async fn sandbox_extensions_describe_enforcement_and_writable_root() {
+    let root = tempdir().unwrap();
+    let canonical = canonicalize_lenient(root.path()).expect("canonical workspace");
+    let base = canonical
+        .file_name()
+        .expect("tempdir has a last segment")
+        .to_string_lossy()
+        .into_owned();
+
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let prompter = Arc::new(CapturingPrompter { seen: seen.clone() });
+    let (gateway, _, _) = gateway_with(prompter);
+    let tool = PreviewingTool::new(
+        vec![PermissionIntent::new("execute", "rm -rf build")],
+        Some(ApprovalPreview {
+            summary: "执行 1 条命令 · 破坏性 · 隔离：完全".to_string(),
+            truncated: false,
+            estimated: true,
+        }),
+    )
+    .with_sandbox(SandboxEnforcement::Full);
+    let context = ToolUseContext {
+        workspace_root: Some(canonical.display().to_string()),
+        ..Default::default()
+    };
+
+    gateway
+        .evaluate(
+            &tool,
+            &Value::Null,
+            &context,
+            &ResolvedPermissionPolicy::default_global(),
+        )
+        .await
+        .unwrap();
+
+    let seen = seen.lock().unwrap();
+    let extensions = &seen[0].context.extensions;
+    let enforcement = extensions
+        .iter()
+        .find(|extension| extension.kind == "sandbox.enforcement")
+        .expect("shell card must state the isolation strength");
+    assert_eq!(enforcement.label, "隔离强度");
+    assert_eq!(enforcement.value, "完全隔离");
+    assert_eq!(enforcement.severity, ApprovalExtensionSeverity::Info);
+
+    let writable = extensions
+        .iter()
+        .find(|extension| extension.kind == "sandbox.root")
+        .expect("shell card must state the writable root");
+    assert_eq!(writable.label, "可写根");
+    assert_eq!(writable.value, base, "卡片只写末段目录名，不带绝对路径");
+    assert!(
+        !writable.value.contains(&canonical.display().to_string()),
+        "absolute path must never reach the card"
+    );
+    assert_eq!(writable.severity, ApprovalExtensionSeverity::Info);
+
+    let summary = seen[0]
+        .context
+        .preview
+        .as_ref()
+        .expect("L2 preview must be carried")
+        .summary
+        .clone();
+    assert!(
+        summary.contains("破坏性"),
+        "类别由 summary 携带，不另立扩展"
+    );
+    assert_eq!(
+        extensions
+            .iter()
+            .filter(|extension| extension.kind.starts_with("sandbox."))
+            .count(),
+        2,
+        "exactly two sandbox extensions: no third entry for the command class"
+    );
+}
+
+/// A14（另一半）：部分隔离降为 `Caution`，非沙箱工具一条都不产出。
+#[tokio::test]
+async fn sandbox_extensions_are_absent_for_non_sandbox_tools_and_caution_when_partial() {
+    let root = tempdir().unwrap();
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let prompter = Arc::new(CapturingPrompter { seen: seen.clone() });
+    let (gateway, _, _) = gateway_with(prompter);
+    let context = ToolUseContext {
+        workspace_root: Some(root.path().display().to_string()),
+        ..Default::default()
+    };
+
+    let partial = PreviewingTool::new(vec![PermissionIntent::new("execute", "echo hi")], None)
+        .with_sandbox(SandboxEnforcement::Partial);
+    let plain = PreviewingTool::new(vec![PermissionIntent::new("edit", "a.txt")], None);
+
+    for tool in [&partial as &dyn Tool, &plain as &dyn Tool] {
+        gateway
+            .evaluate(
+                tool,
+                &Value::Null,
+                &context,
+                &ResolvedPermissionPolicy::default_global(),
+            )
+            .await
+            .unwrap();
+    }
+
+    let seen = seen.lock().unwrap();
+    let partial_enforcement = seen[0]
+        .context
+        .extensions
+        .iter()
+        .find(|extension| extension.kind == "sandbox.enforcement")
+        .expect("partial isolation must still be stated");
+    assert_eq!(partial_enforcement.value, "部分隔离");
+    assert_eq!(
+        partial_enforcement.severity,
+        ApprovalExtensionSeverity::Caution,
+        "partial isolation is a warning, not a reassurance"
+    );
+    assert!(
+        seen[1]
+            .context
+            .extensions
+            .iter()
+            .all(|extension| !extension.kind.starts_with("sandbox.")),
+        "a tool without a sandbox must not claim a boundary"
+    );
+}
+
+/// A16：`resource` 会整条落库，密钥必须在落库前打掉，而执行侧仍拿原值。
+///
+/// 两条断言缺一不可：只测打码会漏掉「把执行也改坏」，只测执行会漏掉「密钥进了明文库」。
+#[tokio::test]
+async fn audit_redacts_secrets_while_the_approved_command_stays_intact() {
+    let command = "set TOKEN=abc123 && deploy --password hunter2 --region cn";
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let prompter = Arc::new(CapturingPrompter { seen: seen.clone() });
+    let (gateway, _, audit) = gateway_with(prompter);
+    let tool = PreviewingTool::new(vec![PermissionIntent::new("execute", command)], None);
+
+    gateway
+        .evaluate(
+            &tool,
+            &Value::Null,
+            &ctx(),
+            &ResolvedPermissionPolicy::default_global(),
+        )
+        .await
+        .unwrap();
+
+    let entries = audit.entries();
+    let entry = entries
+        .iter()
+        .find(|entry| entry.action == "execute")
+        .expect("execute decision must be audited");
+    assert_eq!(
+        entry.resource, "set TOKEN=<redacted> && deploy --password <redacted> --region cn",
+        "secrets must be redacted before the row is written"
+    );
+    assert!(!entry.resource.contains("abc123"), "env secret leaked");
+    assert!(!entry.resource.contains("hunter2"), "flag secret leaked");
+
+    let seen = seen.lock().unwrap();
+    assert_eq!(
+        seen[0].intents[0].resources,
+        vec![command.to_string()],
+        "the approval card and the executed command keep the original value"
+    );
+}
+
+#[test]
+fn redact_secrets_covers_the_documented_shapes_only() {
+    // `-p` 是端口，打码会把审计记录毁成不可读（§10.3 明确排除）。
+    assert_eq!(
+        redact_secrets("docker run -p 8080:80 img"),
+        "docker run -p 8080:80 img"
+    );
+    assert_eq!(redact_secrets("ssh -p 2222 host"), "ssh -p 2222 host");
+    // 内联赋值形式不能把下一个 token 一起吞掉。
+    assert_eq!(
+        redact_secrets("curl --token=abc https://x"),
+        "curl --token=<redacted> https://x"
+    );
+    // 开关形式只打码后一个 token，其余参数保持可读。
+    assert_eq!(
+        redact_secrets("tool --api-key sk-1 --verbose"),
+        "tool --api-key <redacted> --verbose"
+    );
+    // 词表外的名字不动，避免把普通参数打成一堆 `<redacted>`。
+    assert_eq!(redact_secrets("set COLOR=red"), "set COLOR=red");
+    // 空值不产生 `NAME=<redacted>`，否则会把「显式清空」记成「有密钥」。
+    assert_eq!(redact_secrets("set TOKEN="), "set TOKEN=");
+    // 大小写不敏感：`token` / `Password` 同样命中。
+    assert_eq!(
+        redact_secrets("set token=x db_password=y"),
+        "set token=<redacted> db_password=<redacted>"
+    );
+}
+
 #[tokio::test]
 async fn read_tool_output_grant_covers_the_whole_session_namespace() {
     let workspace = tempdir().unwrap();
@@ -1547,6 +1764,58 @@ async fn read_tool_output_request_hides_the_absolute_namespace_path() {
     assert!(
         !resource.contains(&output.path().display().to_string()),
         "本机绝对路径不得进入审批卡: {resource}"
+    );
+}
+
+/// C8：`readToolOutput` 的三态回归——拒绝后不放行、不落授权、审计记一次 `Denied`。
+/// 与 Ask（恒问）/ GrantHit（同域第二次）两条既有用例合起来覆盖新增动作的三条分支。
+#[tokio::test]
+async fn read_tool_output_denied_by_the_user_is_not_granted() {
+    let workspace = tempdir().unwrap();
+    let output = tempdir().unwrap();
+    std::fs::write(output.path().join("run.log"), b"log").unwrap();
+
+    let prompter = Arc::new(ScriptedApprovalPrompter::new(vec![
+        ApprovalDecision::Deny {
+            reason: Some("not this time".to_string()),
+        },
+    ]));
+    let (gateway, grants, audit) = gateway_with(prompter);
+    let tool = AgentReadTool::new(Arc::new(InMemoryReadReceiptStore::new()));
+    let context = ToolUseContext {
+        workspace_root: Some(workspace.path().display().to_string()),
+        session_id: Some("conv-1".to_string()),
+        tool_output_root: Some(output.path().to_path_buf()),
+        ..Default::default()
+    };
+    let input = json!({ "path": output.path().join("run.log").display().to_string() });
+
+    let decision = gateway
+        .evaluate(
+            &tool,
+            &input,
+            &context,
+            &ResolvedPermissionPolicy::default_global(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        decision,
+        GatewayDecision::RejectedByUser {
+            reason: Some("not this time".to_string()),
+        }
+    );
+    assert!(
+        grants.is_empty(),
+        "a rejected read must not persist a grant"
+    );
+    let entries = audit.entries();
+    assert_eq!(entries.len(), 1, "exactly one audit row per decision");
+    assert_eq!(entries[0].action, "readToolOutput");
+    assert_eq!(
+        entries[0].outcome,
+        AuditOutcome::Rejected,
+        "user rejection is `Rejected`, distinct from policy `Denied`"
     );
 }
 

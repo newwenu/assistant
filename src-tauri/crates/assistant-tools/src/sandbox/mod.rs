@@ -2,7 +2,7 @@ use std::fmt;
 use std::io::Read;
 use std::path::PathBuf;
 use std::process::ExitStatus;
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
 use serde::{Deserialize, Serialize};
 
@@ -11,6 +11,11 @@ mod windows;
 
 #[cfg(windows)]
 pub use windows::WindowsBackend;
+
+/// `program` 的 basename 判定（`cmd.exe`，大小写不敏感）：`agent_shell/spawn.rs`
+/// 校验 `COMSPEC` 时复用，不写第二份判定（I56 §7.3 约束 2）。
+#[cfg(windows)]
+pub(crate) use windows::is_cmd_program;
 
 #[cfg(target_os = "linux")]
 mod linux;
@@ -66,6 +71,17 @@ impl SandboxEnforcement {
             Self::Full => "full",
             Self::Partial => "partial",
             Self::None => "none",
+        }
+    }
+
+    /// 面向用户的中文档位名（I56 §6.5）。审批摘要与审批卡扩展共用，
+    /// 两处各自硬编码会漂成「完全隔离」/「完全」两种措辞。
+    pub const fn label_zh(self) -> &'static str {
+        match self {
+            Self::Full => "完全",
+            Self::Partial => "部分",
+            // 注册期已拒绝 `None`，这里兜底不给「完全」，避免把无边界读成强隔离。
+            Self::None => "无",
         }
     }
 }
@@ -232,6 +248,15 @@ impl SandboxChild {
         self.inner.kill_tree();
     }
 
+    /// 独立杀树句柄：`wait()` 独占 `&mut self` 时，等待方仍能在超时 / 取消路径杀树。
+    ///
+    /// 与 [`SandboxChild::kill_tree`] 是同一底层调用（Windows `TerminateJobObject`、
+    /// Unix `kill(-pgid)`），只把句柄（Job handle / pgid）复制进闭包，不改变沙箱行为。
+    /// `agent_shell/run.rs` 把 `wait()` 移进 `spawn_blocking` 后，靠它打断等待。
+    pub fn kill_handle(&self) -> KillHandle {
+        self.inner.kill_handle()
+    }
+
     /// Job 内仍存活的进程数；只有 Windows 后端能给出（验收 A-S3 用）。
     #[cfg(all(test, windows))]
     pub(crate) fn active_processes(&self) -> Option<u32> {
@@ -247,6 +272,25 @@ impl fmt::Debug for SandboxChild {
     }
 }
 
+/// 整树回收句柄：可克隆、可在任意线程调用，幂等（与 `kill_tree` 同一底层调用）。
+#[derive(Clone)]
+pub struct KillHandle {
+    kill: Arc<dyn Fn() + Send + Sync>,
+}
+
+impl KillHandle {
+    pub(crate) fn new(kill: impl Fn() + Send + Sync + 'static) -> Self {
+        Self {
+            kill: Arc::new(kill),
+        }
+    }
+
+    /// 杀整棵树；重复调用无副作用。
+    pub fn kill(&self) {
+        (self.kill)();
+    }
+}
+
 /// 平台实现面：只给 `SandboxChild` 转发用，不对外暴露。
 pub(crate) trait SandboxChildOps: Send {
     fn take_stdout(&mut self) -> Option<Box<dyn Read + Send>>;
@@ -254,6 +298,7 @@ pub(crate) trait SandboxChildOps: Send {
     fn id(&self) -> u32;
     fn wait(&mut self) -> std::io::Result<ExitStatus>;
     fn kill_tree(&mut self);
+    fn kill_handle(&self) -> KillHandle;
 
     /// 默认无此能力；只有 Windows 后端覆写（验收 A-S3）。
     #[cfg(all(test, windows))]
@@ -268,9 +313,30 @@ pub(crate) trait SandboxChildOps: Send {
 /// 否则同一会话前后会出现两套边界。返回 `enforcement == None` 时调用方
 /// **不得**注册 `shell`——这里不做降级，也不提供无沙箱执行路径。
 pub fn detect(host: &SandboxHostPaths) -> &'static SandboxProbe {
+    // 运行期 `spawn` 需要同一份 host 才能重建后端；注册期一次性写入，之后只读。
+    let _ = RUNTIME_HOST.set(host.clone());
     let candidates = platform_candidates(host);
     let refs: Vec<&dyn SandboxBackend> = candidates.iter().map(|b| b.as_ref()).collect();
     DETECTED.get(&refs)
+}
+
+/// 运行期 host 缓存：`detect` 写入，`spawn` 只读。
+static RUNTIME_HOST: OnceLock<SandboxHostPaths> = OnceLock::new();
+
+/// 运行期入口：用注册期同一候选链创建子进程（`agent_shell/run.rs` 的唯一调用点）。
+///
+/// 不重新 `probe()`：探测只做一次、结论只由 `detect` 产出（A-S8）。P14 每平台只有一个
+/// 候选，因此「首个候选」即注册期的胜出者；候选列表为空（平台无后端）时 fail-closed。
+/// `detect` 尚未执行（未初始化 host）同样 fail-closed，不存在「无沙箱执行」路径。
+pub fn spawn(plan: &SandboxPlan) -> Result<SandboxChild, SandboxError> {
+    let host = RUNTIME_HOST
+        .get()
+        .ok_or_else(|| SandboxError::SetupFailed("sandbox_host_uninitialized".to_string()))?;
+    let candidates = platform_candidates(host);
+    match candidates.first() {
+        Some(backend) => backend.spawn(plan),
+        None => Err(SandboxError::SetupFailed("no_backend".to_string())),
+    }
 }
 
 /// 探测结论缓存。`get` 的探测闭包只在首次调用时执行。

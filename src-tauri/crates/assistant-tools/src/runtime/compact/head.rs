@@ -89,6 +89,9 @@ fn subject(tool: &str, arguments: &Value, data: Option<&Value>) -> Option<String
             let target = data_str(data, "target").or_else(|| args_str(arguments, "target"))?;
             Some(format!("{} -> {}", source, target))
         }
+        // `shell` 的 subject 只取参数里的命令：结果 `data` 不含命令原文（§8.4 十项）。
+        // 先折空白：命令常写成多行续行式，换行会让 head 变成两行（`head` 恒单行的门禁）。
+        "shell" => args_str(arguments, "command").map(|command| collapse_whitespace(&command)),
         _ => args_str(arguments, "path")
             .or_else(|| args_str(arguments, "pattern"))
             .or_else(|| args_str(arguments, "query")),
@@ -170,6 +173,40 @@ fn scale(tool: &str, data: Option<&Value>, result: &ToolResult) -> Option<String
                 .map(|questions| questions.len() as u64)?;
             Some(format!("{} questions", count))
         }
+        // `exit <code> · N lines · <size>`：退出码是 shell 的头号事实，排在最前。
+        // 行数带 `+` 表示落盘触达上限（`outputLines` 是截至上限的计数，不是全量）。
+        "shell" => {
+            let lines = data_u64(data, "outputLines")?;
+            let bytes = data_u64(data, "outputBytes")?;
+            let status = match (
+                data.and_then(|value| value.get("exitCode"))
+                    .and_then(Value::as_i64),
+                data_u64(data, "signal"),
+            ) {
+                (Some(code), _) => format!("exit {}", code),
+                // Unix 被信号杀死时没有退出码：报信号号，不用 `-1` 哨兵（§8.4）。
+                (None, Some(signal)) => format!("signal {}", signal),
+                (None, None) => "no exit status".to_string(),
+            };
+            let counted = if data_bool(data, "outputTruncated") == Some(true) {
+                format!("{}+ lines", lines)
+            } else {
+                format!("{} lines", lines)
+            };
+            Some(format!(
+                "{} · {} · {}",
+                status,
+                counted,
+                human_bytes(bytes as usize)
+            ))
+        }
         _ => None,
     }
+}
+
+/// 折空白：把任意空白串压成单个空格，首尾不留。
+///
+/// 只用于 head 的展示口径；命令原文（审批键、执行体）**不得**经过本函数。
+fn collapse_whitespace(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
 }

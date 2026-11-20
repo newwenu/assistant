@@ -117,7 +117,7 @@ Windows（Token + ACL + Job）/ Linux（Landlock）/ macOS（Seatbelt）三个�
 
 | 原 I52 章节 | 现位置 |
 |---|---|
-| §1.1 现状 N1–N8 | [I56 §2](./I56-shell-tool-spec.md)（以当前代码重写为 P1–P8 / G1–G6） |
+| §1.1 现状 N1–N8 | [I56 §2](./I56-shell-tool-spec.md)（以当前代码重写为 P1–P8 / G1–G8） |
 | §5.1–§5.12 `shell` 工具（身份 / schema / validate / intents / 分类器 / 预览 / execute / 超时取消 / 结果 / 环境变量 / 落盘回读 / 信封） | I56 §3–§8 |
 | §6 与审批链的集成（键 / `enforcement` / 卡片 / `Deny` 顺序 / 策略 / P10 接入点） | I56 §6 |
 | §7 失败矩阵 F1–F18 | I56 §9 |

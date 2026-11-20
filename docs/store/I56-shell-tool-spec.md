@@ -7,7 +7,7 @@
 | 阶段 | P14（工具能力轴；见 [I38 roadmap](./I38-agent-roadmap.md) §2 / §3） |
 | 交接 | 本文接管 [I52](./I52-shell-sandbox-spec.md) 原 §5–§13 的 `shell` 工具职能。I52 保留阶段定义、术语与分层（两根轴 / 三层职责 / 封闭词汇）与沙箱指针，**不再复述工具细节**；两份文档的分工见本文 §2.3 |
 | 关联 | [I52](./I52-shell-sandbox-spec.md)（阶段规格与术语唯一来源）、I53（已归档）（沙箱准备：后端抽象 / 三平台实现 / 探测收口）、[I52-Ext](./I52-ext-background-task.md)（后台任务改动面，未立项）、[I38g](./I38g-agent-approval-advisor-spec.md)（P10 顾问与三个接入点）、[I38f](./I38f-agent-subagent-spec.md)（子代理输出域）、I18 design §3.17 / I50（均已归档，分别给检测分层与审计词表）、[OSCALLDESIGN](../designed/OSCALLDESIGN.md)（Shell 洋葱模型）、[agent-sandbox-reference-analysis](./agent-sandbox-reference-analysis.md)（Codex / OpenHuman / DSH 实现细节） |
-| 影响范围 | `assistant-tools`：`os/tools/agent_shell/`（新增；`spawn.rs` 内做 `program` 候选解析，复用 `sandbox/windows/mod.rs` 已有的 `is_cmd_program`，**不改沙箱后端**）、`os/mod.rs`（`register_shell_tools`）、`runtime/storage.rs`（sink，已落地）、`runtime/compact`（信封分支）、`runtime/policy.rs`（`readToolOutput` 规则，已落地）、`runtime/gateway`（键与求值顺序，已落地）、`contract/trait.rs`（`sandbox_enforcement`，已落地）、`os/shared/path/resolve.rs`（`resolve_readable`，已落地）；`src-tauri/src/tool_setup.rs`（注册门禁，分支已就位）；结果 `data.sandbox.shell` 走契约生成（`npm run contract:gen`）；前端 i18n 与模式预置 |
+| 影响范围 | `assistant-tools`：`os/tools/agent_shell/`（新增；`spawn.rs` 内做 `program` 候选解析，复用 `sandbox/windows/mod.rs` 的 `is_cmd_program`——须先提升为 `pub(crate)`，**不改沙箱后端行为**）、`os/mod.rs`（`register_shell_tools`）、`runtime/storage.rs`（sink + `SpilledOutput.output_encoding`，sink 已落地）、`runtime/compact`（信封分支）、`runtime/policy.rs`（`readToolOutput` 规则，已落地）、`runtime/gateway`（键与求值顺序，已落地）、`contract/trait.rs`（`sandbox_enforcement`，已落地）、`os/shared/path/resolve.rs`（`resolve_readable`，已落地）；`src-tauri/src/tool_setup.rs`（注册门禁，分支已就位）；结果 `data` 走 `OsToolResultDto` 显式字段映射（**无** `contract:gen`）；前端 i18n 与模式预置 |
 
 > 一句话：把 `shell` 从「一个能跑命令的工具」写成「一份可逐条验收的契约」——身份、输入、审批、执行、输出、失败、文案七个面各有唯一判据，
 > 且每个判据都能落到一个具体文件与一条具体断言上。
@@ -64,16 +64,18 @@
 | P7 | 沙箱三后端与 `sandbox::detect`（进程内 `OnceLock` 缓存）已落地；`tool_setup.rs` 已有 `shell_registration_allowed(probe)` 门禁，分支内 `register_shell_tools` 是**占位** | `sandbox/`、`src-tauri/src/tool_setup.rs` |
 | P8 | 进程输出解码（`decode_process_output`）与 `truncate_output` 已就绪；后者**不再用于 `shell`**（改为落盘 + 窗口预览） | `os/shared/output.rs`、`os/shared/text_encoding.rs` |
 
-### 2.2 未就绪（本文定义、C5 交付）
+### 2.2 未就绪（本文定义、C5–C7 交付）
 
 | # | 缺口 | 归属 |
 |---|---|---|
 | G1 | `os/tools/agent_shell/` 不存在：schema / validate / intents / 分类器 / preview / execute 全缺 | C5 |
-| G2 | `os::register_shell_tools` 不存在，`tool_setup.rs` 分支仍是占位 | C5 |
+| G2 | `os::register_shell_tools` 不存在（签名需含 `storage`，且调用点须后移到 `registry` / `storage` 构造之后，§3.2 规则 5），`tool_setup.rs` 分支仍是占位 | C5 |
 | G3 | `compact` 的 `subject` / `scale` 无 `shell` 分支（head 会退化为无信息量的 `ok shell`） | C5 |
 | G4 | `ToolErrorKind::Business` + `output_spill_failed` / `sandbox_unavailable` 等错误码尚无生产点 | C5 |
-| G5 | `tool_desc.shell` 的 zh / en 文案与模式预置（默认不勾选） | C7 |
+| G5 | `tool_desc.shell` 的 zh / en 文案与模式预置（默认不勾选；`max_tool_tier` 口径见 §11.1） | C7 |
 | G6 | 审计侧命令行脱敏（`NAME=value` / `--token <v>`）尚无调用点 | C6 |
+| G7 | `sandbox::windows::is_cmd_program` 是私有 `fn` 且模块私有，`agent_shell/spawn.rs` 无法复用（须提升为 `pub(crate)` + `pub(crate) use` 导出，§7.3） | C5 |
+| G8 | `SpilledOutput` 无 `output_encoding` 字段，码页探测结论无处回传（§8.3） | C5 |
 
 ### 2.3 与 I52 的交接边界
 
@@ -103,7 +105,12 @@
 ```rust
 // os/mod.rs
 /// 沙箱组：只有探测结论 `enforcement != none` 时才允许调用。
-pub fn register_shell_tools(registry: &ToolRegistry, probe: &'static SandboxProbe) { ... }
+/// `storage` 是流式落盘入口（`ShellTool` 的第 2 个构造参数，§12.2）。
+pub fn register_shell_tools(
+    registry: &ToolRegistry,
+    probe: &'static SandboxProbe,
+    storage: Arc<dyn ToolResultStorage>,
+) { ... }
 ```
 
 | 规则 | 判据 |
@@ -112,6 +119,7 @@ pub fn register_shell_tools(registry: &ToolRegistry, probe: &'static SandboxProb
 | 2 | `ShellTool` 持有 `&'static SandboxProbe`（`detect` 的缓存引用），运行期**不再探测** |
 | 3 | `sandbox_enforcement()` 返回 `Some(probe.enforcement)`；`probe.enforcement == None` 时不得构造 `ShellTool`（构造期断言，防门禁被绕过） |
 | 4 | 工具装配面板**不提示**「沙箱不可用」：不注册即不出现，平台差异不得噪声化 |
+| 5 | **调用点必须在 `registry` 与 `storage` 都构造之后**：`tool_setup.rs` 现有的门禁分支（`shell_registration_allowed`）位于 `registry` 与 `storage` 构造之前，只做探测与日志；本批需把 `register_shell_tools` 调用下移到 `let registry = …` 与 `let storage: Arc<dyn ToolResultStorage> = …` 两处都就绪的位置（如 `register_dangerous_tools` 之后、`ToolPipeline::new` 之前）；门禁判断本身可留在原处，也可与调用合并——两种形态都要求「不满足门禁时不调用」，禁止为了少挪代码而在分支里注册空工具 |
 
 ### 3.3 默认启用策略
 
@@ -173,17 +181,18 @@ pub fn register_shell_tools(registry: &ToolRegistry, probe: &'static SandboxProb
 
 | 顺序 | 条件 | 结果 |
 |---|---|---|
-| 1 | 含 shell 控制符（`|`、`&&`、`||`、`;`、`>`、`<`、`` ` ``、`$(`、换行） | `unknown` |
-| 2 | `argv[0]` 与子命令命中只读清单（`git status` / `git log` / `git diff` / `git show`、`ls` / `dir`、`cat` / `type`、`rg` / `grep` / `find` / `where`、`head` / `tail` / `wc`、`pwd`、`echo`、`--version` 类） | `readOnly` |
+| 1 | 含 shell 控制符（`|`、`&`（含 `&&`、后台）、`||`、`;`、`>`、`<`、`` ` ``、`$(`、换行） | `unknown` |
+| 2 | `argv[0]` 与子命令命中只读清单（`git status` / `git log` / `git diff` / `git show`、`ls` / `dir`、`cat` / `type`、`rg` / `grep` / `find` / `where`、`head` / `tail` / `wc`、`pwd`、`echo`、`--version` 类），且不带执行类参数（见硬约束 4） | `readOnly` |
 | 3 | 命中网络清单（`curl` / `wget` / `ssh` / `scp`、`npm install` / `pip install`、`git clone` / `git push` / `git fetch`） | `network` |
-| 4 | 命中破坏清单（`rm` / `del` / `rd` / `rmdir`、`format`、`shutdown`、`taskkill`、`reg delete`、`git reset --hard` / `git clean`） | `destructive` |
+| 4 | 命中破坏清单（`rm` / `del` / `rd` / `rmdir`、`format`、`shutdown`、`taskkill`、`reg delete`、`git reset --hard` / `git clean`），或只读程序带执行类参数（见硬约束 4） | `destructive` |
 | 5 | 其余 | `unknown` |
 
 硬约束：
 
 1. 顺序 3 先于 4：`git clean` 这类复合语义宁可归 `network` 也不归「无害」——**错误方向必须是更危险**；
 2. 未知**不得**映射为 `mutating`，更不得映射为 `readOnly`；`unknown` 是显式类别，卡片如实显示「无法判定」；
-3. 清单是**开放集合**（命中即分类，未命中即 `unknown`），不做「未在清单内 = 禁止」。
+3. 清单是**开放集合**（命中即分类，未命中即 `unknown`），不做「未在清单内 = 禁止」；
+4. **执行类参数不得被只读清单洗白**：`find -exec` / `-execdir` / `-ok` / `-okdir` / `-delete`、`rg --pre`（含 `--pre=cmd`）、`git --ext-diff` 都能借只读程序的壳执行任意命令或删文件，命中即归 `destructive`。判据只认 `argv[0]` 会把危险命令归成「无害」，方向正好反了。控制符检测**不做引号感知**：引号内的 `&` / `|` / `>` 同样降级为 `unknown`，这是刻意的保守取舍。
 
 ### 5.3 `preview_for_approval`
 
@@ -261,6 +270,8 @@ grant_store.is_granted(key)
 | `sandbox.root` | 可写根 | `writable_root` 的**末段目录名**（不写绝对路径） | `Info` |
 
 命令类别由 `preview_for_approval` 的 `summary` 携带（§5.3），**不重复**成第三条扩展。
+
+**文案语言**：`label` / `value` 用中文，与 C4b 已落地的 `agent_read` 预览（`读本会话输出 …`）保持一致；既有 `output.scope` 扩展的英文串是历史遗留，**不随本批改动**（避免连带修改已上线的卡片）。同一张卡片内新增的 shell 文案须自洽，不得一半中文一半英文。
 
 零前端改动的依据：`ApprovalExtensionDto` 的 `kind` / `label` / `value` / `severity` 是开放字段，前端按 `label` + `value` 通用渲染（I38d §3.2.1，已归档）。**禁止**为这两个 `kind` 新增前端分支或 DTO 字段。
 
@@ -341,7 +352,7 @@ grant_store.is_granted(key)
 **三条约束必须同时成立**，否则原不变式（§7.7）会被绕过：
 
 1. **候选集只含系统目录与 `COMSPEC`，不遍历 `PATH`**：裸名交给 `CreateProcessW` 时搜索顺序第一项是**应用自身目录**，比 `PATH` 更容易被工作区或应用目录里的同名文件顶替；
-2. **`COMSPEC` 必须校验 basename**：它是用户可改写的环境变量，不校验等于「shell 种类可被环境变量替换」，与 §4.1「可执行程序不接受模型输入」并列的硬约束形同失效。沙箱后端已有 `is_cmd_program`（basename 大小写不敏感比较，`sandbox/windows/mod.rs`），解析处直接复用，不写第二份判定；
+2. **`COMSPEC` 必须校验 basename**：它是用户可改写的环境变量，不校验等于「shell 种类可被环境变量替换」，与 §4.1「可执行程序不接受模型输入」并列的硬约束形同失效。沙箱后端已有 `is_cmd_program`（basename 大小写不敏感比较，`sandbox/windows/mod.rs`），解析处直接复用，不写第二份判定。**复用的前提是提升可见性**：该函数现为 `sandbox/windows/mod.rs` 的私有 `fn`，且 `mod windows` 在 `sandbox/mod.rs` 里是私有模块，`os/tools/agent_shell/` 无法访问——须改为 `pub(crate) fn` 并由 `sandbox/mod.rs` `pub(crate) use` 导出（只改可见性，实现与沙箱后端行为**零改动**）；
 3. **解析结果不进审批键**：键仍是整串命令行 + `cwd` + `enforcement`（§6.1 / §6.2）；解析来源（`system32` / `comspec`）只进 `data.sandbox.shell`（§8.4）与日志，**不进审批卡**（卡片不写绝对路径，§6.5）。
 
 ### 7.4 环境变量
@@ -482,6 +493,7 @@ pub trait ToolResultSink: Send {
 
 - Unix 侧不做转码：非 UTF-8 流可能是 GB18030 / Shift-JIS / Latin-1，猜错会把可读文本变成乱码，而 UTF-8 是唯一有明确自校验的编码。P14 接受该限制（§15 R9）；
 - **判定只做一次、不按行重判**：按行重判会让同一文件里两种编码来回切换，`read` 每次拿到不同结果；
+- **探测结论的承载**：探测发生在 sink 内（首 4 KiB，需跨块保持解码器状态），结论必须由 sink 回传给 `run.rs`——`SpilledOutput` 增加 `output_encoding` 字段，由 `finish` 填写，`run.rs` 只读该字段填 `data.outputEncoding`，**不得**在 `run.rs` 二次探测（两处探测会与写盘时的判定分叉，出现「文件按 cp936 转码、结果却报 utf8」）；
 - **文件恒为 UTF-8**：转码发生在写盘前，因此回读（按 UTF-8 读）与落盘内容始终一致。这是「文件按字节原样写入」的唯一例外；`outputBytes` 仍按源流字节计、`PersistedRef.bytes` 按文件字节计。
 
 ### 8.4 结果形状（`data`）
@@ -517,7 +529,7 @@ pub trait ToolResultSink: Send {
 | `denied` | 本次是否被沙箱拒绝 | §8.5 |
 | `shell` | 本次实际执行的 shell **种类**（`cmd` / `sh`），不是路径 | `SandboxPlan.program` 的解析结果（§7.3） |
 
-`shell` 是**诊断字段**，唯一用途是让模型在命令失败后能区分「方言不对」与「沙箱拒绝 / 路径不存在」——工具描述（§11.2 第 3 条）只能事前告知，模型拿到 stderr 后仍需要一条事后证据。三条约束：只写种类（**不得**写绝对路径）、**不进审批键**（§7.3 约束 3）、不进审批卡（§6.5）。封闭集合用枚举，新增种类（如 `pwsh`）时同步契约生成。
+`shell` 是**诊断字段**，唯一用途是让模型在命令失败后能区分「方言不对」与「沙箱拒绝 / 路径不存在」——工具描述（§11.2 第 3 条）只能事前告知，模型拿到 stderr 后仍需要一条事后证据。三条约束：只写种类（**不得**写绝对路径）、**不进审批键**（§7.3 约束 3）、不进审批卡（§6.5）。封闭集合用枚举（`ShellFlavor`：`cmd` / `sh`），新增种类（如 `pwsh`）时同步枚举。**不进 wire 契约**：`ToolResult.data` 是 `Option<Value>`、`OsToolResultDto` 是显式字段映射，`contract:gen` 不覆盖它；前端从 `data` 取到的是普通字符串，按 `string` 兜底渲染、**不窄化**（与仓内「开放集合不窄化」一致），因此 A38 的判据是「Rust 侧封闭枚举 + 前端不窄化」，不是「前端生成出联合类型」。
 
 **退出状态二选一**：Unix 被信号杀死时 `exitCode = null`、`signal` 为信号号；Windows 恒有 `exitCode`、`signal` 恒 `null`。**不得**用 `-1` 冒充「没有退出码」——`-1` 是合法退出码，混淆后模型会把正常退出读成崩溃。
 
@@ -639,7 +651,7 @@ pub trait ToolResultSink: Send {
 
 1. **不改 I50 词表**：`shell` 的审计沿用 `action = "execute"` 与既有 `AuditOutcome`（`Approved` / `Allowed` / `Denied` / `GrantHit` / `Bypassed` 等），不新增 outcome；
 2. **隔离强度不进 `permission_audit`**：`enforcement` / `backend` 落在 `ToolResult.data.sandbox` 与审批卡扩展，避免跨阶段改封闭词表；
-3. **命令行脱敏**：`resource` 会落库整条命令行，其中可能夹带密钥（`TOKEN=…`、`--password …`）。落库前必须做词法级打码：形如 `NAME=value` 且 `NAME` 命中 §7.4 的敏感词表 → `value` 替换为 `<redacted>`；`--password` / `--passwd` / `--token` / `--api-key` 的**后一个 token** 同样打码。**不对 `-p` 打码**：`docker run -p 8080:80`、`ssh -p 2222`、`curl -p` 里的 `-p` 是端口 / 代理，打码会把审计记录毁成不可读。脱敏只作用于审计与日志，不改变实际执行；
+3. **命令行脱敏**：`resource` 会落库整条命令行，其中可能夹带密钥（`TOKEN=…`、`--password …`）。落库前必须做词法级打码：形如 `NAME=value` 且 `NAME` 命中 §7.4 的敏感词表 → `value` 替换为 `<redacted>`；`--password` / `--passwd` / `--token` / `--api-key` 的**后一个 token** 同样打码，其内联形式 `--token=value` 打码 `=` 之后的部分。**不对 `-p` 打码**：`docker run -p 8080:80`、`ssh -p 2222`、`curl -p` 里的 `-p` 是端口 / 代理，打码会把审计记录毁成不可读。空值（`TOKEN=`）不打码——否则「显式清空」会被记成「有密钥」。脱敏只作用于审计与日志，不改变实际执行（网关只改落库副本，审批卡与执行拿到的仍是原串）；
 4. **日志固定串**：`backend` / `enforcement` / `network` / `fsRead` / `denied` / `exitCode` / `durationMs` / `outputBytes` / `outputEncoding` / `outputTruncated` 可记；命令行全文与输出正文只记长度。回读审计同样只记路径与范围，不记文件内容。
 
 ---
@@ -653,13 +665,14 @@ pub trait ToolResultSink: Send {
 | i18n | `tool_desc.shell`（zh / en）+ 审批卡扩展的 `label` 由后端下发，前端不新增 key | `src/i18n/locales/` |
 | 工具装配面板 | 无改动：目录来自注册表（`list_tool_catalog`），后端不注册即不出现 | `src/settings/shared/sections/ToolAssemblySection.tsx` |
 | 默认启用 | **默认不勾选**，需用户显式启用（§3.3） | 模式预置 `toolConfig` |
+| 层级上限 | `shell` 是 `Os` 层级，内置模式种子 `max_tool_tier = Sandbox` 下**勾选也不可见**（`tool_resolver` 按 `tier <= max_tier` 过滤）；本批不改种子默认层级，只要求 A18 用例显式把上限设为 `os` | `src-tauri/crates/assistant-storage/src/agent_modes.rs`、`src-tauri/src/adapters/tool_resolver.rs` |
 | 审批卡 | 无改动：扩展按 `label` / `value` 通用渲染 | `src/chat/` 审批组件 |
 | 落盘展示 | 无改动：气泡仍只展示路径与字节数；P14 **不新增**「打开输出文件」入口 | `src/chat/tool/toolCallDisplay.ts` |
 | 不可用提示 | 不注册即不提示（§3.2） | — |
 
 ### 11.2 工具描述文案（模型侧唯一的能力说明）
 
-工具描述不是「介绍」，是**契约**：模型不读规格，只读描述。`tool_desc.shell` 的 zh / en 文案**必须**包含以下 6 句，缺一句就是模型会用错的地方：
+工具描述不是「介绍」，是**契约**：模型不读规格，只读描述。`ShellTool::description()` 的文案**必须**包含以下 6 句，缺一句就是模型会用错的地方：
 
 | # | 必须写明 | 不写的后果 |
 |---|---|---|
@@ -670,7 +683,9 @@ pub trait ToolResultSink: Send {
 | 5 | **输出会落盘**，结果里给 `outputPath`，需要更多内容就用 `read` 读它（不要重复跑命令） | 模型为看全日志反复重跑同一命令 |
 | 6 | **长任务需显式调大 `timeout_ms`**（默认 120s、上限 1800000），超时会杀掉整棵进程树但保留已写输出 | 模型以为超时是环境问题，或不知道可以调大 |
 
-**不写**的：隔离强度 / 可写根（由审批卡扩展与 `data.sandbox` 提供，描述里重复会与真实值冲突）、命令分类（模型无法预知）。文案随实现落地时同步更新 `zh` / `en` 两份，**不得**只改其一（A33）。
+**不写**的：隔离强度 / 可写根（由审批卡扩展与 `data.sandbox` 提供，描述里重复会与真实值冲突）、命令分类（模型无法预知）。
+
+两侧文案**不是**同一份：模型读的 `description()` 是单语英文（工具描述进 schema，没有语种维度），A33 断言它含上述 6 项关键词；用户侧 `tool_desc.shell`（zh / en 两份，A33 同时断言）只是面板悬停的**一句话**——把 6 句塞进浮层会让小窗口被长文本占满（与 `ask_user` 同因）。两者都随实现落地同步更新，**不得**只改其一。
 
 ---
 
@@ -750,7 +765,7 @@ pub fn is_sandbox_denied(
 | A15 | 环境变量 | 注入 `MY_API_TOKEN=…` 后子进程看不到；`PATH` / `SystemRoot` 等白名单可见 |
 | A16 | 审计脱敏 | `set TOKEN=abc` 落库为 `set TOKEN=<redacted>`，实际执行仍用原值 |
 | A17 | 依赖边界 | `assistant-tools` 不依赖 tauri（`cargo tree`） |
-| A18 | 工具可见性 | 未启用时模型 `tools` 列表不含 `shell`；启用且探测可用时含 |
+| A18 | 工具可见性 | 未启用时模型 `tools` 列表不含 `shell`；启用、探测可用且 `max_tool_tier >= os` 时含 |
 | A19 | 落盘与回读闭环 | 输出 10 万行 → `outputPath` 指向 `tool-results/<本会话命名空间>/`；`read` 该路径在授权后成功，内容与文件一致，可分页读到末尾 |
 | A20 | 额外许可恒定 | `readToolOutput` 在 `dangerous_only` 与 `none` 两档均为 `Ask`；`AllowSession` 后读同域**另一个**文件为 `GrantHit` |
 | A21 | 跨会话隔离 | 读其它会话命名空间路径 → `invalid`，prompter 计数为 0 |
@@ -770,7 +785,7 @@ pub fn is_sandbox_denied(
 | A35 | 注册门禁不得绕过 | `probe.enforcement == none` 时构造 `ShellTool` 即失败（或注册函数拒绝），且 `shell` 不出现在 `list_tool_catalog` 与模型 `tools` 中 |
 | A36 | 参数不可越权 | 模型给出 `shell` / `program` / `env` / `stdin` 字段 → schema 拒绝（`additionalProperties: false`），**不得**静默忽略 |
 | A37 | shell 解析 fail-closed | 令 `SystemRoot` 与 `COMSPEC` 同时不可用（单测注入空 env）→ 判探测不可用、`shell` 不注册；**不得**退化为裸名 `cmd` / `sh`。另测 `COMSPEC` 指向非 `cmd.exe` 时被拒 |
-| A38 | 方言回显 | `data.sandbox.shell` 为 `cmd`（Windows）/ `sh`（Unix），且**不含路径**；审批卡（§6.5）无该字段；契约生成后前端类型为封闭枚举 |
+| A38 | 方言回显 | `data.sandbox.shell` 为 `cmd`（Windows）/ `sh`（Unix），且**不含路径**；审批卡（§6.5）无该字段；Rust 侧为封闭枚举 `ShellFlavor`，前端按 `string` 兜底不窄化 |
 
 ---
 

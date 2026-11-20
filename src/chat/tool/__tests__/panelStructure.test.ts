@@ -191,3 +191,32 @@ describe("伴随与元工具文案（中英一致）", () => {
     }
   });
 });
+
+/**
+ * A33（用户侧）：`shell` 面板短句在 zh / en 两份里都存在，且面板确实用它。
+ *
+ * 与 Rust 侧 `a33_description_covers_the_six_contracts` 是**两个不同断言对象**：
+ * 那边是模型读的 `description()`（6 项契约，长文本），这里是悬停一句话。
+ * 若面板不登记这个 id，会回落到 `description()`——十几行提示词塞进小浮层。
+ */
+describe("shell 面板说明（A33）", () => {
+  const source = readRepoFile(PANEL_FILE);
+
+  it("面板登记了 shell 的短说明键", () => {
+    expect(source).toContain('shell: "chat.tool.panel.tool_desc.shell",');
+  });
+
+  it("两个语种都有一句话说明，且不重复模型的整段描述", () => {
+    for (const locale of LOCALES) {
+      const raw = JSON.parse(readRepoFile(locale)) as unknown;
+      const value = pick(raw, ["chat", "tool", "panel", "tool_desc", "shell"]);
+      expect(
+        typeof value === "string" && value.length > 0,
+        `${locale} 缺少 chat.tool.panel.tool_desc.shell`,
+      ).toBe(true);
+      const text = String(value);
+      expect(text.length).toBeLessThan(120);
+      expect(text).not.toContain("\n");
+    }
+  });
+});

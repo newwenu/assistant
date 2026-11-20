@@ -56,6 +56,7 @@ const TOOL_DESC_KEYS: Record<string, I18nPath> = {
   super_read: "chat.tool.panel.tool_desc.super_read",
   super_edit: "chat.tool.panel.tool_desc.super_edit",
   request_tool: "chat.tool.panel.tool_desc.request_tool",
+  shell: "chat.tool.panel.tool_desc.shell",
 };
 
 /**

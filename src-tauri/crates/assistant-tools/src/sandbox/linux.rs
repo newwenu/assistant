@@ -15,9 +15,9 @@ use landlock::{
 };
 
 use crate::sandbox::{
-    enforcement_from_missing, is_executable, paths_overlap, SandboxBackend, SandboxChild,
-    SandboxChildOps, SandboxDimension, SandboxError, SandboxHostPaths, SandboxKind, SandboxPlan,
-    SandboxProbe,
+    enforcement_from_missing, is_executable, paths_overlap, KillHandle, SandboxBackend,
+    SandboxChild, SandboxChildOps, SandboxDimension, SandboxError, SandboxHostPaths, SandboxKind,
+    SandboxPlan, SandboxProbe,
 };
 
 /// 根只授执行权，读权不在这里给。
@@ -178,6 +178,13 @@ impl SandboxChildOps for LinuxChild {
         unsafe {
             libc::kill(-self.pgid, libc::SIGKILL);
         }
+    }
+
+    fn kill_handle(&self) -> KillHandle {
+        let pgid = self.pgid;
+        KillHandle::new(move || unsafe {
+            libc::kill(-pgid, libc::SIGKILL);
+        })
     }
 
     fn take_stdout(&mut self) -> Option<Box<dyn io::Read + Send>> {

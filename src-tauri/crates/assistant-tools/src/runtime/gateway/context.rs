@@ -12,6 +12,7 @@ use crate::os::path::{
 };
 use crate::policy::{PermissionEffect, PermissionRule, ResolvedPermissionPolicy, RuleOrigin};
 use crate::r#trait::{ApprovalPreview, BehaviorHints, PermissionIntent, Tool, ToolTier};
+use crate::sandbox::SandboxEnforcement;
 
 /// 审批预演与扩展检测共用的执行预算（I38d §3.2.1）。
 ///
@@ -177,9 +178,56 @@ pub(crate) async fn build_approval_context(
         extensions: {
             let mut extensions = workspace_extensions(pending, context);
             extensions.extend(output_extensions(pending, context));
+            extensions.extend(sandbox_extensions(tool, context));
             extensions
         },
     }
+}
+
+/// 沙箱边界扩展（I56 §6.5）：只在 `sandbox_enforcement()` 为 `Some` 的工具上产出。
+///
+/// 判据取工具自报的强度而不是再探测一次：卡片必须与执行期同源，
+/// 否则会出现「卡片说完全隔离、执行按部分隔离放行」。
+/// `None` 档不产出任何条目——没有边界就没有可展示的结论，不能把「无隔离」写成一行 `Info`。
+fn sandbox_extensions(tool: &dyn Tool, context: &ToolUseContext) -> Vec<ApprovalExtension> {
+    let Some(enforcement) = tool.sandbox_enforcement() else {
+        return Vec::new();
+    };
+    let severity = match enforcement {
+        SandboxEnforcement::Full => ApprovalExtensionSeverity::Info,
+        SandboxEnforcement::Partial => ApprovalExtensionSeverity::Caution,
+        SandboxEnforcement::None => return Vec::new(),
+    };
+    let mut extensions = vec![ApprovalExtension {
+        kind: "sandbox.enforcement".to_string(),
+        label: "隔离强度".to_string(),
+        value: format!("{}隔离", enforcement.label_zh()),
+        severity,
+    }];
+    if let Some(name) = writable_root_name(context) {
+        extensions.push(ApprovalExtension {
+            kind: "sandbox.root".to_string(),
+            label: "可写根".to_string(),
+            value: name,
+            severity: ApprovalExtensionSeverity::Info,
+        });
+    }
+    extensions
+}
+
+/// 可写根在卡片上只留**末段目录名**：卡片会被截图与转发，绝对路径会把本机目录结构带出去。
+///
+/// 与 `output.scope` 的 `redact_resource` 同一理由。根无法解析出末段（如 `/`、`C:\`）时
+/// 不产出条目，而不是伪造一个 `?`。
+fn writable_root_name(context: &ToolUseContext) -> Option<String> {
+    let root = context.workspace_root.as_deref()?.trim();
+    if root.is_empty() {
+        return None;
+    }
+    let path = canonicalize_lenient(Path::new(root)).ok()?;
+    path.file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .filter(|name| !name.is_empty())
 }
 
 /// 输出域检测方（I52 §5.11.4(5)）：本次待审批资源是否落在本会话工具输出目录内。

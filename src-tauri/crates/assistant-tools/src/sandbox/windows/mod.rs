@@ -6,6 +6,7 @@ use std::os::windows::io::FromRawHandle;
 use std::os::windows::process::ExitStatusExt;
 use std::path::Path;
 use std::process::ExitStatus;
+use std::sync::Arc;
 
 use windows::core::{PCWSTR, PWSTR};
 use windows::Win32::Foundation::{
@@ -39,7 +40,7 @@ use windows::Win32::System::Threading::{
 };
 
 use crate::sandbox::{
-    SandboxBackend, SandboxChild, SandboxChildOps, SandboxDimension, SandboxError,
+    KillHandle, SandboxBackend, SandboxChild, SandboxChildOps, SandboxDimension, SandboxError,
     SandboxHostPaths, SandboxKind, SandboxPlan, SandboxProbe,
 };
 
@@ -75,6 +76,7 @@ impl Drop for OwnedHandle {
 }
 
 unsafe impl Send for OwnedHandle {}
+unsafe impl Sync for OwnedHandle {}
 
 fn to_wide(value: &Path) -> Vec<u16> {
     use std::os::windows::ffi::OsStrExt;
@@ -313,17 +315,27 @@ fn quote_arg(value: &str) -> String {
     out
 }
 
-/// `/C` / `/K` 之后的脚本：固定 shell 形态下 `plan.args = [flag, command]`。
-fn split_cmd_script(args: &[String]) -> Option<(&str, &str)> {
+/// `/C` / `/K` 之后的脚本：固定 shell 形态下 `plan.args = [flag, command]`，
+/// `agent_shell` 还会在 `flag` 前带 `/d`（关 AutoRun，I56 §7.3）。
+fn split_cmd_script(args: &[String]) -> Option<(Option<&str>, &str, &str)> {
     match args {
-        [flag, script] if flag.eq_ignore_ascii_case("/c") || flag.eq_ignore_ascii_case("/k") => {
-            Some((flag.as_str(), script.as_str()))
+        [flag, script] if is_cmd_flag(flag) => Some((None, flag.as_str(), script.as_str())),
+        [prefix, flag, script] if prefix.eq_ignore_ascii_case("/d") && is_cmd_flag(flag) => {
+            Some((Some(prefix.as_str()), flag.as_str(), script.as_str()))
         }
         _ => None,
     }
 }
 
-fn is_cmd_program(program: &str) -> bool {
+fn is_cmd_flag(flag: &str) -> bool {
+    flag.eq_ignore_ascii_case("/c") || flag.eq_ignore_ascii_case("/k")
+}
+
+/// `program` 的 basename 是否为 `cmd.exe`（大小写不敏感）。
+///
+/// 沙箱后端的命令行拼装与 `agent_shell/spawn.rs` 的 `COMSPEC` 校验共用同一判据，
+/// 因此对外可见（`pub(crate)`）；实现与沙箱行为不变。
+pub(crate) fn is_cmd_program(program: &str) -> bool {
     match Path::new(program).file_name() {
         Some(name) => name.eq_ignore_ascii_case("cmd.exe"),
         None => false,
@@ -341,7 +353,10 @@ fn build_command_line(plan: &SandboxPlan) -> String {
     let program = plan.program.to_string_lossy();
     let mut parts = vec![quote_arg(&program)];
     if is_cmd_program(&program) {
-        if let Some((flag, script)) = split_cmd_script(&plan.args) {
+        if let Some((prefix, flag, script)) = split_cmd_script(&plan.args) {
+            if let Some(prefix) = prefix {
+                parts.push(prefix.to_string());
+            }
             parts.push(flag.to_string());
             parts.push(script.to_string());
             return parts.join(" ");
@@ -524,7 +539,7 @@ impl SandboxBackend for WindowsBackend {
         });
 
         Ok(SandboxChild::new(Box::new(WindowsChild {
-            job,
+            job: Arc::new(job),
             process,
             pid: process_info.dwProcessId,
             stdout,
@@ -535,7 +550,8 @@ impl SandboxBackend for WindowsBackend {
 }
 
 struct WindowsChild {
-    job: OwnedHandle,
+    /// Job 句柄与杀树句柄共享所有权：`kill_handle` 复制 `Arc`，`wait()` 期间仍可杀树。
+    job: Arc<OwnedHandle>,
     process: OwnedHandle,
     pid: u32,
     stdout: Option<Box<dyn Read + Send>>,
@@ -577,6 +593,13 @@ impl SandboxChildOps for WindowsChild {
         unsafe {
             let _ = TerminateJobObject(self.job.raw(), 1);
         }
+    }
+
+    fn kill_handle(&self) -> KillHandle {
+        let job = Arc::clone(&self.job);
+        KillHandle::new(move || unsafe {
+            let _ = TerminateJobObject(job.raw(), 1);
+        })
     }
 
     #[cfg(all(test, windows))]

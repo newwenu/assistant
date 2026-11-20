@@ -47,6 +47,61 @@ pub fn redact_resource(resource: &str) -> String {
     }
 }
 
+/// 敏感变量名的子串标记（大小写不敏感），与 §7.4 的不透传词表同源。
+const SECRET_NAME_MARKERS: [&str; 5] = ["KEY", "TOKEN", "SECRET", "PASSWORD", "CREDENTIAL"];
+
+/// 需要打码「后一个 token」的开关（§10.3）。
+///
+/// **不含 `-p`**：`docker run -p 8080:80`、`ssh -p 2222` 里的 `-p` 是端口，
+/// 打码会把审计记录毁成不可读。
+const SECRET_FLAGS: [&str; 4] = ["--password", "--passwd", "--token", "--api-key"];
+
+/// 命令行的词法级打码（I56 §10.3）：`resource` 会整条落库，密钥不得跟着进库。
+///
+/// 只认两种形态，不做引号解析（审计要的是「大致可读 + 不含密钥」，
+/// 不是可回放的命令行）：
+/// - `NAME=value` 且 `NAME` 命中敏感词表 → `value` 换成 `<redacted>`；
+/// - `--password` / `--passwd` / `--token` / `--api-key` 的后一个 token → `<redacted>`。
+///
+/// 只作用于审计与日志；实际执行用的是原始命令行，两者在调用点分叉。
+pub fn redact_secrets(resource: &str) -> String {
+    let mut tokens: Vec<String> = Vec::new();
+    let mut redact_next = false;
+    for token in resource.split_whitespace() {
+        if redact_next {
+            tokens.push("<redacted>".to_string());
+            redact_next = false;
+            continue;
+        }
+        // `--token=abc` 这类内联形式先按赋值处理，否则会被误当成「开关」并吞掉下一个 token。
+        if let Some((name, value)) = token.split_once('=') {
+            tokens.push(if value.is_empty() || !is_secret_name(name) {
+                token.to_string()
+            } else {
+                format!("{name}=<redacted>")
+            });
+            continue;
+        }
+        if SECRET_FLAGS
+            .iter()
+            .any(|flag| token.eq_ignore_ascii_case(flag))
+        {
+            tokens.push(token.to_string());
+            redact_next = true;
+            continue;
+        }
+        tokens.push(token.to_string());
+    }
+    tokens.join(" ")
+}
+
+fn is_secret_name(name: &str) -> bool {
+    let upper = name.to_ascii_uppercase();
+    SECRET_NAME_MARKERS
+        .iter()
+        .any(|marker| upper.contains(marker))
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AuditEntry {
