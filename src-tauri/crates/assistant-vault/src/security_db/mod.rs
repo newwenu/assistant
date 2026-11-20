@@ -13,7 +13,7 @@ pub mod schema;
 pub use anchor::AnchorExpectation;
 pub use meta::Anchor;
 pub use session::{LockReason, SessionConnGuard, SessionDekGuard, VaultSession};
-pub use state::SecurityDbState;
+pub use state::{DirStats, PruneReport, SecurityDbState};
 
 pub(crate) use schema::{open_connection, probe_read};
 
@@ -24,7 +24,10 @@ pub const SQLCIPHER_PRAGMAS: &str =
 pub const SQLCIPHER_HARDENING_PRAGMAS: &str =
     "PRAGMA cipher_memory_security = ON; PRAGMA temp_store = MEMORY;";
 
-const MAX_BACKUPS: usize = 5;
+/// 备份保留份数：owner 自动裁剪与 `E8` 手动裁剪共用同一个上限。
+///
+/// `pub` 是为了让 provider 侧把 `keep` 传进来时**不必自己硬编码 5**（I61 T3-b）。
+pub const MAX_BACKUPS: usize = 5;
 
 /// JSONL 补录游标：`vault_meta` 的 KV 行，不改 DDL。
 const JSONL_SYNC_KEY: &str = "audit_jsonl_synced_at";

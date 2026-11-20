@@ -275,3 +275,135 @@ fn cipher_algorithm_from_conf_is_case_insensitive() {
         CipherAlgorithm::Aes256Gcm
     );
 }
+
+/// 备份文件名前缀是 `%Y%m%d-%H%M%S-%3f`，升序即「最旧在前」（`E8` 裁剪依据）。
+fn backup_path(db_path: &std::path::Path, stamp: &str) -> std::path::PathBuf {
+    db_path
+        .parent()
+        .unwrap()
+        .join("backups")
+        .join(format!("security-{stamp}.db.bak"))
+}
+
+fn write_backup(db_path: &std::path::Path, stamp: &str, bytes: &[u8]) -> std::path::PathBuf {
+    let path = backup_path(db_path, stamp);
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(&path, bytes).unwrap();
+    path
+}
+
+fn vault_db_path() -> (tempfile::TempDir, std::path::PathBuf) {
+    let dir = tempfile::tempdir().unwrap();
+    let db_path = dir.path().join("vault.db");
+    (dir, db_path)
+}
+
+#[test]
+fn prune_backups_to_keeps_the_newest_and_ignores_other_files() {
+    let (_dir, db_path) = vault_db_path();
+    let oldest = write_backup(&db_path, "20240101-000000-001", b"0123456789");
+    let middle = write_backup(&db_path, "20240102-000000-002", b"01234567890123456789");
+    let newest = write_backup(
+        &db_path,
+        "20240103-000000-003",
+        b"012345678901234567890123456789",
+    );
+    let unrelated = db_path.parent().unwrap().join("notes.txt");
+    std::fs::write(&unrelated, b"not a backup").unwrap();
+
+    let report = SecurityDbState::prune_backups_to(&db_path, 1).unwrap();
+
+    assert_eq!(report.removed, 2, "只裁掉最旧的超限部分");
+    assert_eq!(report.removed_bytes, 30, "按实际文件长度累加");
+    assert_eq!(report.failed, 0);
+    assert!(!oldest.exists());
+    assert!(!middle.exists());
+    assert!(newest.exists(), "最新一份在任何情况下都不得删");
+    assert!(unrelated.exists(), "非备份文件不参与裁剪");
+}
+
+#[test]
+fn prune_backups_to_keeps_one_copy_even_when_keep_is_zero() {
+    let (_dir, db_path) = vault_db_path();
+    write_backup(&db_path, "20240101-000000-001", b"aa");
+    write_backup(&db_path, "20240102-000000-002", b"bb");
+    let newest = write_backup(&db_path, "20240103-000000-003", b"cc");
+
+    let report = SecurityDbState::prune_backups_to(&db_path, 0).unwrap();
+
+    assert_eq!(report.removed, 2, "keep 至少 1：只裁到一份");
+    assert_eq!(report.removed_bytes, 4);
+    assert!(newest.exists());
+    let remaining: Vec<_> = std::fs::read_dir(newest.parent().unwrap())
+        .unwrap()
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.file_name())
+        .collect();
+    assert_eq!(remaining.len(), 1, "keep = 0 时目录里只剩一份备份");
+}
+
+#[test]
+fn prune_backups_to_is_a_noop_within_keep_or_without_a_backup_dir() {
+    let (_dir, db_path) = vault_db_path();
+    let empty = SecurityDbState::prune_backups_to(&db_path, 3).unwrap();
+    assert_eq!(empty, assistant_vault::security_db::PruneReport::default());
+
+    write_backup(&db_path, "20240101-000000-001", b"aa");
+    let newest = write_backup(&db_path, "20240102-000000-002", b"bb");
+
+    let within = SecurityDbState::prune_backups_to(&db_path, 2).unwrap();
+    assert_eq!(within.removed, 0, "未超限时不得删任何备份");
+    assert!(newest.exists());
+    assert!(backup_path(&db_path, "20240101-000000-001").exists());
+}
+
+#[cfg(windows)]
+#[test]
+fn prune_backups_to_counts_failure_and_keeps_the_extra_copy() {
+    use std::os::windows::fs::OpenOptionsExt;
+
+    let (_dir, db_path) = vault_db_path();
+    let oldest = write_backup(&db_path, "20240101-000000-001", b"aa");
+    let middle = write_backup(&db_path, "20240102-000000-002", b"bb");
+    let newest = write_backup(&db_path, "20240103-000000-003", b"cc");
+
+    // 共享模式只给 READ | WRITE：没有 FILE_SHARE_DELETE，`DeleteFileW` 会失败，
+    // 这是 Windows 上唯一可稳定注入「单份删除失败」的方式（只读属性挡不住删除）。
+    let handle = std::fs::OpenOptions::new()
+        .read(true)
+        .share_mode(0x1 | 0x2)
+        .open(&oldest)
+        .unwrap();
+
+    let report = SecurityDbState::prune_backups_to(&db_path, 2).unwrap();
+
+    assert_eq!(report.removed, 0, "删除失败不得计入成功");
+    assert_eq!(report.failed, 1, "单份失败只计数，不中断");
+    assert!(oldest.exists(), "失败时保留多出的那份备份");
+    assert!(middle.exists());
+    assert!(newest.exists());
+
+    drop(handle);
+}
+
+#[cfg(unix)]
+#[test]
+fn prune_backups_to_skips_symlinks() {
+    let (_dir, db_path) = vault_db_path();
+    let target_dir = tempfile::tempdir().unwrap();
+    let target = target_dir.path().join("outside.bin");
+    std::fs::write(&target, b"keep me").unwrap();
+
+    let link = backup_path(&db_path, "20240101-000000-001");
+    std::fs::create_dir_all(link.parent().unwrap()).unwrap();
+    std::os::unix::fs::symlink(&target, &link).unwrap();
+    let newest = write_backup(&db_path, "20240102-000000-002", b"bb");
+
+    let report = SecurityDbState::prune_backups_to(&db_path, 1).unwrap();
+
+    assert_eq!(report.removed, 0, "符号链接不计入备份份数");
+    assert_eq!(report.failed, 0);
+    assert!(link.symlink_metadata().unwrap().file_type().is_symlink());
+    assert!(target.exists(), "绝不删链接目标");
+    assert!(newest.exists());
+}

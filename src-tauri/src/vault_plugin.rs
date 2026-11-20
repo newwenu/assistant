@@ -6,6 +6,132 @@ use tauri::plugin::TauriPlugin;
 mod mounted {
     use super::TauriPlugin;
 
+    use tauri::Manager;
+
+    use crate::app_dirs::registry;
+    use crate::app_dirs::AppDirs;
+    use crate::cmd::storage::probe::{
+        BackupPruneReport, ProbeError, ProbeRegistry, ProbeStats, StorageOwnerProbe,
+        StorageOwnerProbeHandle,
+    };
+    use crate::cmd::vault;
+    use assistant_vault::security_db::SecurityDbState;
+    use assistant_vault::storage_stats::DirStats;
+
+    /// `E7`–`E11` 的 vault 侧 provider：只调 owner 的公开观测入口，不拼路径、不开库。
+    ///
+    /// 持 `AppHandle` 而非 `SecurityDbState`：后者不实现 `Clone`，且在 `spawn_blocking`
+    /// 里需要 `'static` 句柄；`try_state` 取不到即降级，绝不让管理器 panic。
+    struct VaultStorageProbe {
+        app: tauri::AppHandle,
+    }
+
+    fn stats_of(stats: DirStats) -> ProbeStats {
+        ProbeStats {
+            bytes: Some(stats.bytes),
+            count: Some(stats.count),
+            oldest_at: stats.oldest_at,
+            newest_at: stats.newest_at,
+        }
+    }
+
+    /// 单文件 `metadata` 失败归 `Unavailable`（文件正在替换 / 迁移，§7.1 特例 2）；
+    /// 文件缺失已由 owner 映射成全零，不会走到这里。
+    fn map_file_io(_error: std::io::Error) -> ProbeError {
+        ProbeError::Unavailable
+    }
+
+    /// 目录遍历失败归 `Unreadable`（权限 / IO 失败）。
+    fn map_io(_error: std::io::Error) -> ProbeError {
+        ProbeError::Unreadable
+    }
+
+    impl VaultStorageProbe {
+        /// `SecurityDbState` 在 `vault_setup` 内 `manage`；取不到说明装配异常，
+        /// 返回 `Err` 让管理器按 `unreadable` 降级，绝不 panic（§3.10 / §7.1）。
+        fn db_state(&self) -> Result<tauri::State<'_, SecurityDbState>, ProbeError> {
+            self.app
+                .try_state::<SecurityDbState>()
+                .ok_or(ProbeError::Unreadable)
+        }
+
+        fn dirs(&self) -> Result<AppDirs, ProbeError> {
+            AppDirs::resolve().map_err(|_| ProbeError::Unavailable)
+        }
+    }
+
+    impl StorageOwnerProbe for VaultStorageProbe {
+        fn capability(&self) -> &'static str {
+            registry::SECURITY_OBSERVABILITY
+        }
+
+        /// 按登记表 `key` 分派（`E7`–`E11`）；其余 key 一律 `None`（不归本 provider）。
+        ///
+        /// 这里的 key 字面量必须与 `registry::MANAGED_ROOTS` 一致，V22 单测逐行校验
+        /// 「`Feature` 行的 `stats(key)` 必须 `Some`」，改登记表 key 会直接判红。
+        fn stats(&self, key: &'static str) -> Option<Result<ProbeStats, ProbeError>> {
+            match key {
+                "security/security.db" => Some(
+                    self.db_state()
+                        .and_then(|state| state.db_file_stats().map_err(map_file_io))
+                        .map(stats_of),
+                ),
+                "security/backups" => Some(
+                    self.db_state()
+                        .and_then(|state| state.backup_stats().map_err(map_io))
+                        .map(stats_of),
+                ),
+                "security/vault" => Some(
+                    self.db_state()
+                        .and_then(|state| {
+                            // 锁定态下仓库内容不可信：先判锁，再观测（§3.10 的 `locked` 语义）。
+                            if state.is_locked() {
+                                return Err(ProbeError::Locked);
+                            }
+                            vault::repo_stats(&self.dirs()?).map_err(map_io)
+                        })
+                        .map(stats_of),
+                ),
+                "security/recovery" => Some(
+                    self.dirs()
+                        .and_then(|dirs| vault::recovery_stats(&dirs).map_err(map_io))
+                        .map(stats_of),
+                ),
+                "security/audit" => Some(
+                    self.db_state()
+                        .and_then(|state| state.audit_stats().map_err(map_io))
+                        .map(stats_of),
+                ),
+                _ => None,
+            }
+        }
+
+        fn audit_policy(&self) -> Option<(u32, i64)> {
+            self.app
+                .try_state::<SecurityDbState>()
+                .and_then(|state| state.audit_policy())
+        }
+
+        /// `E8`：重新计数与裁剪都在 owner 侧一次完成（管理器只传 `keep`），
+        /// 备份目录不在 `SecurityDbState` 之外拼接，解锁状态不影响本入口。
+        fn prune_backups(&self, keep: u32) -> Option<Result<BackupPruneReport, ProbeError>> {
+            let state = match self.db_state() {
+                Ok(state) => state,
+                Err(error) => return Some(Err(error)),
+            };
+            let db_path = std::path::Path::new(state.db_path()).to_path_buf();
+            Some(
+                SecurityDbState::prune_backups_to(&db_path, keep as usize)
+                    .map(|report| BackupPruneReport {
+                        removed: report.removed,
+                        removed_bytes: report.removed_bytes,
+                        failed: report.failed,
+                    })
+                    .map_err(|_| ProbeError::Unreadable),
+            )
+        }
+    }
+
     pub(crate) fn init() -> TauriPlugin<tauri::Wry> {
         crate::cmd::register_conf_applier(
             "vault",
@@ -18,6 +144,22 @@ mod mounted {
                     log::warn!("Windows Credential Manager backend unavailable: {}", error);
                 }
                 crate::cmd::vault::vault_setup(app)?;
+                // 注册到通用槽（G18(b)）：槽由 `plugins::attach` 在 `Builder` 阶段建好。
+                // 取不到槽 = 装配异常：记错误并继续，不让插件 setup 失败（不 panic、不覆盖）。
+                let probe: StorageOwnerProbeHandle = std::sync::Arc::new(VaultStorageProbe {
+                    app: app.app_handle().clone(),
+                });
+                match app.try_state::<std::sync::Arc<ProbeRegistry>>() {
+                    Some(registry) => {
+                        if let Err(error) = registry.register(probe) {
+                            log::error!("storage probe 注册失败（E7–E11 将降级）: {}", error);
+                        }
+                    }
+                    None => log::error!(
+                        "ProbeRegistry 槽不存在（E7–E11 将永久降级）: {}",
+                        registry::SECURITY_OBSERVABILITY
+                    ),
+                }
                 Ok(())
             })
             .invoke_handler(tauri::generate_handler![

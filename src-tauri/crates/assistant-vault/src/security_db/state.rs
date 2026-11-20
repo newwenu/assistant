@@ -1,11 +1,13 @@
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicI64, AtomicU32, AtomicU64, Ordering};
 use std::sync::Mutex;
 
 use log::info;
 use rusqlite::{Connection, OptionalExtension};
 
 use crate::audit::{log_dual, AuditEvent, AuditJsonlWriter};
+use crate::storage_stats;
+pub use crate::storage_stats::DirStats;
 use assistant_crypto::error::VaultError;
 use assistant_crypto::vault_crypto::types::{CipherAlgorithm, DbKey, Dek, Kek};
 
@@ -15,12 +17,25 @@ use super::{
     VaultSession, BACKFILL_EVENTS, BACKUP_PREFIX, BACKUP_SUFFIX, JSONL_SYNC_KEY, MAX_BACKUPS,
 };
 
+/// `E8` 的裁剪结果：只用于回收结果回报，不参与任何业务判定。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct PruneReport {
+    pub removed: u64,
+    pub removed_bytes: u64,
+    pub failed: u64,
+}
+
 pub struct SecurityDbState {
     pub(super) session: Mutex<Option<VaultSession>>,
     db_path: String,
     audit_dir: PathBuf,
     epoch: AtomicU64,
     audit_retention_days: AtomicU32,
+    /// 保留策略的生效时刻（秒）：策略注入时写入一次，之后只读。
+    ///
+    /// 与 `epoch` 分开：`epoch` 是会话代次（锁/解锁递增），这里是「策略从何时开始算」，
+    /// 观测条目 `E11` 的 `policy.effective_since` 直接用它，不重新读时钟。
+    audit_effective_since: AtomicI64,
 }
 
 impl SecurityDbState {
@@ -37,6 +52,7 @@ impl SecurityDbState {
             epoch: AtomicU64::new(0),
             // 未注入前不清理：库层不读配置，也不在无显式保留策略时删用户数据。
             audit_retention_days: AtomicU32::new(0),
+            audit_effective_since: AtomicI64::new(chrono::Utc::now().timestamp()),
         }
     }
 
@@ -44,12 +60,15 @@ impl SecurityDbState {
         &self.audit_dir
     }
 
-    /// 设置 JSONL 审计文件的保留天数（`0` = 不清理）。
+    /// 设置 JSONL 审计文件的保留天数（`0` = 不清理），并把生效时刻记为本刻。
     ///
     /// 由 app 层从 `AppConf` 注入：库层不读配置文件，避免在库内部做隐式 I/O，
-    /// 也避免测试被本机配置污染。
+    /// 也避免测试被本机配置污染。生效时刻与天数必须**同一次**写入，
+    /// 否则 `E11` 的 `policy.effectiveSince` 与实际裁剪截止时刻对不上（I61 §3.5）。
     pub fn set_audit_retention_days(&self, days: u32) {
         self.audit_retention_days.store(days, Ordering::SeqCst);
+        self.audit_effective_since
+            .store(chrono::Utc::now().timestamp(), Ordering::SeqCst);
     }
 
     pub fn audit_retention_days(&self) -> u32 {
@@ -480,12 +499,7 @@ impl SecurityDbState {
         for entry in std::fs::read_dir(&backup_dir)? {
             let entry = entry?;
             let path = entry.path();
-            let is_backup = path
-                .file_name()
-                .and_then(|name| name.to_str())
-                .map(|name| name.starts_with(BACKUP_PREFIX) && name.ends_with(BACKUP_SUFFIX))
-                .unwrap_or(false);
-            if is_backup {
+            if is_backup_file(&path) {
                 std::fs::remove_file(&path)?;
                 removed += 1;
             }
@@ -493,16 +507,65 @@ impl SecurityDbState {
         Ok(removed)
     }
 
+    /// `E8` 的对外裁剪入口（T3）：按备份目录重新计数后裁到 `keep` 份。
+    ///
+    /// 三条纪律：①`keep` 至少 1，任何情况下都保留最新一份（§5.5 `E8` 行「不得删最新一份」）；
+    /// ②只按 `BACKUP_PREFIX` / `BACKUP_SUFFIX` 匹配，跳符号链接与非常规文件；
+    /// ③目录不存在是正常空态（全零），单份删除失败只计数不中断（`partial` 语义）。
+    pub fn prune_backups_to(db_path: &Path, keep: usize) -> Result<PruneReport, VaultError> {
+        let backup_dir = Self::backup_dir_for(db_path)?;
+        let keep = keep.max(1);
+        let entries = match std::fs::read_dir(&backup_dir) {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                return Ok(PruneReport::default())
+            }
+            Err(error) => return Err(VaultError::Io(error)),
+        };
+
+        let mut files: Vec<(PathBuf, u64)> = Vec::new();
+        for entry in entries {
+            let entry = entry?;
+            let path = entry.path();
+            // `symlink_metadata` 不跟随链接：符号链接按「非常规文件」跳过，绝不删目标。
+            let meta = match std::fs::symlink_metadata(&path) {
+                Ok(meta) => meta,
+                Err(_) => continue,
+            };
+            if meta.file_type().is_symlink() || !meta.is_file() || !is_backup_file(&path) {
+                continue;
+            }
+            files.push((path, meta.len()));
+        }
+
+        let mut report = PruneReport::default();
+        if files.len() <= keep {
+            return Ok(report);
+        }
+        // 文件名前缀是 `%Y%m%d-%H%M%S-%3f`：升序即「最旧在前」，裁掉最旧的超限部分。
+        files.sort_by(|left, right| left.0.cmp(&right.0));
+        let excess = files.len() - keep;
+        for (path, bytes) in files.into_iter().take(excess) {
+            match std::fs::remove_file(&path) {
+                Ok(()) => {
+                    report.removed = report.removed.saturating_add(1);
+                    report.removed_bytes = report.removed_bytes.saturating_add(bytes);
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => {
+                    log::warn!("Failed to prune backup {}: {}", path.display(), error);
+                    report.failed = report.failed.saturating_add(1);
+                }
+            }
+        }
+        Ok(report)
+    }
+
     pub(super) fn prune_backups(dir: &Path, keep: usize) -> Result<(), VaultError> {
         let mut files: Vec<PathBuf> = std::fs::read_dir(dir)?
             .filter_map(|entry| entry.ok())
             .map(|entry| entry.path())
-            .filter(|path| {
-                path.file_name()
-                    .and_then(|name| name.to_str())
-                    .map(|name| name.starts_with(BACKUP_PREFIX) && name.ends_with(BACKUP_SUFFIX))
-                    .unwrap_or(false)
-            })
+            .filter(|path| is_backup_file(path))
             .collect();
 
         if files.len() <= keep {
@@ -533,4 +596,40 @@ impl SecurityDbState {
     pub fn db_path(&self) -> &str {
         &self.db_path
     }
+
+    /// `E7`：安全库文件观测（只 `metadata`，不解锁、不开库、不复制）。
+    pub fn db_file_stats(&self) -> std::io::Result<DirStats> {
+        storage_stats::file_stats(Path::new(&self.db_path))
+    }
+
+    /// `E8`：备份目录观测；口径与 `prune_backups` / `purge_backups` 一致（只认备份文件名）。
+    pub fn backup_stats(&self) -> std::io::Result<DirStats> {
+        let backup_dir = Self::backup_dir_for(Path::new(&self.db_path))
+            .map_err(|error| std::io::Error::other(error.to_string()))?;
+        storage_stats::dir_stats(&backup_dir, is_backup_file)
+    }
+
+    /// `E11`：审计 JSONL 目录观测；口径与 `prune_before` 一致（只认 `audit-*.jsonl`）。
+    pub fn audit_stats(&self) -> std::io::Result<DirStats> {
+        self.audit_writer().stats()
+    }
+
+    /// `E11` 的策略自述：保留天数 + 策略生效时刻（秒）。
+    ///
+    /// 恒为 `Some`：`SecurityDbState` 一定持有一份「当前生效」的策略快照，
+    /// 取不到状态的场景由 provider 层返回 `None`（`policy` 两数字填 `null`）。
+    pub fn audit_policy(&self) -> Option<(u32, i64)> {
+        Some((
+            self.audit_retention_days(),
+            self.audit_effective_since.load(Ordering::SeqCst),
+        ))
+    }
+}
+
+/// 备份文件名判据：`prune_backups` 与 `backup_stats` 共用，避免「统计多少」与「能删多少」漂移。
+fn is_backup_file(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .map(|name| name.starts_with(BACKUP_PREFIX) && name.ends_with(BACKUP_SUFFIX))
+        .unwrap_or(false)
 }

@@ -4,6 +4,10 @@ import type {
   AttachmentImportDto,
   AttachmentLimitsDto,
   StorageBreakdownDto,
+  StorageInventorySnapshotStatusDto,
+  StorageReclaimEntryRequestDto,
+  StorageReclaimPlanDto,
+  StorageReclaimResultDto,
 } from "@/types/protocol.contract";
 import { tauriInvoke as invoke } from "../system/tauriInvoke";
 
@@ -27,4 +31,23 @@ export const storageService = {
 
   openAttachment: (attachmentId: string): Promise<boolean> =>
     invoke<boolean>("open_attachment", { attachmentId }),
+
+  getStorageReclaimPlan: (
+    entryKeys: string[],
+  ): Promise<StorageReclaimPlanDto> =>
+    invoke<StorageReclaimPlanDto>("get_storage_reclaim_plan", {
+      request: { entryKeys },
+    }),
+
+  reclaimStorage: (
+    planId: string,
+    entries: StorageReclaimEntryRequestDto[],
+    confirmed: boolean,
+  ): Promise<StorageReclaimResultDto> =>
+    invoke<StorageReclaimResultDto>("reclaim_storage", {
+      request: { planId, entries, confirmed },
+    }),
+
+  refreshStorageInventory: (): Promise<StorageInventorySnapshotStatusDto> =>
+    invoke<StorageInventorySnapshotStatusDto>("refresh_storage_inventory"),
 };

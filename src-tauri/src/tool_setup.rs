@@ -17,25 +17,51 @@ use crate::adapters::{
     TimingApprovalPrompter,
 };
 
+/// 结果保留策略的启动快照：天数 + 生效时刻（秒）。
+///
+/// 两处消费方（启动清理与条目策略自述）必须用**同一份**快照：各自读配置会得到
+/// 不同的 `effective_since`，条目展示的截止时刻与真实清理时刻就对不上（I61 §3.3）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ResultRetention {
+    days: u32,
+    effective_since: i64,
+}
+
+fn now_seconds() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|since| i64::try_from(since.as_secs()).unwrap_or(i64::MAX))
+        .unwrap_or(0)
+}
+
+/// 读一次配置得到保留策略；**fail-closed**：读不到就按 `0`（不清理），
+/// 绝不回退到常量天数——宁可少删，不可多删（I61 G8）。
+fn load_result_retention() -> ResultRetention {
+    let days = match AppConf::load() {
+        Ok(conf) => conf.result_retention_days,
+        Err(e) => {
+            log::warn!("Failed to load app config for result retention, disable cleanup: {e}");
+            0
+        }
+    };
+    ResultRetention {
+        days,
+        effective_since: now_seconds(),
+    }
+}
+
 /// 启动时按 `mtime` 年龄清理落盘目录（I46 compact §2.9 D9，门禁 10）。
 ///
 /// 放到独立线程：清理是纯本地 I/O，不应阻塞启动；失败只 warn、绝不抛出。
 /// 保留天数每次启动读一次配置（`0` → 禁用），运行期改设置下次重启生效。
-fn spawn_result_cleanup(root: std::path::PathBuf) {
-    let retention_days = match AppConf::load() {
-        Ok(conf) => conf.result_retention_days,
-        Err(e) => {
-            log::warn!("Failed to load app config for result retention: {e}");
-            assistant_config::constant::RESULT_RETENTION_DAYS
-        }
-    };
+fn spawn_result_cleanup(root: std::path::PathBuf, retention: ResultRetention) {
     std::thread::spawn(move || {
-        let report = cleanup_expired_results(&root, retention_days);
+        let report = cleanup_expired_results(&root, retention.days);
         log::info!(
             "tool result cleanup: removed {} expired file(s), {} failure(s) (retention {} days)",
             report.removed,
             report.failed,
-            retention_days
+            retention.days
         );
     });
 }
@@ -260,8 +286,12 @@ pub fn init(handle: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>>
     // 落盘根目录必须是稳定路径：它会写进 `<persisted-output path="…">`，
     // 跨进程重放一致性依赖它（§4.5），不得用临时目录。
     let results_dir = dirs.tool_results();
-    spawn_result_cleanup(results_dir.clone());
-    let storage: Arc<dyn ToolResultStorage> = Arc::new(FileToolResultStorage::new(results_dir));
+    let retention = load_result_retention();
+    spawn_result_cleanup(results_dir.clone(), retention);
+    let storage: Arc<dyn ToolResultStorage> = Arc::new(
+        FileToolResultStorage::new(results_dir)
+            .with_retention(retention.days, retention.effective_since),
+    );
     // C5：`shell` 的注册点必须晚于 registry 与 storage（两者都是它的构造输入），
     // 门禁判据仍在注册期探测结论上：`enforcement == none` 时整组不注册。
     if shell_registration_allowed(probe) {

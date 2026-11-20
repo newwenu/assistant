@@ -9,8 +9,8 @@ pub(crate) use shared::test_support;
 
 pub use tools::{
     agent_ask_user, agent_delete, agent_edit, agent_glob, agent_grep, agent_list, agent_mkdir,
-    agent_move, agent_read, agent_request_tool, agent_shell, agent_write, fs_link, super_edit,
-    super_read,
+    agent_move, agent_read, agent_request_tool, agent_shell, agent_write, fs_link, index_stats,
+    purge_index_files, super_edit, super_read, IndexPurgeReport,
 };
 
 use std::sync::Arc;

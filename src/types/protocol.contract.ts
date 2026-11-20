@@ -300,6 +300,8 @@ toggle: boolean,
  * 可选的 effort 档位，保持目录顺序
  */
 efforts: Array<string>, };
+export type ReclaimPolicyDto = { source: StoragePolicySourceDto, retentionDays: number | null, keepCount: number | null, maxBytes: number | null, effectiveSince: number | null, mutable: boolean, failClosed: boolean, };
+export type ReclaimViewDto = { action: StorageReclaimActionDto, eligibility: StorageEligibilityDto, reason: StorageReclaimReasonDto | null, policy: ReclaimPolicyDto, reclaimableBytes: number | null, reclaimableCount: number | null, confirmation: StorageConfirmLevelDto, autoActive: boolean, note: string | null, };
 export type ResolvedThemeDto = "light" | "dark";
 export type RetryNotificationDto = { attempt: number, maxAttempts: number, delayMs: number, message: string, errorCode: CommandErrorCodeDto | null, };
 export type RiveManifestDto = { stateMachine?: string | null, properties?: RiveManifestPropertiesDto | null, 
@@ -358,11 +360,104 @@ export type SettingProviderChangedActionDto = "provider-saved" | "provider-delet
 export type SettingProviderChangedPayloadDto = { action: SettingProviderChangedActionDto, id: string | null, };
 export type ShortcutWarningPayloadDto = { id: string, binding: string, error: string, };
 export type SiblingInfoDto = { id: string, siblingIndex: number, contentPreview: string, };
+export type StorageAvailabilityDto = "available" | "missing" | "locked" | "unreadable" | "unavailable" | "notImplemented" | "noReportYet" | "staleReport";
 export type StorageBreakdownDto = { 
 /**
  * 目录内附件总字节数。未找到目录配额常量，无法论证更窄上限，故保留 `u64`。
  */
-totalBytes: number, totalCount: number, orphans: Array<AttachmentSummary>, conversations: Array<ConversationAttachmentSummary>, };
+totalBytes: number, totalCount: number, orphans: Array<AttachmentSummary>, conversations: Array<ConversationAttachmentSummary>, 
+/**
+ * 一次快照一个时刻（秒）：遍历非原子，必须随附。
+ */
+sampledAt: number, 
+/**
+ * 字节口径，本期恒 `fileLength`；口径进 DTO，不只进文档。
+ */
+byteBasis: StorageByteBasisDto, 
+/**
+ * 被 ≥2 个会话引用的附件字节之和（同一附件只计一次）。
+ */
+sharedBytes: number, 
+/**
+ * 仅被 1 个会话引用的附件字节之和。
+ */
+referencedOnceBytes: number, 
+/**
+ * 13 条条目，顺序固定（`E1`→`E13`）；不可用条目也必须出现。
+ */
+entries: Array<StorageEntryDto>, 
+/**
+ * 对账余量快照；恒存在（未扫过时 `status = neverRun`）。
+ */
+inventory: StorageInventoryDto, 
+/**
+ * 除 `E12` 外的 12 条全部 `availability ∈ {available, missing}` 时为 `true`。
+ */
+complete: boolean, };
+export type StorageByteBasisDto = "fileLength";
+export type StorageConfirmLevelDto = "none" | "confirm" | "strongConfirm";
+export type StorageEligibilityDto = "eligible" | "notEligible" | "locked" | "ownerManaged" | "notImplemented";
+export type StorageEntryDto = { key: string, layer: StorageLayerDto, owner: string, bytes: number | null, count: number | null, oldestAt: number | null, newestAt: number | null, availability: StorageAvailabilityDto, availabilityReason: string | null, includesDerived: boolean, countsSelfLogs: boolean, reclaim: ReclaimViewDto, };
+export type StorageInventoryClassDto = "declared" | "optionalNotMounted" | "companion" | "ignored" | "unregistered";
+export type StorageInventoryDto = { status: StorageInventoryStatusDto, scannedAt: number | null, failedAt: number | null, nodes: Array<StorageInventoryNodeDto>, unregisteredBytes: number | null, unregisteredCount: number | null, partial: boolean, truncatedNodes: Array<string>, };
+export type StorageInventoryItemDto = { name: string, bytes: number | null, count: number | null, };
+export type StorageInventoryNodeDto = { name: string, class: StorageInventoryClassDto, scope: StorageLayerDto, entry: string | null, scanBytes: number | null, scanCount: number | null, declaredBytes: number | null, declaredCount: number | null, residualBytes: number | null, residualCount: number | null, overRegistered: boolean, children: Array<StorageInventoryItemDto>, };
+export type StorageInventorySnapshotStatusDto = { status: StorageInventoryStatusDto, scannedAt: number | null, failedAt: number | null, };
+export type StorageInventoryStatusDto = "neverRun" | "running" | "fresh" | "stale" | "failed";
+export type StorageLayerDto = "data" | "local";
+export type StoragePolicySourceDto = "config" | "constant" | "owner" | "none";
+export type StorageReclaimActionDto = "none" | "deleteOrphans" | "deleteSelected" | "sweepExpired" | "pruneToLimit" | "rebuildCache" | "rotate";
+export type StorageReclaimEntryRequestDto = { key: string, action: StorageReclaimActionDto, };
+export type StorageReclaimEntryResultDto = { key: string, action: StorageReclaimActionDto, status: StorageReclaimStatusDto, removedCount: number, removedBytes: number, failedCount: number, 
+/**
+ * 执行时被判据排除（如刚好被引用），不计失败。
+ */
+skippedCount: number, 
+/**
+ * 只含失败原因，不含路径。
+ */
+errors: Array<StorageReclaimErrorDto>, };
+export type StorageReclaimErrorCodeDto = "permissionDenied" | "io" | "ownerUnavailable" | "policyDisabled" | "locked" | "unknown";
+export type StorageReclaimErrorDto = { code: StorageReclaimErrorCodeDto, message: string, };
+export type StorageReclaimPlanDto = { 
+/**
+ * 不透明，前端只回传不解析。
+ */
+planId: string, sampledAt: number, entries: Array<StorageReclaimPlanEntryDto>, 
+/**
+ * 任一 `eligible` 条目算不出则 `null`。
+ */
+totalReclaimableBytes: number | null, complete: boolean, };
+export type StorageReclaimPlanEntryDto = { key: string, action: StorageReclaimActionDto, eligibility: StorageEligibilityDto, reason: StorageReclaimReasonDto | null, 
+/**
+ * 不可回收为 `null`，不得填 0 冒充。
+ */
+expectedCount: number | null, expectedBytes: number | null, policy: ReclaimPolicyDto, 
+/**
+ * 非 `eligible` 恒 `none`；`eligible` 按条目风险档定档，与 `expectedBytes` 无关。
+ */
+confirmation: StorageConfirmLevelDto, };
+export type StorageReclaimPlanRequestDto = { entryKeys: Array<string>, };
+export type StorageReclaimReasonDto = "orphan" | "expired" | "overLimit" | "derivedCache" | "transient" | "referenced" | "userData" | "businessData" | "replayRisk" | "locked" | "noStats" | "noReclaimApi" | "externalOwner" | "policyDisabled" | "unknown";
+export type StorageReclaimRequestDto = { 
+/**
+ * 必须命中未过期计划。
+ */
+planId: string, 
+/**
+ * 非空；每项必须在该计划的条目集合内。
+ */
+entries: Array<StorageReclaimEntryRequestDto>, 
+/**
+ * 必须 `true`。
+ */
+confirmed: boolean, };
+export type StorageReclaimResultDto = { planId: string, executedAt: number, 
+/**
+ * 与请求顺序一致，不因单条失败中断。
+ */
+entries: Array<StorageReclaimEntryResultDto>, };
+export type StorageReclaimStatusDto = "done" | "partial" | "failed" | "skipped" | "notEligible";
 export type ThemeChangedPayloadDto = { resolved: ResolvedThemeDto, };
 export type ThemeModeDto = "system" | "light" | "dark";
 export type TokenUsageCacheDto = { hitTokens: number, denominatorTokens: number, 

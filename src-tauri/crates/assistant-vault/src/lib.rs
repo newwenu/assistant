@@ -10,6 +10,7 @@ pub mod plaintext_export;
 pub mod recovery_key;
 pub mod security_db;
 pub mod shared;
+pub mod storage_stats;
 pub mod sync_engine;
 pub mod types;
 pub mod vault_file;

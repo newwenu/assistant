@@ -4,8 +4,10 @@
 // 工具调用的输入路径与工作区边界由 `assistant-tools::os::path` 承担，不在此处。
 // 可选能力的目录名由该能力自身模块持有（`cmd/<feature>/`），本模块只提供 `data()` 基根。
 
-pub mod dir_name;
+pub(crate) mod dir_name;
 pub mod form;
+pub mod fs_stats;
+pub mod registry;
 mod roots;
 
 pub use form::strip_verbatim_prefix;

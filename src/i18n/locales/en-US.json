@@ -7,7 +7,7 @@
       "providers": { "title": "Provider Management" },
       "agents": { "title": "Agent Modes" },
       "mcp": { "title": "MCP Servers" },
-      "storage": { "title": "Storage Management" },
+      "storage": { "title": "Storage Manager" },
       "about": { "title": "About" },
       "vault": "Password Vault",
       "vault_settings": { "title": "Vault Settings" },
@@ -351,19 +351,238 @@
       "search_placeholder": "Search {{title}}"
     },
     "storage": {
-      "title": "Storage Management",
-      "summary": "{{count}} attachments, {{size}} total",
-      "orphan_group": "Unlinked Attachments",
-      "delete_selected": "Delete Selected",
-      "confirm_delete": {
-        "title": "Delete selected attachments?",
-        "content": "This action cannot be undone. Files will be permanently removed."
+      "title": "Storage Manager",
+      "toolbar": {
+        "refresh": "Refresh",
+        "sampled_at": "Sampled at {{time}}",
+        "byte_basis": "Basis: file length",
+        "refresh_failed": "Refresh failed; showing previous data"
       },
-      "deleted": "{{count}} attachments deleted ({{size}} freed)",
-      "empty": "No attachments",
-      "load_failed": "Failed to load storage data",
-      "refresh": "Refresh",
-      "size_warning": "Attachments are using significant disk space. Consider cleaning up to free space."
+      "common": {
+        "load_failed": "Failed to load storage data",
+        "retry": "Retry",
+        "bytes_unknown": "—",
+        "count_value": "{{count}} items",
+        "time_unknown": "Unknown"
+      },
+      "attachments": {
+        "title": "Attachments",
+        "hint": "Grouped by conversation; deletion removes only the selected files",
+        "delete_selected": "Delete selected ({{count}})",
+        "confirm_delete": {
+          "title": "Delete the selected attachments?",
+          "content": "This cannot be undone; the files are deleted permanently."
+        },
+        "deleted": "Removed {{count}} attachments, freed {{size}}",
+        "delete_failed": "Deletion failed; please retry",
+        "empty": "No attachments",
+        "size_warning": "Attachments take a lot of space; consider cleaning up",
+        "ledger": {
+          "total": "{{count}} attachments, {{size}}",
+          "shared": "{{size}} shared across conversations"
+        },
+        "orphan_group": "Attachments without a conversation"
+      },
+      "entries": {
+        "title": "Monitored entries",
+        "hint": "Entries are observed by their owners; reclaimable amounts come from the plan. Reclaim here is separate from attachment deletion above",
+        "provided_by": "Provided by {{owner}}",
+        "details": "Details",
+        "hide_details": "Hide",
+        "columns": {
+          "name": "Entry",
+          "size": "Size / count",
+          "availability": "Availability",
+          "eligibility": "Eligibility",
+          "policy": "Policy",
+          "action": "Action"
+        },
+        "names": {
+          "e1": "Attachments",
+          "e2": "Attachment derived cache",
+          "e3": "Tool results",
+          "e4": "Tool index cache",
+          "e5": "Mascot assets",
+          "e6": "Main database",
+          "e7": "Security database",
+          "e8": "Security backups",
+          "e9": "Vault",
+          "e10": "Recovery temp",
+          "e11": "Audit log",
+          "e12": "Runtime logs",
+          "e13": "Crash reports"
+        },
+        "domains": {
+          "attachments": "Attachments",
+          "tools": "Tools",
+          "mascot": "Mascot",
+          "database": "Database",
+          "security": "Security",
+          "diagnostics": "Logs & diagnostics",
+          "other": "Other"
+        },
+        "availability": {
+          "available": "Available",
+          "missing": "Not present",
+          "locked": "Locked",
+          "unreadable": "Unreadable",
+          "unavailable": "Unavailable",
+          "notImplemented": "Not implemented",
+          "noReportYet": "No data yet",
+          "staleReport": "Stale data"
+        },
+        "eligibility": {
+          "eligible": "Reclaimable",
+          "notEligible": "Not reclaimable",
+          "locked": "Locked",
+          "ownerManaged": "Owner managed",
+          "notImplemented": "Not implemented"
+        },
+        "reason": {
+          "orphan": "Outside the reference set",
+          "expired": "Older than retention",
+          "overLimit": "Over the count limit",
+          "derivedCache": "Rebuildable cache",
+          "transient": "Transient artifact",
+          "referenced": "Still referenced",
+          "userData": "User data",
+          "businessData": "Business data",
+          "replayRisk": "Deleting breaks historical replay",
+          "locked": "Protected",
+          "noStats": "No stats entry point",
+          "noReclaimApi": "No reclaim API",
+          "externalOwner": "Managed by an external owner",
+          "policyDisabled": "Retention policy disabled",
+          "unknown": "Criteria unavailable"
+        },
+        "action": {
+          "none": "No reclaim action",
+          "deleteOrphans": "Delete orphans",
+          "deleteSelected": "Delete selected",
+          "sweepExpired": "Sweep expired",
+          "pruneToLimit": "Prune to limit",
+          "rebuildCache": "Rebuild cache",
+          "rotate": "Auto rotate"
+        },
+        "policy": {
+          "source": {
+            "config": "Config policy",
+            "constant": "Constant policy",
+            "owner": "Owner managed",
+            "none": "No policy"
+          },
+          "retention": "Retain {{days}} days",
+          "retention_disabled": "Retention disabled",
+          "keep_count": "Keep {{count}}",
+          "max_bytes": "Entry cap {{size}}",
+          "auto_active": "Auto-run active"
+        },
+        "facts": {
+          "layer": "Layer",
+          "oldest": "Oldest {{time}}",
+          "newest": "Newest {{time}}",
+          "reclaimable": "Reclaimable {{count}} items / {{size}}",
+          "effective_since": "Effective since {{time}}",
+          "mutable": "Mutable",
+          "fail_closed": "Fail-closed",
+          "includes_derived": "Includes derived cache",
+          "counts_self_logs": "Counts own-process logs",
+          "availability_reason": "Availability reason",
+          "note": "Note"
+        },
+        "layer": {
+          "data": "Data directory",
+          "local": "Local directory"
+        },
+        "reclaim_button": "Reclaim"
+      },
+      "reclaim": {
+        "planning": "Preparing plan…",
+        "executing": "Reclaiming…",
+        "ok": "Reclaim",
+        "cancel": "Cancel",
+        "dialog": {
+          "title": "Reclaim \"{{entry}}\"?",
+          "body": "Action: {{action}}; about {{count}} items, {{size}}.",
+          "key_hint": "Entry key: {{key}}",
+          "irreversible": "This cannot be undone."
+        },
+        "strong": {
+          "title": "Reclaim high-risk entry \"{{entry}}\"?",
+          "body": "Action: {{action}}; about {{count}} items, {{size}}. Type the entry key \"{{key}}\" to confirm.",
+          "placeholder": "Type {{key}}",
+          "mismatch": "Input does not match; reclaim is blocked"
+        },
+        "error": {
+          "busy": "Another reclaim is running; please retry later",
+          "plan_expired": "The plan expired; please retry",
+          "plan_not_found": "The plan was not found; please retry",
+          "not_allowed": "This entry cannot be reclaimed now",
+          "confirmation_required": "Confirmation is required",
+          "plan_failed": "Failed to prepare the plan; please retry",
+          "execute_failed": "Reclaim failed: {{error}}"
+        },
+        "error_code": {
+          "permissionDenied": "Permission denied",
+          "io": "I/O error",
+          "ownerUnavailable": "Owner unavailable",
+          "policyDisabled": "Retention policy disabled",
+          "locked": "Busy or locked",
+          "unknown": "Unknown reason"
+        },
+        "result": {
+          "done": "Reclaimed {{count}} items, freed {{size}}",
+          "partial": "Partially done: removed {{count}} items, freed {{size}}, {{failed}} failed",
+          "failed": "Reclaim failed",
+          "skipped": "Nothing to reclaim (possibly just referenced)"
+        }
+      },
+      "residual": {
+        "title": "Reconciliation residual",
+        "read_only": "Read-only",
+        "hint": "Parts of managed roots not registered by any entry; excluded from all totals",
+        "scan": "Scan",
+        "scanning": "Scanning",
+        "rescan": "Rescan",
+        "retry_scan": "Retry scan",
+        "status": {
+          "neverRun": "Not scanned yet",
+          "running": "Scanning",
+          "fresh": "Last scanned: {{time}}",
+          "stale": "Last scanned: {{time}} (may be stale)",
+          "failed": "Scan failed: {{time}}"
+        },
+        "notice": {
+          "failed_keep_last": "Scan failed; numbers below are from the last successful scan",
+          "partial": "The bounded scan is incomplete; numbers below are lower bounds",
+          "truncated_more": "{{count}} more uncovered nodes",
+          "over_registered": "Registered bytes exceed on-disk bytes; the two measurements disagree",
+          "empty": "No residual nodes to show",
+          "scan_failed": "Failed to start the scan: {{error}}"
+        },
+        "columns": {
+          "name": "Name",
+          "class": "Class",
+          "scope": "Scope",
+          "scan": "Scanned",
+          "declared": "Registered",
+          "residual": "Residual"
+        },
+        "class": {
+          "declared": "Registered",
+          "optionalNotMounted": "Optional capability not mounted",
+          "companion": "Companion files",
+          "ignored": "Known ignored",
+          "unregistered": "Unregistered"
+        },
+        "totals": {
+          "unregistered": "Unregistered total: {{count}} items, {{size}}",
+          "hint": "Not included in any page total"
+        },
+        "children": {
+          "more": "{{count}} more not shown"
+        }
+      }
     },
     "agent_mode": {
       "title": "Agent Mode Management",

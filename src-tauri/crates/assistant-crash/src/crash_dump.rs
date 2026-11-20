@@ -12,6 +12,63 @@ fn timestamp_str() -> String {
         .unwrap_or_else(|| format!("{}", millis))
 }
 
+/// 诊断产物目录的观测快照（I61 §3.10）：条目与账本共用同一口径。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct DirStats {
+    pub bytes: u64,
+    pub count: u64,
+    /// 文件 `mtime` 最早 / 最晚时刻（秒）；无文件时为 `None`，不是 `0`。
+    pub oldest_at: Option<i64>,
+    pub newest_at: Option<i64>,
+}
+
+/// 只读扫描诊断产物目录：只认常规文件，跳过符号链接与非常规文件（不降级）。
+pub fn dump_stats(dir: &Path) -> std::io::Result<DirStats> {
+    let mut stats = DirStats::default();
+    walk_stats(dir, &mut stats)?;
+    Ok(stats)
+}
+
+fn walk_stats(dir: &Path, stats: &mut DirStats) -> std::io::Result<()> {
+    let entries = match fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(traversal_error(dir, error)),
+    };
+    for entry in entries {
+        let entry = entry.map_err(|error| traversal_error(dir, error))?;
+        let path = entry.path();
+        let meta = fs::symlink_metadata(&path).map_err(|error| traversal_error(&path, error))?;
+        if meta.file_type().is_symlink() {
+            continue;
+        }
+        if meta.is_dir() {
+            walk_stats(&path, stats)?;
+            continue;
+        }
+        if !meta.is_file() {
+            continue;
+        }
+        stats.bytes = stats.bytes.saturating_add(meta.len());
+        stats.count = stats.count.saturating_add(1);
+        if let Ok(modified) = meta.modified() {
+            if let Ok(since_epoch) = modified.duration_since(UNIX_EPOCH) {
+                let seconds = i64::try_from(since_epoch.as_secs()).unwrap_or(i64::MAX);
+                stats.oldest_at = Some(stats.oldest_at.map_or(seconds, |cur| cur.min(seconds)));
+                stats.newest_at = Some(stats.newest_at.map_or(seconds, |cur| cur.max(seconds)));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn traversal_error(path: &Path, error: std::io::Error) -> std::io::Error {
+    std::io::Error::new(
+        error.kind(),
+        format!("scan '{}' failed: {}", path.display(), error),
+    )
+}
+
 /// 目录由调用方（应用层）解析后传入：本 crate 不算基根、不读 `dirs`。
 ///
 /// 准备失败时退化为 `None`（仅 stderr），不回落当前目录、不写 cwd。

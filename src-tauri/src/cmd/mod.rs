@@ -15,7 +15,7 @@ mod os_tool_exec;
 mod permission;
 mod provider;
 mod screenshot;
-mod storage;
+pub mod storage;
 mod token_usage_record;
 mod tool;
 #[cfg(feature = "vault")]
@@ -69,15 +69,25 @@ pub(crate) fn conf_side_effects() -> Vec<(&'static str, ConfApplier)> {
     registry.clone()
 }
 
-pub(crate) fn get_db_conn<'a>(
-    state: &'a tauri::State<'a, crate::setup::DbState>,
+/// 取连接锁的唯一实现：`error.db_lock` 文案只在这里写一份。
+///
+/// 命令层经 [`get_db_conn`] 转调，`cmd::storage::reclaim` 的纯函数直接传 `&Mutex<Connection>`，
+/// 两处不得各写一份文案。
+pub(crate) fn lock_conn<'a>(
+    conn: &'a std::sync::Mutex<rusqlite::Connection>,
 ) -> Result<std::sync::MutexGuard<'a, rusqlite::Connection>, String> {
-    state.0.lock().map_err(|e| {
+    conn.lock().map_err(|e| {
         let err_str = e.to_string();
         let mut args = std::collections::HashMap::new();
         args.insert("error", err_str.as_str());
         assistant_i18n::t_with_args("error.db_lock", &args)
     })
+}
+
+pub(crate) fn get_db_conn<'a>(
+    state: &'a tauri::State<'a, crate::setup::DbState>,
+) -> Result<std::sync::MutexGuard<'a, rusqlite::Connection>, String> {
+    lock_conn(&state.0)
 }
 
 pub(crate) fn translate_storage_error(e: assistant_storage::error::StorageError) -> String {

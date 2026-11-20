@@ -4,6 +4,11 @@ use tauri_plugin_log::{RotationStrategy, Target, TargetKind, TimezoneStrategy};
 
 pub fn attach(mut builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
     builder = builder
+        // 可选能力 provider 的通用槽在 `Builder` 阶段建好：插件 `setup` 早于 app `setup`，
+        // provider 注册时槽必须已存在（G18(b)）。关闭特性时槽仍存在、只是没人注册。
+        .manage(std::sync::Arc::new(
+            crate::cmd::storage::probe::ProbeRegistry::new(),
+        ))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())

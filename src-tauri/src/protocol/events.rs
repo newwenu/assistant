@@ -23,6 +23,8 @@ pub mod event_name {
     pub const SCREENSHOT_SESSION: &str = "screenshot-session";
     pub const SCREENSHOT_PREPARING: &str = "screenshot-preparing";
     pub const SCREENSHOT_ERROR: &str = "screenshot-error";
+    /// 对账余量快照更新（I61 §3.11.4）：只通知「可重拉」，不携带数字。
+    pub const STORAGE_INVENTORY_UPDATED: &str = "storage:inventory-updated";
 }
 
 pub fn emit_broadcast(app: &tauri::AppHandle, event: &str, payload: impl serde::Serialize + Clone) {

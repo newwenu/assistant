@@ -1,12 +1,12 @@
 use std::path::Path;
 
 use assistant_tools::storage::{
-    cleanup_expired_results, persisted_reference, persisted_reference_from_tail,
-    select_persist_targets, session_namespace, CleanupReport, FileToolResultStorage,
-    InMemoryReadReceiptStore, OutputStream, PersistToolResult, ReadReceipt, ReadReceiptKey,
-    ReadReceiptStore, ToolResultStorage, MAX_SPILL_BYTES, PER_ROUND_LIMIT_CHARS,
-    PER_TOOL_LIMIT_CHARS, PREVIEW_CHARS, PREVIEW_HEAD_CHARS, PREVIEW_TAIL_CHARS,
-    SPILL_TRUNCATED_MARKER, STDERR_RING_CHARS,
+    cleanup_expired_results, collect_expired, delete_candidates, persisted_reference,
+    persisted_reference_from_tail, result_stats, select_persist_targets, session_namespace,
+    CleanupReport, FileToolResultStorage, InMemoryReadReceiptStore, OutputStream,
+    PersistToolResult, ReadReceipt, ReadReceiptKey, ReadReceiptStore, ToolResultStorage,
+    MAX_SPILL_BYTES, PER_ROUND_LIMIT_CHARS, PER_TOOL_LIMIT_CHARS, PREVIEW_CHARS,
+    PREVIEW_HEAD_CHARS, PREVIEW_TAIL_CHARS, SPILL_TRUNCATED_MARKER, STDERR_RING_CHARS,
 };
 
 #[test]
@@ -553,6 +553,202 @@ fn cleanup_skips_missing_root_silently() {
 
     // 目录不存在 = 从未落盘过结果，属正常空态：既不算删除也不算失败。
     assert_eq!(report, CleanupReport::default());
+}
+
+#[test]
+fn result_stats_shares_the_cleanup_scope() {
+    let dir = tempfile::tempdir().unwrap();
+    let expired = dir.path().join("old.txt");
+    let fresh = dir.path().join("new.txt");
+    write_file(&expired, "old");
+    write_file(&fresh, "new");
+    set_mtime_days_ago(&expired, 40);
+
+    let before = result_stats(dir.path()).unwrap();
+    assert_eq!(before.count, 2, "统计覆盖整个受管目录");
+    assert_eq!(before.bytes, 6, "按文件长度求和");
+    assert!(before.oldest_at.is_some());
+
+    let report = cleanup_expired_results(dir.path(), 30);
+    assert_eq!(report.removed, 1);
+
+    let after = result_stats(dir.path()).unwrap();
+    assert_eq!(after.count, 1, "清理后只剩未过期文件");
+    assert_eq!(after.bytes, 3, "统计与清理共用同一遍历口径");
+}
+
+#[test]
+fn result_stats_ignores_companion_files() {
+    let dir = tempfile::tempdir().unwrap();
+    write_file(&dir.path().join("a.txt"), "12");
+    write_file(&dir.path().join("a.txt.tmp"), "partial");
+
+    let stats = result_stats(dir.path()).unwrap();
+    assert_eq!(stats.count, 1, "伴生 .tmp 不计入条数");
+    assert_eq!(stats.bytes, 2, "伴生 .tmp 不计入字节");
+}
+
+#[test]
+fn retention_is_injected_once_and_survives_disabled_policy() {
+    let dir = tempfile::tempdir().unwrap();
+    let storage = FileToolResultStorage::new(dir.path()).with_retention(0, 1_700_000_000);
+
+    assert_eq!(
+        storage.result_retention(),
+        (0, 1_700_000_000),
+        "注入值原样自述，0 表示禁用"
+    );
+    assert_eq!(
+        ToolResultStorage::result_retention(&storage),
+        Some((0, 1_700_000_000)),
+        "trait 侧同样给出注入值"
+    );
+    assert!(
+        ToolResultStorage::result_stats(&storage)
+            .expect("文件实现必须提供 stats")
+            .is_ok(),
+        "策略禁用不影响观测：stats 仍可出数"
+    );
+}
+
+fn relative_to(root: &Path, path: &Path) -> String {
+    path.strip_prefix(root)
+        .unwrap_or(path)
+        .to_string_lossy()
+        .replace('\\', "/")
+}
+
+/// 三份过期文件（根目录 / 命名空间子目录 / 伴生 `.tmp`）+ 一份未过期文件。
+fn expired_layout(root: &Path) {
+    let namespace = root.join(session_namespace(Some("s1")));
+    std::fs::create_dir_all(&namespace).unwrap();
+    write_file(&root.join("old.txt"), "old");
+    write_file(&namespace.join("nested.txt"), "nested");
+    write_file(&root.join("partial.txt.tmp"), "partial");
+    write_file(&root.join("new.txt"), "new");
+    set_mtime_days_ago(&root.join("old.txt"), 40);
+    set_mtime_days_ago(&namespace.join("nested.txt"), 45);
+    set_mtime_days_ago(&root.join("partial.txt.tmp"), 50);
+}
+
+#[test]
+fn collect_expired_candidates_match_cleanup_one_by_one() {
+    let collect_root = tempfile::tempdir().unwrap();
+    let sweep_root = tempfile::tempdir().unwrap();
+    expired_layout(collect_root.path());
+    expired_layout(sweep_root.path());
+
+    let candidates = collect_expired(collect_root.path(), 30);
+    let mut candidate_names: Vec<String> = candidates
+        .iter()
+        .map(|candidate| relative_to(collect_root.path(), &candidate.path))
+        .collect();
+    candidate_names.sort();
+    assert_eq!(
+        candidate_names.len(),
+        3,
+        "过期文件 + 命名空间内文件 + 伴生 .tmp"
+    );
+    assert!(
+        !candidate_names.iter().any(|name| name == "new.txt"),
+        "未过期文件不得进候选"
+    );
+
+    let expected_bytes = 3 + 6 + 7;
+    let collected_bytes: u64 = candidates.iter().map(|candidate| candidate.bytes).sum();
+    assert_eq!(
+        collected_bytes, expected_bytes,
+        "候选字节取收集时刻的 metadata.len()"
+    );
+
+    // 同一份布局交给启动清理：删掉的必须与候选逐条一致。
+    let report = cleanup_expired_results(sweep_root.path(), 30);
+    assert_eq!(
+        report.removed,
+        candidates.len(),
+        "启动清理与候选收集删同一批"
+    );
+    assert_eq!(report.failed, 0);
+    for name in &candidate_names {
+        assert!(
+            !sweep_root.path().join(name).exists(),
+            "启动清理应删掉候选 {}",
+            name
+        );
+    }
+    assert!(sweep_root.path().join("new.txt").exists());
+
+    // 候选执行侧：条数 / 字节与收集时刻一致，重复执行只计 skipped。
+    let deleted = delete_candidates(&candidates);
+    assert_eq!(deleted.removed, candidates.len() as u64);
+    assert_eq!(deleted.removed_bytes, expected_bytes);
+    assert_eq!(deleted.failed, 0);
+    assert_eq!(deleted.skipped, 0);
+
+    let again = delete_candidates(&candidates);
+    assert_eq!(again.removed, 0, "已删过的候选不得再计成功");
+    assert_eq!(
+        again.skipped,
+        candidates.len() as u64,
+        "文件已不存在属判据排除"
+    );
+    assert_eq!(again.failed, 0, "不存在不是失败");
+}
+
+#[test]
+fn storage_trait_candidates_match_the_free_functions() {
+    let dir = tempfile::tempdir().unwrap();
+    expired_layout(dir.path());
+    let storage = FileToolResultStorage::new(dir.path()).with_retention(30, 1_700_000_000);
+
+    let candidates = ToolResultStorage::collect_expired(&storage).expect("文件实现必须提供候选");
+    assert_eq!(candidates, collect_expired(dir.path(), 30));
+
+    let report = ToolResultStorage::delete_candidates(&storage, &candidates)
+        .expect("文件实现必须提供候选删除");
+    assert_eq!(report.removed, candidates.len() as u64);
+    assert_eq!(report.removed_bytes, 3 + 6 + 7);
+    assert_eq!(report.failed, 0);
+}
+
+#[test]
+fn future_mtime_is_not_an_expired_candidate() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("future.txt");
+    write_file(&path, "future");
+    let future = std::time::SystemTime::now() + std::time::Duration::from_secs(5 * 86_400);
+    let file = std::fs::File::options().write(true).open(&path).unwrap();
+    file.set_modified(future).unwrap();
+    drop(file);
+
+    assert!(
+        collect_expired(dir.path(), 30).is_empty(),
+        "mtime 落在未来一律判未过期（fail-closed）"
+    );
+    assert_eq!(
+        cleanup_expired_results(dir.path(), 30),
+        CleanupReport::default()
+    );
+    assert!(path.exists());
+    assert_eq!(
+        result_stats(dir.path()).unwrap().count,
+        1,
+        "观测口径不受年龄判据影响"
+    );
+}
+
+#[test]
+fn collect_expired_is_empty_when_retention_is_zero() {
+    let dir = tempfile::tempdir().unwrap();
+    let expired = dir.path().join("old.txt");
+    write_file(&expired, "old");
+    set_mtime_days_ago(&expired, 400);
+
+    assert!(
+        collect_expired(dir.path(), 0).is_empty(),
+        "策略禁用时不得产生任何候选"
+    );
+    assert!(expired.exists());
 }
 
 #[cfg(unix)]

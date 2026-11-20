@@ -232,6 +232,12 @@ impl PipelineToolExecution {
         &self.waits
     }
 
+    /// 落盘存储的只读句柄（I61 §3.10，条目 `E3`）：存储管理器据此取 `result_stats` /
+    /// `result_retention`，不另建第二套实例，也不自行拼路径。
+    pub fn storage(&self) -> &Arc<dyn assistant_tools::ToolResultStorage> {
+        self.pipeline.storage()
+    }
+
     /// 结果映射按规格 §4.5 的字段表逐项搬运；等待时长取出后即从注册表移除，
     /// 避免跨迭代无界增长。
     fn exec_result(&self, outcome: ToolOutcome) -> ToolExecResult {

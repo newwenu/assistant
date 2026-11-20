@@ -85,6 +85,22 @@ pub(crate) fn cleanup_recovery_dir(security_root: &std::path::Path) -> std::io::
     Ok(())
 }
 
+/// `E9`：本机仓库观测（递归整棵子树，只读）。
+///
+/// 只给 provider 用：锁定判定（`locked`）由 provider 做，这里不读也不解锁会话。
+pub(crate) fn repo_stats(
+    dirs: &AppDirs,
+) -> std::io::Result<assistant_vault::storage_stats::DirStats> {
+    assistant_vault::storage_stats::tree_stats(&repo_dir(dirs))
+}
+
+/// `E10`：纸面恢复副本观测（`<security>/recovery/`，正常态为空）。
+pub(crate) fn recovery_stats(
+    dirs: &AppDirs,
+) -> std::io::Result<assistant_vault::storage_stats::DirStats> {
+    assistant_vault::storage_stats::tree_stats(&recovery_dir(dirs))
+}
+
 pub(crate) const REVEAL_TTL_SECS: u64 = 30;
 
 pub struct SshAgentState {

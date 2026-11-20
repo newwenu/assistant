@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
@@ -82,19 +82,95 @@ pub trait ToolResultStorage: Send + Sync {
     fn namespace_root(&self, _session_id: Option<&str>) -> Option<PathBuf> {
         None
     }
+
+    /// 条目观测（I61 §3.10）：`None` = 本存储不参与存储管理条目。
+    ///
+    /// 返回 `Err` 表示遍历失败（管理器降级为 `unreadable`），目录不存在属正常空态。
+    fn result_stats(&self) -> Option<std::io::Result<DirStats>> {
+        None
+    }
+
+    /// 条目保留策略：`(天数, 生效时刻秒)`；`None` = 策略未注入（`policy` 两数字填 `null`）。
+    fn result_retention(&self) -> Option<(u32, i64)> {
+        None
+    }
+
+    /// `E3` 的 `A3` 候选收集（T3）：`None` = 本存储不提供带字节的收集入口。
+    ///
+    /// 同步方法：判据只有 `mtime` 与文件类型，不需要异步 IO；管理器在
+    /// `spawn_blocking` 里调用，采样与执行可以共用同一次实现（§3.10 接口形状 1）。
+    /// 字节必须在**收集时**取一次：删除后再取长度是取不到的。
+    fn collect_expired(&self) -> Option<Vec<ExpiredCandidate>> {
+        None
+    }
+
+    /// `E3` 的 `A3` 执行（T3）：逐个删除候选并累加字节；`None` = 不提供。
+    ///
+    /// 必须与 [`Self::collect_expired`] 的判据同源，且「文件已不存在」不算失败（§5.1 第 3 条）。
+    fn delete_candidates(&self, _candidates: &[ExpiredCandidate]) -> Option<DeleteReport> {
+        None
+    }
+}
+
+/// `E3` 的回收候选：路径 + 收集时的字节。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExpiredCandidate {
+    pub path: PathBuf,
+    pub bytes: u64,
+}
+
+/// 候选删除结果：成功条数 / 成功字节 / 失败条数 / 已不存在条数。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct DeleteReport {
+    pub removed: u64,
+    pub removed_bytes: u64,
+    pub failed: u64,
+    /// 执行时文件已不存在（并发清理或用户手删）：不算失败，也不计入删除量（§5.1 第 3 条）。
+    pub skipped: u64,
 }
 
 pub struct FileToolResultStorage {
     root: PathBuf,
+    /// 清理保留天数（`0` = 不清理）；由 app 层从配置注入，本类型不读配置。
+    retention_days: AtomicU32,
+    /// 策略生效时刻（秒）：注入时取一次，条目 `policy.effective_since` 用它。
+    effective_since: i64,
 }
 
 impl FileToolResultStorage {
     pub fn new(root: impl Into<PathBuf>) -> Self {
-        Self { root: root.into() }
+        Self {
+            root: root.into(),
+            retention_days: AtomicU32::new(0),
+            effective_since: now_seconds(),
+        }
+    }
+
+    /// 注入保留策略；`0` 表示不清理（与 [`cleanup_expired_results`] 口径一致）。
+    ///
+    /// `effective_since` 由 app 层在同一处配置读取点取一次并同时喂给启动清理，
+    /// 两处各自取 `now` 会让条目策略与真实清理截止时刻对不上（I61 §3.3）。
+    pub fn with_retention(mut self, retention_days: u32, effective_since: i64) -> Self {
+        self.retention_days.store(retention_days, Ordering::SeqCst);
+        self.effective_since = effective_since;
+        self
     }
 
     pub fn root(&self) -> &Path {
         &self.root
+    }
+
+    /// 条目观测：与 [`cleanup_expired_results`] 共用 [`for_each_file`]，口径不会漂移。
+    pub fn result_stats(&self) -> std::io::Result<DirStats> {
+        result_stats(&self.root)
+    }
+
+    /// 条目保留策略：`(天数, 生效时刻秒)`。
+    pub fn result_retention(&self) -> (u32, i64) {
+        (
+            self.retention_days.load(Ordering::SeqCst),
+            self.effective_since,
+        )
     }
 
     fn result_path(&self, req: &PersistToolResult) -> Result<PathBuf, String> {
@@ -150,6 +226,28 @@ impl ToolResultStorage for FileToolResultStorage {
 
     fn namespace_root(&self, session_id: Option<&str>) -> Option<PathBuf> {
         Some(self.root.join(session_namespace(session_id)))
+    }
+
+    fn result_stats(&self) -> Option<std::io::Result<DirStats>> {
+        Some(result_stats(&self.root))
+    }
+
+    fn result_retention(&self) -> Option<(u32, i64)> {
+        Some((
+            self.retention_days.load(Ordering::SeqCst),
+            self.effective_since,
+        ))
+    }
+
+    fn collect_expired(&self) -> Option<Vec<ExpiredCandidate>> {
+        Some(collect_expired(
+            &self.root,
+            self.retention_days.load(Ordering::SeqCst),
+        ))
+    }
+
+    fn delete_candidates(&self, candidates: &[ExpiredCandidate]) -> Option<DeleteReport> {
+        Some(delete_candidates(candidates))
     }
 }
 
@@ -227,24 +325,171 @@ pub fn cleanup_expired_results(root: &Path, retention_days: u32) -> CleanupRepor
     report
 }
 
-fn retention_cutoff(retention_days: u32) -> Option<SystemTime> {
-    let span = Duration::from_secs(u64::from(retention_days).saturating_mul(86_400));
-    SystemTime::now().checked_sub(span)
+/// `E3` 的候选收集：与 [`cleanup_expired_results`] 同一判据、同一遍历，额外带字节。
+///
+/// `retention_days == 0` 时返回空集（策略禁用，不产生任何候选）；字节取收集时刻的
+/// `metadata.len()`，执行时不再重算（删完就取不到）。
+pub fn collect_expired(root: &Path, retention_days: u32) -> Vec<ExpiredCandidate> {
+    if retention_days == 0 {
+        return Vec::new();
+    }
+    let Some(cutoff) = retention_cutoff(retention_days) else {
+        return Vec::new();
+    };
+    let mut candidates = Vec::new();
+    for_each_file(
+        root,
+        &mut |path, meta| {
+            if is_expired(meta, cutoff) {
+                candidates.push(ExpiredCandidate {
+                    path: path.to_path_buf(),
+                    bytes: meta.len(),
+                });
+            }
+        },
+        &mut |_path, _error| {},
+    );
+    candidates
 }
 
-fn sweep_directory(dir: &Path, cutoff: SystemTime, report: &mut CleanupReport) {
+/// `E3` 的候选删除：逐条删除并累加收集时的字节。
+///
+/// 「文件已不存在」计入 `skipped`（并发启动清理 / 用户手删），不算失败；
+/// 其余错误只计数不抛出，单条失败不影响其余候选（§5.1 第 2、3 条）。
+pub fn delete_candidates(candidates: &[ExpiredCandidate]) -> DeleteReport {
+    let mut report = DeleteReport::default();
+    for candidate in candidates {
+        match std::fs::remove_file(&candidate.path) {
+            Ok(()) => {
+                report.removed = report.removed.saturating_add(1);
+                report.removed_bytes = report.removed_bytes.saturating_add(candidate.bytes);
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                report.skipped = report.skipped.saturating_add(1);
+            }
+            Err(error) => {
+                log::warn!("reclaim tool results: remove candidate failed: {}", error);
+                report.failed = report.failed.saturating_add(1);
+            }
+        }
+    }
+    report
+}
+
+/// 过期判据（唯一来源）：`mtime` 严格早于截止时刻。
+///
+/// `mtime` 取不到或落在未来都判「未过期」（fail-closed，§5.5）：宁可少删，
+/// 不因时钟回拨 / 文件系统精度问题误删刚写入的结果。
+fn is_expired(meta: &std::fs::Metadata, cutoff: SystemTime) -> bool {
+    meta.modified().map(|mtime| mtime < cutoff).unwrap_or(false)
+}
+
+/// 受管目录的观测快照（I61 §3.10）：条目与清理共用同一口径。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct DirStats {
+    pub bytes: u64,
+    pub count: u64,
+    /// 目录内文件 `mtime` 最早 / 最晚时刻（秒）；无文件时两端为 `None`，不是 `0`。
+    pub oldest_at: Option<i64>,
+    pub newest_at: Option<i64>,
+}
+
+/// 与 [`cleanup_expired_results`] 同一套遍历规则（递归 / 跳符号链接 / 跳非常规文件），
+/// 但不按年龄过滤：统计的是整个条目当前占用。
+pub fn result_stats(root: &Path) -> std::io::Result<DirStats> {
+    dir_tree_stats(root)
+}
+
+/// 整棵子树的只读统计：crate 内所有「受管目录条目」共用同一份遍历实现。
+///
+/// 任何调用方自己写 `read_dir` 循环都会让统计口径与回收口径漂移（I61 G4），
+/// 因此这里只留一个入口，外部只能经由它拿数字。
+pub(crate) fn dir_tree_stats(root: &Path) -> std::io::Result<DirStats> {
+    let mut stats = DirStats::default();
+    let mut first_error: Option<std::io::Error> = None;
+    for_each_file(
+        root,
+        &mut |path, meta| {
+            if !is_companion_file(path) {
+                accumulate_stats(&mut stats, meta);
+            }
+        },
+        &mut |path, error| {
+            if first_error.is_none() {
+                first_error = Some(traversal_error(path, error));
+            }
+        },
+    );
+    match first_error {
+        Some(error) => Err(error),
+        None => Ok(stats),
+    }
+}
+
+/// 按后缀批量删除的计数：成功条数 / 成功字节 / 失败条数 / 判据排除条数 / 目录读失败数。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct PurgeReport {
+    pub removed: u64,
+    pub removed_bytes: u64,
+    pub failed: u64,
+    pub skipped: u64,
+    /// 遍历时读目录失败（权限 / 文件正在替换）：一个候选都没处理成功时据此判 `failed`。
+    pub read_failures: u64,
+}
+
+/// 受管目录的「按后缀批量删除」：与 [`dir_tree_stats`] 共用 [`for_each_file`]。
+///
+/// 只删 `suffix` 命中的常规文件（大小写不敏感）；符号链接 / 非常规文件 / 子目录不参与，
+/// 因此「统计多少」与「能删多少」不会各说一套（I61 G4）。目录不存在是正常空态，
+/// 单条删除失败只计数、不中断。
+pub(crate) fn purge_tree_files(root: &Path, suffix: &str) -> PurgeReport {
+    let suffix = suffix.to_ascii_lowercase();
+    let mut report = PurgeReport::default();
+    for_each_file(
+        root,
+        &mut |path, meta| {
+            let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+                report.skipped = report.skipped.saturating_add(1);
+                return;
+            };
+            if !name.to_ascii_lowercase().ends_with(&suffix) {
+                return;
+            }
+            match std::fs::remove_file(path) {
+                Ok(()) => {
+                    report.removed = report.removed.saturating_add(1);
+                    report.removed_bytes = report.removed_bytes.saturating_add(meta.len());
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    report.skipped = report.skipped.saturating_add(1);
+                }
+                Err(_) => report.failed = report.failed.saturating_add(1),
+            }
+        },
+        &mut |_path, _error| {
+            report.read_failures = report.read_failures.saturating_add(1);
+        },
+    );
+    report
+}
+
+/// 受管目录的统一遍历：递归、跳符号链接、跳非常规文件。
+///
+/// 清理与统计必须共用本函数：任何一处自己写 `read_dir` 循环，
+/// 「统计多少」与「能删多少」就会漂移（I61 G4）。
+///
+/// 目录不存在是正常空态（按需创建），静默返回；其余失败交给 `on_error`，
+/// 由调用方决定是记日志还是向上返回——本函数本身永不中断遍历。
+fn for_each_file(
+    dir: &Path,
+    on_file: &mut dyn FnMut(&Path, &std::fs::Metadata),
+    on_error: &mut dyn FnMut(&Path, &std::io::Error),
+) {
     let entries = match std::fs::read_dir(dir) {
         Ok(entries) => entries,
-        // 目录不存在是正常空态（落盘目录按需创建，从未落盘过结果时压根没有），
-        // 不是失败：不告警、不计数，避免每次启动都刷一条无意义的 WARN。
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return,
         Err(error) => {
-            log::warn!(
-                "cleanup tool results: read dir '{}' failed: {}",
-                dir.display(),
-                error
-            );
-            report.failed += 1;
+            on_error(dir, &error);
             return;
         }
     };
@@ -252,12 +497,7 @@ fn sweep_directory(dir: &Path, cutoff: SystemTime, report: &mut CleanupReport) {
         let entry = match entry {
             Ok(entry) => entry,
             Err(error) => {
-                log::warn!(
-                    "cleanup tool results: bad entry in '{}': {}",
-                    dir.display(),
-                    error
-                );
-                report.failed += 1;
+                on_error(dir, &error);
                 continue;
             }
         };
@@ -266,12 +506,7 @@ fn sweep_directory(dir: &Path, cutoff: SystemTime, report: &mut CleanupReport) {
         let meta = match std::fs::symlink_metadata(&path) {
             Ok(meta) => meta,
             Err(error) => {
-                log::warn!(
-                    "cleanup tool results: stat '{}' failed: {}",
-                    path.display(),
-                    error
-                );
-                report.failed += 1;
+                on_error(&path, &error);
                 continue;
             }
         };
@@ -279,28 +514,95 @@ fn sweep_directory(dir: &Path, cutoff: SystemTime, report: &mut CleanupReport) {
             continue;
         }
         if meta.is_dir() {
-            sweep_directory(&path, cutoff, report);
+            for_each_file(&path, on_file, on_error);
             continue;
         }
         if !meta.is_file() {
             continue;
         }
-        let expired = meta.modified().map(|mtime| mtime < cutoff).unwrap_or(false);
-        if !expired {
-            continue;
-        }
-        match std::fs::remove_file(&path) {
-            Ok(()) => report.removed += 1,
-            Err(error) => {
-                log::warn!(
-                    "cleanup tool results: remove '{}' failed: {}",
-                    path.display(),
-                    error
-                );
-                report.failed += 1;
-            }
+        on_file(&path, &meta);
+    }
+}
+
+/// 伴生文件（SQLite 边车 / 部分写入残留）不计入统计；清理仍会遍历到它们（§3.9）。
+const COMPANION_SUFFIXES: &[&str] = &["-journal", "-wal", "-shm", ".tmp", ".lock"];
+
+fn is_companion_file(path: &Path) -> bool {
+    let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+        return false;
+    };
+    let name = name.to_ascii_lowercase();
+    COMPANION_SUFFIXES
+        .iter()
+        .any(|suffix| name.ends_with(suffix))
+}
+
+fn accumulate_stats(stats: &mut DirStats, meta: &std::fs::Metadata) {
+    stats.bytes = stats.bytes.saturating_add(meta.len());
+    stats.count = stats.count.saturating_add(1);
+    if let Ok(modified) = meta.modified() {
+        if let Ok(since_epoch) = modified.duration_since(UNIX_EPOCH) {
+            let seconds = i64::try_from(since_epoch.as_secs()).unwrap_or(i64::MAX);
+            stats.oldest_at = Some(stats.oldest_at.map_or(seconds, |cur| cur.min(seconds)));
+            stats.newest_at = Some(stats.newest_at.map_or(seconds, |cur| cur.max(seconds)));
         }
     }
+}
+
+fn traversal_error(path: &Path, error: &std::io::Error) -> std::io::Error {
+    std::io::Error::new(
+        error.kind(),
+        format!("scan '{}' failed: {}", path.display(), error),
+    )
+}
+
+fn retention_cutoff(retention_days: u32) -> Option<SystemTime> {
+    let span = Duration::from_secs(u64::from(retention_days).saturating_mul(86_400));
+    SystemTime::now().checked_sub(span)
+}
+
+fn now_seconds() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .and_then(|since_epoch| i64::try_from(since_epoch.as_secs()).ok())
+        .unwrap_or(0)
+}
+
+fn sweep_directory(dir: &Path, cutoff: SystemTime, report: &mut CleanupReport) {
+    // 计数用 `Cell`：遍历的两个回调各自捕获同一份计数，不产生双重可变借用。
+    let removed = std::cell::Cell::new(0usize);
+    let failed = std::cell::Cell::new(0usize);
+    for_each_file(
+        dir,
+        &mut |path, meta| {
+            let expired = is_expired(meta, cutoff);
+            if !expired {
+                return;
+            }
+            match std::fs::remove_file(path) {
+                Ok(()) => removed.set(removed.get() + 1),
+                Err(error) => {
+                    log::warn!(
+                        "cleanup tool results: remove '{}' failed: {}",
+                        path.display(),
+                        error
+                    );
+                    failed.set(failed.get() + 1);
+                }
+            }
+        },
+        &mut |path, error| {
+            log::warn!(
+                "cleanup tool results: scan '{}' failed: {}",
+                path.display(),
+                error
+            );
+            failed.set(failed.get() + 1);
+        },
+    );
+    report.removed += removed.get();
+    report.failed += failed.get();
 }
 
 /// 选择本轮需要落盘的结果。

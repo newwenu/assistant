@@ -11,7 +11,7 @@
 
 本文中的「必须 / 禁止」为可验收约束；「应当」为默认做法，偏离需在代码注释里写明理由。
 
-**编号约定**：`E1–E13` 是资源监视条目（Entry），`A1–A7` 是回收动作，`Q1–Q5` 是资格状态，`N1–N19` 是现状事实，`G1–G14` 是门禁，`V1–V20` 是验收判据，`T1–T4` 是实施切片，`X1–X13` 是拒绝方案，`OQ1–OQ11` 是开放问题。§3.11 的「对账余量」**不是条目**（无 `E` 编号、不进 `entries`、不进任何合计、不可回收），它只回答「基根上有没有未被 13 条登记认领的东西」。
+**编号约定**：`E1–E13` 是资源监视条目（Entry），`A1–A7` 是回收动作，`Q1–Q5` 是资格状态，`N1–N19` 是现状事实，`G1–G19` 是门禁，`V1–V24` 是验收判据，`T1–T5` 是实施切片，`X1–X18` 是拒绝方案，`OQ1–OQ11` 是开放问题。§3.11 的「对账余量」**不是条目**（无 `E` 编号、不进 `entries`、不进任何合计、不可回收），它只回答「基根上有没有未被 13 条登记认领的东西」。
 
 ---
 
@@ -344,8 +344,15 @@
 | G12 | 回收留痕不得写绝对路径；只写条目 key、动作、数量、字节、`planId` |
 | G13 | **超集门禁**：既有 wire 字段不得改名、不得删除、不得窄化类型。`AttachmentSummary` / `ConversationAttachmentSummary` / `AttachmentDeleteResultDto` / `AssetDirsDto` / `AttachmentLimitsDto` / `AttachmentImportDto` 与 `StorageBreakdownDto` 的既有 4 字段全部原样保留；新语义只能用**新增**字段表达（`oldestAt` / `newestAt` 等） |
 | G14 | 前端必须保留附件明细区（会话分组 / 孤儿分组 / 折叠 / 组全选 / 勾选删除），它承载 `A2`；不得用 13 行条目表替代它。两者是同一页的两段 |
+| G15 | **口径声明唯一，遍历实现归 owner**：`bytes` / `count` / `oldestAt` / `newestAt` 的**规则**（§3.9 的字节口径 / 时间口径 / 包含范围 / 伴生后缀）只允许有一处**声明**（本文档 §3.9），代码里不得出现第二份「口径规则表」。但**遍历实现本身归各 owner**：每个 owner 只遍历自己的受管目录，按自己的锁语义与错误映射返回结果——这是 G1 / G2 的所有者边界，**不是**重复。判据不是「全仓只有一份遍历代码」，而是「同一棵 fixture 目录喂给任意 owner 的 stats 入口，四元组逐字一致」（V21）：口径改动时若某 owner 未跟上，V21 必然变红。**禁止**的是 owner 在实现里**另立**一套口径（自定义伴生后缀、把目录自身算进字节、把「取不到」写成 `0`），而不是「各有一份遍历代码」 |
+| G16 | **登记表子段是契约身份，不是路径知识**：`E7`–`E11` 的 `segments` 子段参与 `key`（V1 要求 `key` 与 §3.1 逐字一致），因此不得删除；但 core 不得把子段用于拼路径（`roots.rs` 的 `path_for` 只用 `dir_name` 常量）。子段与可选能力侧目录常量的一致性**必须由跨 crate 断言保证**（`#[cfg(feature = "vault")]` 下比对登记表子段与 `assistant-vault` / `cmd::vault` 的目录常量），不允许两边各写一遍然后期望它们不漂移 |
+| G17 | **声明与接收用同一套词汇**：一条登记的「归谁 / 谁提供观测」各只声明一次，且上下游用**同一个 token** 表达。(a) `owner` 只回答「数据归谁」，是展示字段（进 DTO / golden），**不承载路由**；粒度是**构建无关的归属域标识**，三条判据：①按 G19(b) 删掉实现后仍成立——**不得**是可选能力 crate 的类型名（`E7`–`E11` 写 `SecurityDbState` 即违反，该类型在 vaultless 构建里不存在）；②不含 `::`——**不得**是模块路径（`E5 = "cmd::mascot_asset"` / `E10 = "cmd::vault"` 即违反）；③不是 feature flag 名（`E9 = "vault"` 即违反）。形态可以是无条件 crate 内的类型名（`AttachmentStore`）、crate 名（`tauri-plugin-log`）或领域名词（`SecurityDb` / `SecurityRepo` / `SecurityRecovery`）；同一归属域全表只能有一个 token，不同归属域不得重名。(b) `provider` 只回答「谁提供观测」，由 `RootMount::Feature(capability)` 声明、由 `StorageOwnerProbe::capability()` 声明，两处是同一个字符串字面量（V22 断言）。**槽位名是「能力标识」，不是「实现标识」**（G18(g)）：`Feature` 载荷与 `capability()` 返回值写的是「这个位置需要哪种观测能力」（如 `"security-observability"`），**不得**写实现类型名（`"VaultProbe"`）、**不得**写 feature flag 名（`"vault"`）——否则换实现 / 退役特性时登记表必须跟着改，槽位名就随实现漂移，通用槽名存实亡。(c) 路由由登记表驱动（§3.10 取用第 5 条）：**禁止**管理器维护「下标 → provider 方法」映射，**禁止**管理器按数字下标接收（`sample.rs` 的 `const SECURITY_DB: usize = 6` / `entries.rs` 的 `LOGS_INDEX = 11` 必须改为按 `key` 分派）——位置耦合在登记表增删条目时会静默错位且编译通过，字符串 `key` 写错则立刻查不到、立刻红。(d) 本条只管**观测路由**；回收动作（如 `prune_backups(keep)`）按动作名具名是正当的：各动作参数与语义不同，无法用 `key` 表达 |
+| G18 | **provider 按能力名注册到通用槽，槽先于注册者存在**：可选能力不得各占一个 Tauri state 类型槽——`manage` / `try_state` 以 `TypeId` 为键，同类型只有一个槽位，第二个能力只能「改别名（管理器静默取不到，表现为永远降级）」或「覆盖（先注册的数据永远看不见）」，两者都不报编译错误。(a) **唯一槽是 `probe::ProbeRegistry`**（`capability → Arc<dyn StorageOwnerProbe>`），它无条件编译、不含任何 `#[cfg(feature = ...)]`、**不知道**有几个能力；(b) **创建先于注册**：Tauri 插件 `setup` 先于 app `setup` 执行，因此槽只能在 `Builder` 阶段 `manage`，**或**把注册动作下沉到 app `setup` 内的 `feature_mounts::on_setup` 循环——两者只能选一种，不得跨层（槽晚于注册 = 注册失败 = 静默永久降级）；(c) **槽位冲突 fail-fast**：同能力名重复注册返回 `Err`，装配方记 `log::error` 且**不覆盖**已有实例，**禁止**「先注册的赢」（那会让某条数据永远看不见且无任何红）；(d) **按能力名精确取**：`registry.find(capability)`，**禁止**「遍历所有 provider 找第一个返回 `Some` 的」（那是猜，不是按声明取）；(e) **快照克隆**：采样前 `snapshot()` 克隆 `Vec<Arc<…>>` 后立即释放锁，禁止持锁跨 `spawn_blocking` / `await`；(f) 空槽与「provider 不认该 `key`」是两种降级（前者 `notImplemented`「可选能力未装配」，后者「provider 未实现该维度」），但由**同一段代码**判定，不产生 `cfg` 分支；(g) **槽位名是能力标识，不是实现标识**：`Feature` 载荷与 `capability()` 返回值必须是「能力名」（稳定、构建无关、实现无关，如 `"security-observability"`），**禁止**填实现类型名（`"VaultProbe"`）、**禁止**填 feature flag 名（`"vault"`）、**禁止**填模块路径。理由：槽位名的职责是让 core 能声明「这个位置该有哪种观测能力」并据此表达缺失（`optionalNotMounted`），它属于**格式层**；实现类型名属于**实现层**——一旦把实现名写进登记表，换实现（`VaultProbe` → 重构后的另一个类型）就必须改登记表，特性退役则留下无人装配的死行，通用槽退化为「单实现专用槽」。实现侧改名 / 换实现 / 增删特性，登记表一个字都不动 |
+| G19 | **登记表陈述事实，不承载策略**：`MANAGED_ROOTS` 描述**磁盘格式**（构建无关、实现无关），不含条件分支、默认值、`Option` 兜底或「没装配就当作 X」的语义。(a) **三件事分家**：`兜底`（拿默认值填坑，如 `bytes = 0` / `_ =>` 分派）**任何一方都禁止**；`缺失处理`（把缺失标出来：`null` + `notImplemented` + 原因）**只由管理器做一次**；`分类`（对账归 `declared` / `optionalNotMounted` / `unregistered`）**只由 §3.11.3 做一次**。三者不得互相替代，登记表不参与其中任何一件。(b) **事实检验法**：把某个 provider 从实现里删掉，该行仍应成立（`security/` 仍是已知位置、仍归 `SecurityDb`、仍是 `E7`）；只在「恰好有这个实现」时才成立的行，描述的是实现而非格式，必须删除或改写。(c) **行恒在、与构建无关**：`security/` 在 vaultless 构建里可能仍在盘上（升级前用过 vault / 用户手工复制），因此 `E7`–`E11` 的行不得随特性裁剪——裁剪后 `security/` 只能落 `unregistered`（未知目录告警），每个 vaultless 用户都会看到永远消不掉的错误信号；同时 `unregistered` 才是「core 真正不知道是什么」的那一格，把已知位置塞进去等于把可表达的缺失降级成不可表达的未知。(d) **死行必须删**：某能力从**所有**构建里彻底退役时，对应行必须删除（V19 的 `dir_name` 双向断言 + 代码审查兜底），不得留下「任何构建都不装配」的行——那会让用户永远看到「未装配」，且动态分类掩盖了「这行已经死了」的事实 |
 
 ### 3.9 口径与包含范围（原 I54 §4.3，迁入后为唯一出处）
+
+**总则（口径声明唯一，上游对接、下游接收各自正确）**：本节是口径的**唯一声明处**，不是「唯一实现处」。owner（上游）在自己的 crate 里遍历自己的目录是正当的所有者行为（G1 / G2），它要做的是**按本节声明对接**：返回统一的契约形状、遵守字节 / 时间 / 包含范围规则、把 `io::Error` 映射成 `locked` / `unreadable` / `unavailable`。管理器（下游）要做的是**正确接收**：只经登记表 `key` 取数、把 owner 返回值无损搬进 `ProbeStats`、不自己补算也不二次遍历。**判据**：同一棵 fixture 目录喂给任意 owner 的 stats 入口，四元组逐字一致（V21）；若某条规则需要在两个文件里各改一次才能同时生效，说明口径被复制成了两份，本节即被违反。**注意**：本节只管「算什么」，不管「谁来遍历」——后者是所有权问题，不是口径问题。
 
 **字节口径**：
 
@@ -393,24 +400,46 @@
 | `E12` | 无（插件不暴露） | — | 恒 `null` + `notImplemented`（`availabilityReason` 写「`tauri-plugin-log` 不暴露 stats」） |
 | `E13` | `assistant_crash::dump_stats(dir)`（+） | `AppDirs::crashes()` | `null` + `unreadable` |
 
+> 表中 `E7`–`E11` 列出的 `SecurityDbState::backup_stats()` / `VaultProbe::repo_stats()` 等是 **owner 内部入口**（真实实现处）；provider 实现按登记 `key` 分派到它们，provider **trait 表面**只暴露 `stats(key)` 一个方法（G17），不为每条登记各写一个具名方法。`owner` 标签按 G17(a) 是**构建无关的归属域标识**，不得用模块路径、feature 名或可选 crate 的类型名（`E7` / `E8` / `E11` = `SecurityDb`，`E9` = `SecurityRepo`，`E10` = `SecurityRecovery`，V22 锁死）。
+
 **三条 owner 接口的既有形状（决定 T1–T3 的改动量）**：
 
 1. `cleanup_expired_results(root, days)` 只返回 `CleanupReport { removed, failed }`，**没有字节**；它按 `mtime` 递归清扫会话子目录、跳过符号链接与非常规文件、`0` 禁用。因此 `E3` 的 `A3` 执行要报 `removedBytes`，必须新增「先按同一判据收集候选（path + bytes），再逐个删除并累加」的 owner 方法，**不能**复用 `CleanupReport` 后自己补算（补算时文件已删，长度取不到）；
-2. `result_stats` / `index_stats` 必须与各自的清扫函数**用同一套遍历规则**（递归 / 跳符号链接 / 跳非常规文件），否则「统计 100 MiB、清理 0 字节」这种漂移必然出现；两个 stats 都返回 `{ bytes, count, oldestAt, newestAt }` 供条目与账本共用；
+2. `result_stats` / `index_stats` 必须遵守 §3.9 的**同一份口径声明**（G15）：与各自的清扫函数用同一套判据（同一份伴生后缀表、同样跳过符号链接与非常规文件、同样不算目录自身），由 V21 的行为断言锁死——**不**要求共享同一段遍历代码，要求的是同一棵 fixture 下结果一致。两个 stats 都返回统一的 `{ bytes, count, oldestAt, newestAt }` 契约形状供条目与账本共用；owner 若因依赖方向不能直接返回 core 的 `ProbeStats`（如 `assistant-tools` 不依赖 core），必须在 core 侧适配层**无损搬运**（漏字段即 V21 负例失败），**不得**在 owner 侧另立字段含义；
 3. `super_index` 在 `assistant-tools` 内是 `pub(crate)`，`index_stats` 需在 `os::tools` 加一层公开转发，管理器只调公开入口（G1）。
 
 **可选能力 provider（解决 N15，本文档唯一的 feature 缝）**：
 
-1. **trait 定义位置**：`src-tauri/src/cmd/storage/probe.rs`（由 `storage/mod.rs` 内 `mod probe;` 引入）——该文件**无条件编译**，因此可以安全承载 trait。trait 声明为 `pub trait StorageOwnerProbe: Send + Sync`，方法覆盖 `E7`–`E11` 的 stats，**参数与返回值只用普通数据**（`protocol::dto::storage` 里的 DTO 或纯 `u64/i64/bool`），**不得**出现 `assistant_vault` / `assistant_security` 的任何类型（否则 vaultless 构建直接编不过）；
+1. **trait 定义位置**：`src-tauri/src/cmd/storage/probe.rs`（由 `storage/mod.rs` 内 `mod probe;` 引入）——该文件**无条件编译**，因此可以安全承载 trait。trait 声明为 `pub trait StorageOwnerProbe: Send + Sync`，表面只有三个方法：`fn capability(&self) -> &'static str`（**能力槽位标识**，与 `RootMount::Feature(capability)` 同一个字面量；名字是「能力名」而非实现类型名，见 G18(g)）、`fn stats(&self, key: &'static str) -> Option<Result<ProbeStats, ProbeError>>`（`None` = 该 key 不归本 provider）、`fn audit_policy(&self) -> Option<(u32, i64)>`。**禁止**用 `provider_label()` / `provider_id()` 之类的命名：那会把语义带偏成「实现的名字」，而这里要表达的是「我提供哪个能力槽」，实现叫什么名字与 core 无关（G18(g)）。**禁止**为 `E7`–`E11` 各写一个具名方法（`security_db_stats` / `backup_stats` / `repo_stats` / `recovery_stats` / `audit_stats`）：那会让同一条归属在 trait 里声明一次、在管理器分派里再声明一次，两份声明之间没有任何断言（见 X15、G17）。**参数与返回值只用普通数据**（`protocol::dto::storage` 里的 DTO 或纯 `u64/i64/bool`），**不得**出现 `assistant_vault` / `assistant_security` 的任何类型（否则 vaultless 构建直接编不过）；
 2. **方法必须是同步阻塞函数**，不写 `async fn`（`async fn` 在 trait 里不对象安全，需额外 box）；管理器在 `spawn_blocking` 里调用，trait 只需 `Send + Sync` 即可跨线程；
-3. **注册类型必须是 `Arc<dyn StorageOwnerProbe>`**：Tauri 的 `manage` / `try_state` 要求 `T: Send + Sync + 'static`（隐含 `Sized`），`dyn StorageOwnerProbe` 本身不满足。因此定义 `pub type StorageOwnerProbeHandle = Arc<dyn StorageOwnerProbe>;`，**注入端与取用端必须用同一个类型别名**（`manage(Arc::new(VaultProbe) as StorageOwnerProbeHandle)` / `try_state::<StorageOwnerProbeHandle>()`），类型不一致会静默取不到（表现为「永远降级」，不报编译错误）；
-4. **实现位置**：vault 侧实现在 `src-tauri/src/vault_plugin.rs` 的 `#[cfg(feature = "vault")] mod mounted` 里（该文件是装配契约承认的唯一 vault 特性缝），在插件 `setup` 阶段 `app.manage(...)` 注入。**禁止**把实现放进 `cmd/storage/` 或 `cmd/vault/`——前者会引入 feature 依赖，后者会在 vaultless 构建里消失却留下悬空的注入点；
-5. **取用**：`cmd/storage/mod.rs` 只 `app.try_state::<StorageOwnerProbeHandle>()`：取到 → 采 `E7`–`E11`；取不到（vaultless 构建 / 插件未装配）→ 五条 `availability = notImplemented` + `availabilityReason` 点名「可选能力未装配」，`bytes` / `count = null`，`eligibility` 按**禁止回收**语义填（不因装配缺失而变成可执行）：
+3. **注册类型必须是 `Arc<dyn StorageOwnerProbe>`，且注册进唯一的通用槽**：定义 `pub type StorageOwnerProbeHandle = Arc<dyn StorageOwnerProbe>;`（`dyn` 本身不满足 `Sized`，不能直接 `manage` / `try_state`；`Arc` 同时满足 `Send + Sync + 'static` 与「克隆后释放锁」的需要）。槽是一个**无条件编译**的 `ProbeRegistry`：
+
+   ```rust
+   pub struct ProbeRegistry {
+       probes: std::sync::Mutex<Vec<StorageOwnerProbeHandle>>,
+   }
+
+   impl ProbeRegistry {
+       pub fn new() -> Self;
+       /// 槽位冲突 = 装配错误：返回 Err 且**不覆盖**已有实例（G18(c)）。
+       pub fn register(&self, probe: StorageOwnerProbeHandle) -> Result<(), String>;
+       /// 按登记表 `Feature(capability)` 的同一个字面量精确取（G18(d)）。
+       pub fn find(&self, capability: &str) -> Option<StorageOwnerProbeHandle>;
+       /// 采样前克隆快照，返回后锁已释放（G18(e)）。
+       pub fn snapshot(&self) -> Vec<StorageOwnerProbeHandle>;
+       /// 已注册能力槽集合，V22 / V23 的集合来源。
+       pub fn capabilities(&self) -> Vec<&'static str>;
+   }
+   ```
+
+   **禁止**把 provider 直接 `app.manage` 成独立 state（`TypeId` 只容一个，第二个能力要么覆盖要么静默取不到，见 G18 / X17）；**禁止**每个能力定义一个自己的别名（`VaultProbeHandle` / `XxxProbeHandle`）再让管理器逐个 `try_state`（清单回到 core 手里，且漏取不报错）；
+4. **实现位置与注册时序**：vault 侧实现在 `src-tauri/src/vault_plugin.rs` 的 `#[cfg(feature = "vault")] mod mounted` 里（该文件是装配契约承认的唯一 vault 特性缝），在插件 `setup` 阶段 `registry.register(...)`。**槽必须先于任何注册动作存在**（G18(b)）：二选一——①在 `plugins::attach` 的 `Builder` 阶段 `.manage(Arc::new(ProbeRegistry::new()))`（插件 setup 早于 app setup，槽在插件之前就绪）；②把注册动作从插件 `setup` 下沉到 app `setup` 的 `feature_mounts::on_setup` 循环，并在该循环之前 `manage` 槽。两种都自洽，但**建槽与注册必须同层**，不得「插件里注册、app 里建槽」。**禁止**把实现放进 `cmd/storage/` 或 `cmd/vault/`——前者会引入 feature 依赖，后者会在 vaultless 构建里消失却留下悬空的注入点；
+5. **取用**：`cmd/storage/mod.rs` 只 `app.try_state::<Arc<ProbeRegistry>>()`（取不到槽属装配异常，按「可选能力未装配」处理，不 panic）；随后**遍历 `MANAGED_ROOTS` 中 `mount == Feature(capability)` 的行，`registry.find(capability)` 取 provider，再逐行 `probe.stats(row.key)`**，登记表是路由的唯一来源（能力名决定「用哪个 provider」，`key` 决定「取哪条数据」）；`stats` 返回 `None` 表示该 key 不在本 provider 的职责内，该行按「provider 未实现该维度」降级。**禁止**在管理器里另建一份「下标 → provider 方法」映射（如 `match index { SECURITY_DB => … , _ => audit_stats() }`）：`_` 兜底会在登记表增删条目时静默把别的条目数据填进来，且这份映射与登记表之间没有断言（G17、X15）；**禁止**「遍历全部 provider 取第一个返回 `Some` 的」（G18(d)）。`find(capability)` 返回 `None`（vaultless 构建 / 插件未装配 / 该能力槽无 provider）→ 该 `Feature` 行 `availability = notImplemented` + `availabilityReason` 点名「可选能力未装配」，`bytes` / `count = null`，`eligibility` 按**禁止回收**语义填（不因装配缺失而变成可执行）。**降级只影响没有 provider 应答的那几行**，其余条目照常（V23⑤）：
    - `E7` → `notEligible` + `reason = businessData`；`E9` → `notEligible` + `reason = userData`（两条本来就禁止回收，与是否装配无关）；
    - `E8` → `notImplemented` + `reason = noReclaimApi`（无 owner 方法，V17）；
    - `E10` / `E11` → `ownerManaged`（调度权在 owner；构建里没有该 owner 时自然不发生，不降级为 `notImplemented`）；
 6. **禁止** `cmd/storage/` 直接 `use assistant_vault::*` 或出现 `#[cfg(feature = ...)]`（G1 / 装配契约）。trait 本身也**不得**被 `#[cfg]` 门控——它必须在两种构建里都存在，否则 vaultless 构建的降级分支没有类型可写；
-7. **声明但未挂载**（`Mount::Feature("vault")` 且 provider 未注入）不是「未登记」：`security/` 段在 vaultless 构建里可能仍在盘上（升级前用过 vault、或用户手工复制），对账必须把它归 `optionalNotMounted` 而不是 `unregistered`（§3.11.3），否则每个 vaultless 用户都会看到一个永远消不掉的「未登记目录」告警。
+7. **声明但未挂载**（`RootMount::Feature` 且 provider 未注入）不是「未登记」：`security/` 段在 vaultless 构建里可能仍在盘上（升级前用过 vault、或用户手工复制），对账必须把它归 `optionalNotMounted` 而不是 `unregistered`（§3.11.3），否则每个 vaultless 用户都会看到一个永远消不掉的「未登记目录」告警。
 
 **并行、超时与同源（解决 N16）**：
 
@@ -445,7 +474,10 @@
 ```rust
 pub enum RootScope { Data, Local }
 pub enum RootCoverage { SingleFile, SelfFilesOnly, RecursiveTree }
-pub enum RootMount { Always, Feature(&'static str) }
+pub enum RootMount {
+    Always,
+    Feature(&'static str),                    // 可选能力；载荷是 **能力槽位标识**（如 "security-observability"），不是实现类型名
+}
 
 pub struct ManagedRoot {
     pub entry: &'static str,                  // "E1".."E13"
@@ -453,14 +485,27 @@ pub struct ManagedRoot {
     pub scope: RootScope,
     pub segments: &'static [&'static str],    // 段序列；首段即对账单位
     pub coverage: RootCoverage,               // 该条目覆盖「哪些文件」
-    pub owner: &'static str,
-    pub mount: RootMount,                     // E7–E11 为 Feature("vault")
+    pub owner: &'static str,                  // 数据所有者：展示用，进 DTO / golden，**不承载路由**
+    pub mount: RootMount,                     // E7–E11 为 Feature(SECURITY_OBSERVABILITY)
     pub inventory: bool,                      // 该 scope 是否参与余量对账（见 OQ11）
 }
+
+/// 能力槽位标识：core 声明「这个位置需要哪种观测能力」，实现侧引用同一个常量。
+/// 只定义一次，登记表与 `StorageOwnerProbe::capability()` 都引用它（G17(b) / G18(g)）。
+pub const SECURITY_OBSERVABILITY: &str = "security-observability";
 
 pub const MANAGED_ROOTS: &[ManagedRoot] = &[ /* 13 条，顺序 E1→E13 */ ];
 pub const IGNORED_NAMES: &[&str] = &[".DS_Store", "Thumbs.db", "desktop.ini"];
 ```
+
+**`owner` 与 `provider` 是两个不同的问题，各只声明一处**：
+
+| 字段 | 回答的问题 | 用途 | 谁消费 |
+|---|---|---|---|
+| `owner` | 「这份数据归谁」 | 展示、DTO、golden 快照 | 前端、审计 |
+| `mount: Feature(capability)` | 「需要哪种观测能力」 | 路由 | 管理器按能力名取 provider，再按 `key` 取数 |
+
+两者**不要求相同**：`E7` / `E8` / `E11` 的数据所有者是 `SecurityDb`，`E9` 是仓库（`SecurityRepo`）、`E10` 是恢复副本目录（`SecurityRecovery`）——三个所有者；但这五条全由**同一个** provider（当前实现是 `VaultProbe`）提供观测。`owner` 必须**构建无关**：写 `SecurityDbState` 这类可选 crate 的类型名，在 vaultless 构建下指向一个不存在的类型，且按 G19(b) 删掉实现后该值不再成立。把路由塞进 `owner`（历史写法 `E9 = "vault"` / `E10 = "cmd::vault"`）会让「谁的数据」与「谁提供观测」两个问题混成一个字段，两种写法必然漂移（G17(a)）。同理，`Feature` 载荷写的是**能力名**（`SECURITY_OBSERVABILITY`）而不是 provider 的类型名：`VaultProbe` 是当前唯一实现，换实现 / 改类型名 / 特性退役时登记表不动（G18(g)）。
 
 | entry | `segments` | `coverage` | 说明 |
 |---|---|---|---|
@@ -470,11 +515,11 @@ pub const IGNORED_NAMES: &[&str] = &[".DS_Store", "Thumbs.db", "desktop.ini"];
 | `E4` | `["tool-index"]` | `SelfFilesOnly` | 单层 `*.idx` |
 | `E5` | `["mascot-assets"]` | `RecursiveTree` | |
 | `E6` | `["assistant.db"]` | `SingleFile` | 伴生 `-journal` / `-wal` / `-shm` 归 `companion` |
-| `E7` | `["security", "security.db"]` | `SingleFile` | `Feature("vault")` |
-| `E8` | `["security", "backups"]` | `RecursiveTree` | `Feature("vault")` |
-| `E9` | `["security", "vault"]` | `RecursiveTree` | `Feature("vault")` |
-| `E10` | `["security", "recovery"]` | `RecursiveTree` | `Feature("vault")` |
-| `E11` | `["security", "audit"]` | `RecursiveTree` | `Feature("vault")` |
+| `E7` | `["security", "security.db"]` | `SingleFile` | `Feature(SECURITY_OBSERVABILITY)`，`owner = SecurityDb` |
+| `E8` | `["security", "backups"]` | `RecursiveTree` | `Feature(SECURITY_OBSERVABILITY)`，`owner = SecurityDb` |
+| `E9` | `["security", "vault"]` | `RecursiveTree` | `Feature(SECURITY_OBSERVABILITY)`，`owner = SecurityRepo` |
+| `E10` | `["security", "recovery"]` | `RecursiveTree` | `Feature(SECURITY_OBSERVABILITY)`，`owner = SecurityRecovery` |
+| `E11` | `["security", "audit"]` | `RecursiveTree` | `Feature(SECURITY_OBSERVABILITY)`，`owner = SecurityDb` |
 | `E12` | `["logs"]` | `RecursiveTree` | `scope = Local` |
 | `E13` | `["crashes"]` | `RecursiveTree` | `scope = Local` |
 
@@ -483,11 +528,14 @@ pub const IGNORED_NAMES: &[&str] = &[".DS_Store", "Thumbs.db", "desktop.ini"];
 1. `dir_name` 的常量降为 `pub(crate)`，**只允许** `roots.rs` 与 `registry.rs` 引用；`roots.rs` 的 getter 改为从登记表派生（路径拼接仍留在 `app_dirs`，管理器不碰）；
 2. 新增受管目录 = 加一个 `dir_name` 常量 **且** 加一条 `MANAGED_ROOTS`；只做前者，V19 直接红。这是「指导登记」的机制本体，比文档提醒可靠；
 3. `MANAGED_ROOTS` 与 13 条 key、`dir_name` 常量三者双向一致，多一个少一个都失败（V19）；`E2` 是 `attachments` 的子项、不占独立 `dir_name` 常量，`E7`–`E11` 走 `Feature` 挂载，断言里必须分别处理这两类例外。
+4. **`Feature` 的载荷必须是「能力槽位标识」，且单点定义**：`Feature(SECURITY_OBSERVABILITY)` 与实现侧 `StorageOwnerProbe::capability()` 返回的是**同一个常量**（`pub const SECURITY_OBSERVABILITY: &str = "security-observability";`，定义在 `registry.rs`），由 V22 断言（登记表里出现的能力名 ⊆ `ProbeRegistry::capabilities()`）。**禁止**写字面量两遍、**禁止**写实现类型名（`"VaultProbe"`）、**禁止**写 feature flag 名（`"vault"`）、**禁止**写模块路径（G18(g)）——写实现名会让登记表随实现漂移（换实现必改登记表、特性退役留下死行），写 feature 名会把「装配状态」与「编译开关」耦成一个词。新增第二个可选能力时，加一条 `Feature(NEW_CAPABILITY_CONST)` 并在该能力侧 `register` 同常量即可，**不需要**改管理器分派逻辑、**不需要**新增槽位（G18）；这也是本条从「无载荷 `Feature`」改为「携带能力名」的理由——无载荷版本只能靠「全仓至多一个 provider」的隐含假设工作，第二个能力进来时必然要再改一次契约。若登记表出现一个没有任何 provider 注册的能力名，对账把它归 `optionalNotMounted`（不是 `unregistered`），观测按「未装配」降级（§3.10 取用第 5 条）。
+5. **登记表只陈述事实，不承载策略**（G19）：`MANAGED_ROOTS` 是静态数据——不得包含条件分支、默认值、`Option` 兜底逻辑或「如果没装配就当作 X」的语义。它是「磁盘上有什么、归谁、需要哪种观测能力」的陈述；「没装配时显示什么」由读取方（管理器）做**缺失处理**（`null` + `notImplemented`），不是登记表的职责。**事实检验法**：把某个 provider 从实现中删掉，该行仍应成立（`security/` 仍是已知位置、仍归 `SecurityDb`、仍是 `E7`）；若某行只在「恰好有这个实现」时才成立，那它描述的是实现而不是格式，必须删除或改写。**兜底**（拿默认值填坑，如 `bytes = 0`、`_ =>` 分派）在任何一方都禁止；**缺失处理**（把缺失标出来）只由管理器做一次；**分类**（对账归 `declared` / `optionalNotMounted` / `unregistered`）只由 §3.11.3 做一次。三者不得互相替代。
+6. **登记表描述磁盘格式，与构建无关**（G19）：`security/` 在 vaultless 构建里可能仍在盘上（升级前用过 vault、或用户手工复制），因此 `E7`–`E11` 的行必须**恒在**；若行随特性裁剪，`security/` 只能落进 `unregistered`（未知目录告警），每个 vaultless 用户都会看到一个永远消不掉的错误信号。反过来，**死行必须删除**：某个能力从所有构建里彻底退役时，对应行必须随之删除（V19 的 `dir_name` 双向断言 + 代码审查兜底），不得留下「任何构建都不装配」的行。
 
 #### 3.11.2 扫描（`cmd/storage/inventory.rs`，唯一 `read_dir` 例外）
 
 1. **范围**：对**整棵基根树**（`AppDirs::data()` 与 `AppDirs::local()`）做只读递归，**包含**受管目录内部——这是 G2 的显式例外，理由只有一个：余量需要「扫描总量」作为被减数，而只有拿到受管目录的真实子树字节，减法才成立（否则 `unregistered` 恒等于扫描值、减法形同虚设，X13 的「不减去登记值」也就无从区分）。例外的边界由三条硬约束守住：①**只读**（不删、不移、不写、不写日志）；②产出**绝不回流** `entries`（G10 / V20）；③有界（第 5 条）；
-2. **首层分类**：首层条目名 → 匹配 `MANAGED_ROOTS` 的**首段**（`SingleFile` 条目的首段即文件名）；命中 `Always` → `declared`；命中 `Feature` 但 provider 未注入 → `optionalNotMounted`；命中 `IGNORED_NAMES` → `ignored`；命中伴生后缀 → `companion`；其余 → `unregistered`（§3.11.3）；
+2. **首层分类**：首层条目名 → 匹配 `MANAGED_ROOTS` 的**首段**（`SingleFile` 条目的首段即文件名）；命中 `Always` → `declared`；命中 `Feature(capability)` 但该能力名的 provider 未注册 → `optionalNotMounted`；命中 `IGNORED_NAMES` → `ignored`；命中伴生后缀 → `companion`；其余 → `unregistered`（§3.11.3）。「是否挂载」只查登记表能力名在 `ProbeRegistry::capabilities()` 里是否存在，**不**按特性名判断（core 不知道特性名，G1）；
 3. **子树字节与条数**：对每个首段递归累加**常规文件**长度并同时计数（同一次遍历产出 `scanBytes` 与 `scanCount`，**不分两次遍历**，否则两份数字会在扫描期间漂移）；口径与 §3.9 完全一致（不跟随符号链接、跳过非常规文件、目录自身不计），并且**必须与 owner stats 用同一套遍历规则**（§3.10 接口形状 2）——口径一旦分叉，减法就会常年出现假余量；
 4. **伴生文件**：无论在哪一层，`-journal` / `-wal` / `-shm` / `.tmp` / `.lock` 都计入 `scanBytes` / `scanCount`（它们确实占盘），但不计入任何 `declaredBytes` / `declaredCount`（§3.9），因此会表现为该节点的 `residualBytes > 0`。这是**预期噪声**，不是报警（报警只看 `overRegistered`，见理念 6）；
 5. **有界**：深度 ≤ 8、条目 ≤ 50 000、耗时 ≤ 5 s（软上限）；触界时该节点 `scanBytes` / `scanCount` = `null` + `partial = true` + 记入 `truncatedNodes`（宁可「知道有、不知多大」也不做无界扫描）；
@@ -870,6 +918,8 @@ snapshot（只读）
    - `overRegistered` 为 `true` 的节点**必须**显著标红并给固定文案（「登记值大于盘上实际值，可能是统计口径不一致」），不得静默；
 10. **禁止**给余量区任何删除 / 清理按钮（§3.11 理念 5）：`unregistered` 不是「可回收」，它连 `reclaim` 字段都没有；也**禁止**把余量数字加进页面任何「总计」。
 
+> 本节只约束**契约与判据**（能显示什么、不能显示什么、值从哪来）。组件拆分、视图模型、列定义、文案键树、样式类与测试矩阵等**实现细节**统一由 [I61 存储管理器前端设计](./I61-storage-manager-frontend.md) 承载，两处不重复定义；若实现文档与本节冲突，以本节为准并回改实现文档。
+
 ---
 
 ## 7 失败与降级
@@ -940,6 +990,11 @@ snapshot（只读）
 | X11 | 把对账余量做成 13 条之外的第 14 条（或每类各建一条） | 余量不是资源、没有 owner、没有回收方法，建条目会让「条目 = 可观测 + 可回收 + 有 owner」的定义破功，还会诱导给它加 `reclaim` 字段。它是**差额**，只能挂在 `inventory` 上 |
 | X12 | 让 `get_storage_breakdown` 等扫描完成（同步扫） | 扫描成本无上界（未知子树），必然拖慢页面；且余量变化频率低（TTL 5 分钟足够），没有实时性需求 |
 | X13 | 扫描时直接 `du` 累加全部子树，不减去登记值 | 等于同时维护两套口径（owner stats 与自扫），任何一侧口径变化都产生静默漂移；减法只需一份扫描 + 已登记的减数 |
+| X14 | 让口径规则随 owner 各自实现：各写一份伴生后缀表、各自定义「目录自身算不算」 | 口径是**跨 owner 的共同约定**，不是各 owner 的私有知识。各写一份必然漂移，出现「`E5` 算 100 MiB、`E8` 算 0 字节」这类同一问题两个答案。**注意**被否决的是「口径规则多份」，**不是**「遍历代码多份」——后者是所有者边界，正当（G15）；判据落在行为一致性（V21），而非代码计数 |
+| X15 | provider trait 为每条登记各写一个具名方法，管理器再用下标 `match` + `_` 兜底分派 | 同一条归属被声明两次（trait 方法名一次、分派表一次），只能靠人工同步；`_` 兜底在登记表增删条目时静默把别的条目数据填进来（`E11` 的数据可能出现在 `E10` 行）且不报错。改为「登记表 `Feature(capability)` + `capability()` + `stats(key)`」后，声明与接收是同一个 token，路由只剩登记表一处（G17） |
+| X16 | 管理器用「数字下标」接收登记表条目（`const SECURITY_DB: usize = 6` + 一句「与登记表同序」的注释） | 声明侧说身份（`key`），接收侧说位置（下标），两者唯一的连接是一行注释、没有任何断言。在 `MANAGED_ROOTS` 中间插入一条登记，全部下标静默错位一格，**编译通过、测试通过**，`E7` 会显示 `E6` 的字节数。字符串 `key` 写错则立刻查不到、立刻红；位置耦合连「红」的机会都没有（G17(c)） |
+| X17 | 每个可选能力各定义一个自己的 state 类型 / 句柄别名（`VaultProbeHandle` / `XxxProbeHandle`），管理器逐个 `try_state` 取 | `manage` / `try_state` 以 `TypeId` 为键，同类型只有一个槽位：第二个能力要么另起别名（管理器漏加对应 `try_state` → 静默取不到，表现为永远降级，不报编译错误），要么复用别名（覆盖先注册者 → 先注册的数据永远看不见，也不报错）。两者都无红。更根本的问题是「有哪些可选能力」这份清单被迫回到 core 手里：新增能力必须改 core 才能被观测到，而 core 又不允许知道特性名（G1）。改为能力名为键的通用槽 `ProbeRegistry` 后，清单留在运行时、留在 provider 自己手里，core 只做「能力名 → 实例」查找，零 `cfg`（G18） |
+| X18 | 槽位名直接取实现类型名（`Feature("VaultProbe")`）或 feature flag 名（`Feature("vault")`），省掉「能力名」这一层 | 通用槽名存实亡：①换实现 / 改类型名（`VaultProbe` → 重构后的另一类型）必须改登记表，登记表随**实现**漂移，而不是随**磁盘格式**；②特性彻底退役后留下「任何构建都不装配」的死行，用户永远看到「未装配」，而动态分类掩盖了「这行已死」；③与 feature flag 同名会把「装配状态」和「编译开关」耦成一个词，导致「core 不知道特性名」（G1）被误读成「core 不许提这个领域」，进而诱导把行也裁掉——那会让 `security/` 落进 `unregistered`（未知目录告警），把可表达的缺失降级成不可表达的未知（G19）。改为**能力名**（`SECURITY_OBSERVABILITY = "security-observability"`，单点 `const` 定义）后，槽位名属于格式层，实现层改名 / 换实现 / 增删特性都不动登记表（G18(g) / V24） |
 
 ---
 
@@ -985,8 +1040,12 @@ snapshot（只读）
 | V18 | **余量守恒与互斥**：`inventory.nodes` 的 `class` 互斥且穷尽；`declared + optionalNotMounted + companion + ignored + unregistered` 的首层条目数等于基根首层实际条目数；`declared` 节点 `residualBytes = scanBytes − Σ declaredBytes`、`residualCount = scanCount − Σ declaredCount`（且两项均 `≥ 0`，负值走 `overRegistered`）；非 `declared` 节点 `declaredBytes = declaredCount = 0`、`residualBytes = scanBytes`、`residualCount = scanCount`；`unregisteredBytes = Σ unregistered 节点 residualBytes`、`unregisteredCount = Σ residualCount`（`null` 传染，不填 0） | 单测：构造 `attachments/`（含 `derived/` 与一个未统计的额外子目录）+ `security/` + 未知目录 + `-wal` + `.DS_Store` 的临时基根，逐类与逐节点断言 |
 | V19 | **登记表双向一致**：`MANAGED_ROOTS` 的 `entry` 集合 == 13 条 key 集合 == `entries[*].key`；`dir_name` 每新增常量若无对应登记则测试失败（`E2` 子项与 `E7`–`E11` `Feature` 挂载按例外处理）；`segments` 首段与 `roots.rs` getter 解析出的路径段一致 | 单测：集合比对 + 临时新增一条 `dir_name` 常量的负例（构造 `&[ManagedRoot]` 缺项） |
 | V20 | **余量不影响条目**：`inventory` 任何数字变化（含 `failed` / `partial` / `overRegistered`）都不改变 `entries` 的 `bytes` / `count` / `eligibility`，也不改变 `totalBytes`；`get_storage_breakdown` 耗时与扫描状态无关（`running` 下仍立即返回）；`reclaim_storage` 拒绝任何 `inventory` 节点名作为 `key` | 单测：`running` / `failed` 两态各拉一次 breakdown，逐字段比对；负例请求 `key = "unregistered-name"` |
+| V21 | **口径行为一致**（G15）：同一棵 fixture 目录（含 `-wal` / `-journal` / `.tmp` / `.lock` 伴生文件、符号链接、非常规文件、空目录、嵌套子目录）喂给**每一个** owner 的 stats 入口，得到的 `{ bytes, count, oldestAt, newestAt }` 逐字一致；core 侧把 owner 返回值搬进 `ProbeStats` 的适配函数不得漏字段 | 单测：一棵 fixture + 各 owner stats 入口逐一比对四元组；负例 ①某 owner 把 `-wal` 算进 `bytes`，断言失败；②适配函数故意漏搬 `newestAt`，断言失败。**不**以「`struct DirStats` 定义计数 == 1」为判据——结构份数由依赖方向决定，一致性由行为决定 |
+| V22 | **声明与接收同词汇**（G17 / G18(g)）：①`#[cfg(feature = "vault")]` 下遍历 `MANAGED_ROOTS`，每条 `Feature(capability)` 行 `stats(key)` 返回 `Some`、任意非本 provider 的 `key` 返回 `None`；②登记表里出现的每个能力名都等于某个已注册 provider 的 `capability()` 返回值（能力名 ⊆ `ProbeRegistry::capabilities()`），且两侧引用**同一个常量**（`SECURITY_OBSERVABILITY`）而非各自写字面量；③`owner` 标签全部来自统一命名域（构建无关的归属域标识：不含 `::`、不等于任何 feature 名、不是可选能力 crate 的类型名，且按 G19(b) 删掉实现后仍成立）；④管理器侧不存在「数字下标 → 条目」的接收方式（`sample.rs` 的下标常量与 `entries.rs` 的 `LOGS_INDEX` 已删除，改为按 `key` 分派） | 单测：遍历登记表逐行调 provider（覆盖 `Some` / `None` 两侧）；负例：①把某条 `Feature` 行改成 provider 不认识的 `key`，断言失败；②把 `Feature(SECURITY_OBSERVABILITY)` 改成 `Feature("VaultProbe")` / `Feature("vault")` / 另一个未注册常量，断言失败；③`owner` 含 `::` / 等于 feature 名 / 是可选能力 crate 的类型名时断言失败；静态断言：`cmd/storage/` 下不得再出现「下标常量 + `MANAGED_ROOTS[index]`」组合 |
+| V23 | **通用槽路由**（G18）：①**零槽**（没有任何 provider 注册）→ 13 条恒在，`Feature` 行全部 `notImplemented` + 「可选能力未装配」，非 `Feature` 行（`E1`–`E6` / `E12` / `E13`）出数不受影响；②**单槽单 provider** → 与改造前逐字段等价（golden 不变，这是「重构不改行为」的证据）；③**双能力名双 provider** → 各答自己的 `key`，A 的 `key` 在 B 上返回 `None`，互不串台；④**同能力名重复注册** → `register` 返回 `Err`、先注册实例仍可用、`capabilities()` 无重复；⑤**某能力名无 provider** → 只有该能力名的行降级，其余行 `availability` 不变；⑥`snapshot()` 之后新增注册不影响已取快照 | 单测：两个假 provider + 空槽共三态各拉一次 breakdown，逐字段比对；负例：①冲突注册后断言 `find(capability)` 仍返回**先注册**的实例；②把某行 `Feature("A")` 改成 `Feature("B")`（B 未注册），断言该行 `notImplemented` 且其余行逐字段不变 |
+| V24 | **能力名层级正确**（G18(g)）：①登记表与实现侧的能力名**均**来自 `registry.rs` 的同一个 `const`，全仓不存在第二处该字面量；②能力名**不是**实现类型名、**不是** feature flag 名、**不含** `::`；③改实现类型名 / 换实现 / 特性退役时，`MANAGED_ROOTS` 的该行不需要改动（用「临时改名实现类型」验证：编译仍过、V22 仍绿） | 静态断言：全仓搜索能力名字面量，命中处必须只在 `const` 定义与引用；负例：①把 `const SECURITY_OBSERVABILITY` 的值改成 `"VaultProbe"`，断言失败；②改成 `"vault"`，断言失败 |
 
-**整体验收**：V1–V20 全部通过，且 §3.8 的 G1–G14 在代码审查中逐条签字，方可视为「实现完成」；本文的设计状态已是定稿，实现期间若需改判据，必须先改本文再改代码。
+**整体验收**：V1–V24 全部通过，且 §3.8 的 G1–G19 在代码审查中逐条签字，方可视为「实现完成」；本文的设计状态已是定稿，实现期间若需改判据，必须先改本文再改代码。
 
 ---
 

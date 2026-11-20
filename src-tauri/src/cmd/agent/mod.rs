@@ -227,11 +227,13 @@ pub(crate) async fn start_turn(
 
     let inserted = {
         let state = app.state::<crate::setup::DbState>();
+        let attachments = app.state::<AttachmentStore>().inner().clone();
         super::get_db_conn(&state)
             .map_err(|msg| CommandErrorDto::new(CommandErrorCodeDto::StorageFailure, msg))
             .and_then(|conn| {
                 super::chat::insert::insert_chat_messages(
                     &conn,
+                    &attachments,
                     super::chat::insert::InsertChatInput {
                         conversation_id,
                         content: &content,

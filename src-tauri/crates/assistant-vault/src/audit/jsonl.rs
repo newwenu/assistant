@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use assistant_crypto::error::VaultError;
 
 use super::AuditEvent;
+use crate::storage_stats::DirStats;
 
 const FILE_PREFIX: &str = "audit-";
 const FILE_SUFFIX: &str = ".jsonl";
@@ -44,6 +45,11 @@ impl AuditJsonlWriter {
 
     pub fn dir(&self) -> &Path {
         &self.dir
+    }
+
+    /// `E11`：审计目录观测；口径与 [`Self::prune_before`] 一致（只认 `audit-*.jsonl` 常规文件）。
+    pub fn stats(&self) -> std::io::Result<DirStats> {
+        crate::storage_stats::dir_stats(&self.dir, is_audit_file)
     }
 
     /// 追加一条记录。

@@ -1,3 +1,3 @@
 mod crash_dump;
 
-pub use crash_dump::install;
+pub use crash_dump::{dump_stats, install, DirStats};

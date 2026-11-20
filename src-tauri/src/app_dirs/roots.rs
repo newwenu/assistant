@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use assistant_config::constant::APP_IDENTIFIER;
 
 use super::dir_name;
+use super::registry::{self, RootScope};
 
 /// 基根解析失败：不做任何回退（不落相对路径、不落当前目录、不落默认值）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -61,35 +62,53 @@ impl AppDirs {
     }
 
     pub fn database(&self) -> PathBuf {
-        self.data.join(dir_name::DATABASE)
+        self.path_for(dir_name::DATABASE)
     }
 
     pub fn attachments(&self) -> PathBuf {
-        self.data.join(dir_name::ATTACHMENTS)
+        self.path_for(dir_name::ATTACHMENTS)
     }
 
     pub fn tool_results(&self) -> PathBuf {
-        self.data.join(dir_name::TOOL_RESULTS)
+        self.path_for(dir_name::TOOL_RESULTS)
     }
 
     /// 行索引缓存根（`super_read` 的 `index_root`，I58 §3.5）。
     /// 与 `tool_results()` 同根：都是可重建的工具产物，删掉只会导致重建。
     pub fn indexes(&self) -> PathBuf {
-        self.data.join(dir_name::TOOL_INDEX)
+        self.path_for(dir_name::TOOL_INDEX)
     }
 
     pub fn mascot_assets(&self) -> PathBuf {
-        self.data.join(dir_name::MASCOT_ASSETS)
+        self.path_for(dir_name::MASCOT_ASSETS)
     }
 
     /// 诊断产物落在 local 根：不进漫游、不进持久引用。
     pub fn logs(&self) -> PathBuf {
-        self.local.join(dir_name::LOGS)
+        self.path_for(dir_name::LOGS)
     }
 
     /// 与 `logs()` 同根，诊断数据集中在一处。
     pub fn crashes(&self) -> PathBuf {
-        self.local.join(dir_name::CRASHES)
+        self.path_for(dir_name::CRASHES)
+    }
+
+    /// 受管根的唯一拼串点：段序列与基根来自登记表（V19 / G4）。
+    ///
+    /// 首段在登记表中唯一；`E2` 与 `E1` 共享 `attachments`，`find_by_first_segment`
+    /// 返回先登记的 `E1`，因此 `attachments()` 只到首层。
+    fn path_for(&self, first_segment: &str) -> PathBuf {
+        let root = registry::find_by_first_segment(first_segment)
+            .unwrap_or_else(|| panic!("managed root `{first_segment}` missing from registry"));
+        let base = match root.scope {
+            RootScope::Data => &self.data,
+            RootScope::Local => &self.local,
+        };
+        let mut path = base.clone();
+        for segment in root.segments {
+            path.push(segment);
+        }
+        path
     }
 
     /// asset 协议作用域：`["$APPDATA/mascot-assets/**", "$APPDATA/attachments/*"]`。

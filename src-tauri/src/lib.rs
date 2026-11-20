@@ -5,7 +5,7 @@ pub mod adapters;
 pub mod app_dirs;
 #[doc(hidden)]
 pub mod clock;
-mod cmd;
+pub mod cmd;
 mod feature_mounts;
 mod ipc;
 mod lifecycle;

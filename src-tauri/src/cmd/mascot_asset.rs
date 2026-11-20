@@ -45,6 +45,13 @@ pub(crate) fn mascot_assets_dir() -> Result<PathBuf, String> {
         .map_err(|e| e.to_string())
 }
 
+/// 素材目录的观测（I61 §3.10，条目 `E5`）：只读递归，目录不存在是正常空态。
+///
+/// 用 app 层的中立实现：素材不是工具产物，不得依赖 `assistant-tools` 的存储模块。
+pub fn asset_stats(assets_root: &Path) -> std::io::Result<crate::app_dirs::fs_stats::DirStats> {
+    crate::app_dirs::fs_stats::tree_stats(assets_root)
+}
+
 /// 伴生声明的路径：`<mascot-assets>/<dir>/custom-manifest.json`。
 /// 与素材同目录，卸载素材时一并删除。
 fn manifest_path(asset_type: &str) -> Result<PathBuf, String> {
@@ -349,5 +356,28 @@ mod tests {
         let manifest: RiveManifestDto =
             serde_json::from_str(r#"{"poses":["Idle"]}"#).expect("合法声明必须能解析");
         assert!(!manifest_is_empty(&manifest), "带字段的声明不得被当作清除");
+    }
+
+    #[test]
+    fn asset_stats_counts_regular_files_and_skips_companions() {
+        let dir = tempfile::tempdir().expect("临时目录应可创建");
+        let root = dir.path().join("mascot-assets");
+        std::fs::create_dir_all(root.join("rive")).expect("子目录应可创建");
+        std::fs::write(root.join("rive").join("custom.riv"), b"12345678").expect("写入应成功");
+        std::fs::write(root.join("rive").join("custom.riv.tmp"), b"partial").expect("写入应成功");
+
+        let stats = asset_stats(&root).expect("扫描应成功");
+        assert_eq!(stats.count, 1, "伴生 .tmp 不计入条数");
+        assert_eq!(stats.bytes, 8, "伴生 .tmp 不计入字节");
+        assert!(stats.oldest_at.is_some());
+    }
+
+    #[test]
+    fn asset_stats_missing_root_is_empty_state() {
+        let dir = tempfile::tempdir().expect("临时目录应可创建");
+        let stats = asset_stats(&dir.path().join("mascot-assets")).expect("缺失目录应为空态");
+        assert_eq!(stats.count, 0);
+        assert_eq!(stats.bytes, 0);
+        assert_eq!(stats.oldest_at, None, "无文件时两端为 None，不是 0");
     }
 }

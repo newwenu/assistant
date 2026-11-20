@@ -36,8 +36,66 @@ const CORE_EXTENSIONS = /\.(ts|tsx|rs|json|toml)$/;
 
 const RESERVED_COMMAND_GROUPS = ["core"];
 
-const FEATURE_FOOTPRINT_ALLOWLIST: Record<string, string[]> = {
-  vault: ["src-tauri/src/cmd/mod.rs", "src-tauri/src/protocol/events.rs"],
+// 足迹豁免：只登记「无法用无名词表达」的装配点，其余一律改代码消除
+// （新特性不得复制这份历史豁免，见 feature-optional-binary-spec §8.1）。
+//
+// 豁免粒度是**行**不是文件：`markers` 是「该行必须包含的片段」，未列入的命中行
+// 一律判违规。整文件放行会让门禁对该文件的其余部分失效（例如 `use assistant_vault`
+// 或新增 `#[cfg(feature = "vault")]` 都会被静默放过）。
+interface FootprintAllowance {
+  file: string;
+  /** 必须非空：豁免理由成为数据，不再是无机制约束的注释。 */
+  reason: string;
+  /** 允许命中的行（子串匹配，容忍缩进 / 格式化差异）。 */
+  markers: string[];
+}
+
+const FEATURE_FOOTPRINT_ALLOWLIST: Record<string, FootprintAllowance[]> = {
+  vault: [
+    {
+      file: "src-tauri/src/cmd/mod.rs",
+      reason:
+        '装配点：`#[cfg(feature = "vault")] mod vault;` 的 cfg 谓词必须点名特性名',
+      markers: ['#[cfg(feature = "vault")]', "mod vault;"],
+    },
+    {
+      file: "src-tauri/src/protocol/events.rs",
+      reason: "wire 事件名 `vault:*` 是数据不是代码知识，无法用无名词表达",
+      markers: [
+        '"vault:locked"',
+        '"vault:unlocked"',
+        '"vault:biometric-enroll-step"',
+      ],
+    },
+    {
+      file: "src-tauri/src/app_dirs/registry.rs",
+      reason:
+        "`E9` 的 key / segments：`security/vault` 是盘上目录名（改名等于改磁盘格式），且按 I61 G19(c) 该行与构建无关恒在，vaultless 下要能归 `optionalNotMounted` 而非 `unregistered`。只覆盖这两行，`owner` 等其余命中一律判红（I61 G17(a)）",
+      markers: ['key: "security/vault"', 'segments: &["security", "vault"]'],
+    },
+    {
+      file: "src-tauri/src/app_dirs/registry.rs",
+      reason:
+        "V22 / V24 的反向断言：显式证明 `owner` 与能力名不等于 feature 名或可选项类型名，feature 名必须出现在断言里才有意义",
+      markers: [
+        'const FEATURE_NAMES: &[&str] = &["vault"];',
+        '!root.owner.contains("assistant_vault")',
+        '!root.owner.contains("VaultStorageProbe")',
+        'assert_ne!(SECURITY_OBSERVABILITY, "vault", "不得是 feature 名");',
+        'assert_ne!(SECURITY_OBSERVABILITY, "VaultProbe", "不得是类型名");',
+      ],
+    },
+    {
+      file: "src/settings/pages/storage/lexicon.ts",
+      reason:
+        "`security/vault` 是盘上目录名（条目 key 为对外契约，改名等于改磁盘格式），前端条目名称 / ID 表必须逐字登记该 key",
+      markers: [
+        '"security/vault",',
+        '"security/vault": "E9",',
+        '"security/vault": "settings.storage.entries.names.e9",',
+      ],
+    },
+  ],
 };
 
 const FEATURE_ID_PATTERN = /^[a-z][a-z0-9_]*$/;
@@ -108,17 +166,41 @@ function isFeatureBody(relative: string, feature: string): boolean {
   );
 }
 
-function coreFootprint(feature: string): string[] {
-  const needle = feature.toLowerCase();
-  const hits = new Set<string>();
+// 特性的中文产品名与英文 id 等价计入足迹：core 里出现「保险库」和出现 `vault`
+// 都是同一个特性泄漏，扫描不能只认 ASCII。新增特性若也有中文名，在此登记。
+const FEATURE_ALIASES: Record<string, string[]> = {
+  vault: ["保险库"],
+};
+
+interface FootprintViolation {
+  file: string;
+  line: number;
+  text: string;
+}
+
+function coreFootprintViolations(feature: string): FootprintViolation[] {
+  const needles = [feature, ...(FEATURE_ALIASES[feature] ?? [])].map((name) =>
+    name.toLowerCase(),
+  );
+  const allowances = FEATURE_FOOTPRINT_ALLOWLIST[feature] ?? [];
+  const violations: FootprintViolation[] = [];
   for (const file of CORE_SCAN_ROOTS.flatMap((root) => collect(root))) {
     if (isTestArtifact(file)) continue;
     if (isFeatureBody(file, feature)) continue;
     if (ASSEMBLY_POINTS.includes(file)) continue;
-    const text = read(file).toLowerCase();
-    if (text.includes(needle)) hits.add(file);
+    const markers = allowances
+      .filter((allowance) => allowance.file === file)
+      .flatMap((allowance) => allowance.markers);
+    read(file)
+      .split(/\r?\n/)
+      .forEach((text, index) => {
+        const lower = text.toLowerCase();
+        if (!needles.some((needle) => lower.includes(needle))) return;
+        if (markers.some((marker) => text.includes(marker))) return;
+        violations.push({ file, line: index + 1, text: text.trim() });
+      });
   }
-  return Array.from(hits).sort();
+  return violations;
 }
 
 function cargoFeatureSection(): string {
@@ -302,14 +384,25 @@ describe("特性扩展边界（新增特性改动 core 文件数 = 0）", () => 
   it("特性名在 core 逻辑中的足迹被冻结", () => {
     const problems: string[] = [];
     for (const name of names) {
-      const actual = coreFootprint(name);
-      const expected = [...(FEATURE_FOOTPRINT_ALLOWLIST[name] ?? [])].sort();
-      if (actual.join("|") === expected.join("|")) continue;
-      const added = actual.filter((file) => !expected.includes(file));
-      const removed = expected.filter((file) => !actual.includes(file));
-      problems.push(
-        `${name}: 新增 core 引用 [${added.join(", ")}] / 已消失 [${removed.join(", ")}]`,
-      );
+      for (const violation of coreFootprintViolations(name)) {
+        problems.push(
+          `${name}: 未豁免的 core 引用 ${violation.file}:${violation.line} → ${violation.text}`,
+        );
+      }
+      for (const allowance of FEATURE_FOOTPRINT_ALLOWLIST[name] ?? []) {
+        if (allowance.reason.trim() === "") {
+          problems.push(`${name}: 豁免 ${allowance.file} 缺少 reason`);
+        }
+        const lines = read(allowance.file).split(/\r?\n/);
+        const deadMarkers = allowance.markers.filter(
+          (marker) => !lines.some((line) => line.includes(marker)),
+        );
+        if (deadMarkers.length > 0) {
+          problems.push(
+            `${name}: 豁免 ${allowance.file} 的 markers 失效 [${deadMarkers.join(", ")}]（死豁免，必须删除条目）`,
+          );
+        }
+      }
     }
     expect(problems).toEqual([]);
   });

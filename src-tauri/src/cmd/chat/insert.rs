@@ -2,7 +2,7 @@ use chrono::Utc;
 use uuid::Uuid;
 
 use assistant_storage::{
-    attachment_store::{self},
+    attachment_store::{self, AttachmentStore},
     conversations::{self, MessageRow},
     providers::{self as provider_store},
 };
@@ -42,8 +42,19 @@ struct TurnCoords {
     iteration: u32,
 }
 
+/// `user` 行写入的定位字段：收成一个入参，签名不随「会话 / 内容 / 父节点 / 序号 / 时间」增长。
+struct UserMessageInput<'a> {
+    conversation_id: &'a str,
+    content: &'a str,
+    parent_id: Option<String>,
+    sibling_index: i64,
+    now: i64,
+    coords: TurnCoords,
+}
+
 pub(crate) fn insert_chat_messages(
     conn: &rusqlite::Connection,
+    attachments: &AttachmentStore,
     input: InsertChatInput<'_>,
 ) -> Result<InsertedMessages, CommandErrorDto> {
     let InsertChatInput {
@@ -119,10 +130,19 @@ pub(crate) fn insert_chat_messages(
 
     let (assistant_msg_id, user_msg_id, turn_index, iteration) =
         if let Some(bp_id) = branch_point_message_id {
-            insert_on_branch(&tx, conversation_id, content, bp_id, now, &identity)?
+            insert_on_branch(
+                &tx,
+                attachments,
+                conversation_id,
+                content,
+                bp_id,
+                now,
+                &identity,
+            )?
         } else {
             insert_normal_append(
                 &tx,
+                attachments,
                 conversation_id,
                 content,
                 &detail_before,
@@ -153,6 +173,7 @@ pub(crate) fn insert_chat_messages(
 ///   分支点无坐标（存量行）时整轮无坐标，落 `unresolved`。
 fn insert_on_branch(
     conn: &rusqlite::Connection,
+    attachments: &AttachmentStore,
     conversation_id: &str,
     content: &str,
     bp_id: &str,
@@ -182,14 +203,17 @@ fn insert_on_branch(
 
         let uid = insert_user_message_with_attachments(
             conn,
-            conversation_id,
-            content,
-            user_parent_id,
-            user_sibling_index,
-            now,
-            TurnCoords {
-                turn_index: Some(turn_index),
-                iteration: 0,
+            attachments,
+            UserMessageInput {
+                conversation_id,
+                content,
+                parent_id: user_parent_id,
+                sibling_index: user_sibling_index,
+                now,
+                coords: TurnCoords {
+                    turn_index: Some(turn_index),
+                    iteration: 0,
+                },
             },
         )?;
 
@@ -244,6 +268,7 @@ fn insert_on_branch(
 
 fn insert_normal_append(
     conn: &rusqlite::Connection,
+    attachments: &AttachmentStore,
     conversation_id: &str,
     content: &str,
     detail_before: &conversations::ConversationDetail,
@@ -261,14 +286,17 @@ fn insert_normal_append(
 
     let uid = insert_user_message_with_attachments(
         conn,
-        conversation_id,
-        content,
-        user_parent_id,
-        user_sibling_index,
-        now,
-        TurnCoords {
-            turn_index: Some(turn_index),
-            iteration: 0,
+        attachments,
+        UserMessageInput {
+            conversation_id,
+            content,
+            parent_id: user_parent_id,
+            sibling_index: user_sibling_index,
+            now,
+            coords: TurnCoords {
+                turn_index: Some(turn_index),
+                iteration: 0,
+            },
         },
     )?;
 
@@ -290,13 +318,17 @@ fn insert_normal_append(
 
 fn insert_user_message_with_attachments(
     conn: &rusqlite::Connection,
-    conversation_id: &str,
-    content: &str,
-    parent_id: Option<String>,
-    sibling_index: i64,
-    now: i64,
-    coords: TurnCoords,
+    attachments: &AttachmentStore,
+    input: UserMessageInput<'_>,
 ) -> Result<String, CommandErrorDto> {
+    let UserMessageInput {
+        conversation_id,
+        content,
+        parent_id,
+        sibling_index,
+        now,
+        coords,
+    } = input;
     let uid = Uuid::new_v4().to_string();
     conversations::insert_message(
         conn,
@@ -327,8 +359,14 @@ fn insert_user_message_with_attachments(
     {
         let attachment_ids = extract_attachment_ids(content);
         if !attachment_ids.is_empty() {
-            attachment_store::insert_attachment_refs(conn, &attachment_ids, conversation_id, &uid)
-                .map_err(CommandErrorDto::internal)?;
+            attachment_store::insert_attachment_refs(
+                attachments,
+                conn,
+                &attachment_ids,
+                conversation_id,
+                &uid,
+            )
+            .map_err(CommandErrorDto::internal)?;
         }
     }
 
@@ -411,9 +449,12 @@ mod tests {
     use assistant_storage::conversations::ConversationRow;
     use assistant_storage::providers::ProviderRow;
 
-    fn setup(conversation_mode: Option<&str>) -> (tempfile::TempDir, rusqlite::Connection) {
+    fn setup(
+        conversation_mode: Option<&str>,
+    ) -> (tempfile::TempDir, rusqlite::Connection, AttachmentStore) {
         let dir = tempfile::tempdir().unwrap();
         let conn = assistant_storage::db::init_db(&dir.path().join("chat.db")).unwrap();
+        let attachments = AttachmentStore::new(dir.path().to_path_buf());
         provider_store::insert_provider(
             &conn,
             &ProviderRow {
@@ -450,16 +491,18 @@ mod tests {
             },
         )
         .unwrap();
-        (dir, conn)
+        (dir, conn, attachments)
     }
 
     fn send(
         conn: &rusqlite::Connection,
+        attachments: &AttachmentStore,
         mode_id: Option<&str>,
         bp: Option<&str>,
     ) -> InsertedMessages {
         insert_chat_messages(
             conn,
+            attachments,
             InsertChatInput {
                 conversation_id: "c1",
                 content: "hello",
@@ -481,8 +524,8 @@ mod tests {
 
     #[test]
     fn chat_insert_writes_mode_only_to_assistant_row() {
-        let (_dir, conn) = setup(None);
-        let inserted = send(&conn, Some("builtin-agent"), None);
+        let (_dir, conn, store) = setup(None);
+        let inserted = send(&conn, &store, Some("builtin-agent"), None);
 
         assert_eq!(
             mode_of(&conn, &inserted.assistant_msg_id).as_deref(),
@@ -499,8 +542,8 @@ mod tests {
 
     #[test]
     fn empty_mode_falls_back_to_conversation_mode() {
-        let (_dir, conn) = setup(Some("builtin-translate"));
-        let inserted = send(&conn, Some(""), None);
+        let (_dir, conn, store) = setup(Some("builtin-translate"));
+        let inserted = send(&conn, &store, Some(""), None);
 
         assert_eq!(
             mode_of(&conn, &inserted.assistant_msg_id).as_deref(),
@@ -511,8 +554,8 @@ mod tests {
 
     #[test]
     fn missing_mode_falls_back_to_conversation_mode() {
-        let (_dir, conn) = setup(Some("builtin-agent"));
-        let inserted = send(&conn, None, None);
+        let (_dir, conn, store) = setup(Some("builtin-agent"));
+        let inserted = send(&conn, &store, None, None);
 
         assert_eq!(
             mode_of(&conn, &inserted.assistant_msg_id).as_deref(),
@@ -523,11 +566,12 @@ mod tests {
 
     #[test]
     fn branch_insert_on_assistant_point_keeps_mode() {
-        let (_dir, conn) = setup(Some("builtin-agent"));
-        let first = send(&conn, Some("builtin-agent"), None);
+        let (_dir, conn, store) = setup(Some("builtin-agent"));
+        let first = send(&conn, &store, Some("builtin-agent"), None);
 
         let second = send(
             &conn,
+            &store,
             Some("builtin-translate"),
             Some(&first.assistant_msg_id),
         );
@@ -561,7 +605,7 @@ mod tests {
 
     #[test]
     fn write_failure_rolls_back_counter_and_rows() {
-        let (_dir, conn) = setup(None);
+        let (_dir, conn, store) = setup(None);
         conn.execute_batch(
             "CREATE TRIGGER fail_message_insert BEFORE INSERT ON messages \
              WHEN NEW.content = 'boom' BEGIN SELECT RAISE(ABORT, 'boom'); END;",
@@ -571,6 +615,7 @@ mod tests {
         let before = next_turn_index(&conn);
         let result = insert_chat_messages(
             &conn,
+            &store,
             InsertChatInput {
                 conversation_id: "c1",
                 content: "boom",
@@ -595,14 +640,14 @@ mod tests {
 
         conn.execute_batch("DROP TRIGGER fail_message_insert;")
             .unwrap();
-        let ok = send(&conn, None, None);
+        let ok = send(&conn, &store, None, None);
         assert_eq!(ok.turn_index, Some(1), "失败轮不占用号，下一轮仍从 1 起");
     }
 
     #[test]
     fn normal_append_allocates_monotonic_turn_coords() {
-        let (_dir, conn) = setup(None);
-        let first = send(&conn, None, None);
+        let (_dir, conn, store) = setup(None);
+        let first = send(&conn, &store, None, None);
         assert_eq!(first.turn_index, Some(1), "首轮从 1 起");
 
         let uid = first.user_msg_id.clone().expect("user 行");
@@ -613,7 +658,7 @@ mod tests {
             "assistant 行 (t, 1)"
         );
 
-        let second = send(&conn, None, None);
+        let second = send(&conn, &store, None, None);
         assert_eq!(second.turn_index, Some(2), "下一轮递增");
         let uid2 = second.user_msg_id.clone().expect("user 行");
         assert_eq!(coords(&conn, &uid2), (Some(2), 0));
@@ -622,11 +667,11 @@ mod tests {
 
     #[test]
     fn branch_on_user_point_opens_new_turn() {
-        let (_dir, conn) = setup(None);
-        let first = send(&conn, None, None);
+        let (_dir, conn, store) = setup(None);
+        let first = send(&conn, &store, None, None);
         let uid = first.user_msg_id.clone().expect("user 行");
 
-        let branched = send(&conn, None, Some(&uid));
+        let branched = send(&conn, &store, None, Some(&uid));
         assert_eq!(
             branched.turn_index,
             Some(2),
@@ -639,11 +684,11 @@ mod tests {
 
     #[test]
     fn branch_on_assistant_point_reuses_turn_and_bumps_iteration() {
-        let (_dir, conn) = setup(None);
-        let first = send(&conn, None, None);
+        let (_dir, conn, store) = setup(None);
+        let first = send(&conn, &store, None, None);
         assert_eq!(coords(&conn, &first.assistant_msg_id), (Some(1), 1));
 
-        let regenerated = send(&conn, None, Some(&first.assistant_msg_id));
+        let regenerated = send(&conn, &store, None, Some(&first.assistant_msg_id));
         assert_eq!(
             regenerated.turn_index,
             Some(1),
@@ -655,15 +700,15 @@ mod tests {
             "迭代号在该 turn 内递增"
         );
 
-        let again = send(&conn, None, Some(&regenerated.assistant_msg_id));
+        let again = send(&conn, &store, None, Some(&regenerated.assistant_msg_id));
         assert_eq!(coords(&conn, &again.assistant_msg_id), (Some(1), 3));
     }
 
     #[test]
     fn new_rows_never_carry_null_turn_index() {
-        let (_dir, conn) = setup(None);
-        let first = send(&conn, None, None);
-        let second = send(&conn, None, Some(&first.assistant_msg_id));
+        let (_dir, conn, store) = setup(None);
+        let first = send(&conn, &store, None, None);
+        let second = send(&conn, &store, None, Some(&first.assistant_msg_id));
 
         let rows = conversations::get_messages(&conn, "c1").unwrap();
         assert_eq!(rows.len(), 3, "两轮共 3 行（第二轮为分支重生成）");

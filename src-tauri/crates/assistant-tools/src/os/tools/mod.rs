@@ -14,3 +14,5 @@ pub mod fs_link;
 pub mod super_edit;
 pub(crate) mod super_index;
 pub mod super_read;
+
+pub use super_index::{index_stats, purge_index_files, IndexPurgeReport};
