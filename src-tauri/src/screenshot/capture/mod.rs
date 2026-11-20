@@ -171,18 +171,20 @@ pub fn encode_preview(image: &RgbaImage) -> Result<PreviewImage, String> {
         return Err(ENCODE_FAILED.to_string());
     }
     let (target_width, target_height) = fit_long_edge(width, height, SCREENSHOT_PREVIEW_LONG_EDGE);
+    // 走 DynamicImage 的非泛型包装：缩放与颜色转换在 image crate 内单态化，随依赖一起优化；
+    // 直接调用 imageops::resize 会把重采样循环编进本 crate 的 codegen（dev 为 opt-level=0）。
+    let resized = DynamicImage::ImageRgba8(image.clone());
     let resized = if (target_width, target_height) == (width, height) {
-        image.clone()
+        resized
     } else {
-        imageops::resize(
-            image,
+        resized.resize_exact(
             target_width,
             target_height,
             imageops::FilterType::CatmullRom,
         )
     };
 
-    let rgb = DynamicImage::ImageRgba8(resized).to_rgb8();
+    let rgb = resized.to_rgb8();
     let mut buffer = Vec::new();
     JpegEncoder::new_with_quality(&mut buffer, SCREENSHOT_PREVIEW_JPEG_QUALITY)
         .write_image(

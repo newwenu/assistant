@@ -4,7 +4,7 @@
 use image::codecs::jpeg::JpegEncoder;
 use image::codecs::png::{CompressionType, FilterType as PngFilterType, PngEncoder};
 use image::imageops::FilterType as ResizeFilter;
-use image::{imageops, DynamicImage, ExtendedColorType, ImageEncoder, RgbaImage};
+use image::{DynamicImage, ExtendedColorType, ImageEncoder, RgbaImage};
 
 use assistant_config::constant::SCREENSHOT_MAX_BYTES;
 
@@ -84,8 +84,11 @@ pub struct EncodedCrop {
 
 /// 裁剪并单次编码：先 PNG（快压/Sub 滤波），超限再 JPEG，仍超限报 `too_large`。
 pub fn encode_crop(image: &RgbaImage, rect: CropRect) -> Result<EncodedCrop, String> {
-    let cropped = imageops::crop_imm(image, rect.x, rect.y, rect.width, rect.height).to_image();
-    let (crop_width, crop_height) = cropped.dimensions();
+    // 走 DynamicImage 的非泛型包装：裁剪与重采样在 image crate 内单态化，随依赖一起优化；
+    // 直接调用 imageops::crop_imm / resize 会把像素拷贝循环编进本 crate 的 codegen（dev 为 opt-level=0）。
+    let cropped =
+        DynamicImage::ImageRgba8(image.clone()).crop_imm(rect.x, rect.y, rect.width, rect.height);
+    let (crop_width, crop_height) = (cropped.width(), cropped.height());
     if crop_width == 0 || crop_height == 0 {
         return Err(ENCODE_FAILED.to_string());
     }
@@ -104,13 +107,13 @@ pub fn encode_crop(image: &RgbaImage, rect: CropRect) -> Result<EncodedCrop, Str
     let final_image = if (width, height) == (crop_width, crop_height) {
         cropped
     } else {
-        imageops::resize(&cropped, width, height, ResizeFilter::CatmullRom)
+        cropped.resize_exact(width, height, ResizeFilter::CatmullRom)
     };
 
     let mut png_bytes = Vec::new();
     PngEncoder::new_with_quality(&mut png_bytes, CompressionType::Fast, PngFilterType::Sub)
         .write_image(
-            final_image.as_raw(),
+            final_image.as_bytes(),
             width,
             height,
             ExtendedColorType::Rgba8,
@@ -127,7 +130,7 @@ pub fn encode_crop(image: &RgbaImage, rect: CropRect) -> Result<EncodedCrop, Str
         });
     }
 
-    let rgb = DynamicImage::ImageRgba8(final_image).to_rgb8();
+    let rgb = final_image.to_rgb8();
     let mut jpeg_bytes = Vec::new();
     JpegEncoder::new_with_quality(&mut jpeg_bytes, CROP_JPEG_QUALITY)
         .write_image(rgb.as_raw(), width, height, ExtendedColorType::Rgb8)
