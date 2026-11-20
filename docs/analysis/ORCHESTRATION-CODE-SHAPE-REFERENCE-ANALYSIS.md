@@ -1,16 +1,18 @@
 # 编排层「缝」的代码安排：参考项目专项分析
 
-> 日期：2026-11-19｜性质：**预先分析**（只回答「清晰是靠什么机制维持的、我们差在哪一条」，不产出重构步骤与排期）
+> 日期：2026-11-19｜2026-11-20（结论速览改命题核对、基线改时点快照、移除决议性表述）
+> 性质：**预先分析**（只回答「清晰是靠什么机制维持的、我们差在哪一条」；**不含取舍决议**——缝怎么立、注册表落哪层、要不要动 crate 结构，属规格职责）
+> 代码事实快照：仓库代码的 2026-11-19 时点（**时点记录**，不随代码演进追改，需要最新事实时以代码为准）
+> 时效与终止：本文是**一次性决策输入**。编排层结构调整的规格定案后整体归档冻结、不再修改；有效内容由规格承接，事实条目作为历史快照保留。
 > 判据来源：`docs/principle/CODE-SPLIT-PRINCIPLE.md`、`docs/principle/CODE-REVIEW-PRINCIPLE.md`
-> 事实基线：仓库当前代码（2026-11-19）
 > 参考实现：`references/9-workflow-orchestration/` 稀疏检出——Dify（`api/core/workflow/`：`node_factory.py`、`node_runtime.py`、`node_execution.py`、`graph_topology.py`、`nodes/*`）、langgraph（`libs/langgraph/pregel/`：`_read.py`、`_write.py`）、n8n（`packages/workflow/src/`：`graph/graph-utils.ts`、`common/get-runnable-nodes.ts`）、ComfyUI（`execution.py`、`nodes.py`、`comfy_execution/graph.py`）。凡标「参考」的判断只出自上述检出部分，不外推到未检出部分。
 > 与既有文档的关系：**能力缺口**（缺哪些编排原语）见 `AGENT-WORKFLOW-ORCHESTRATION-ANALYSIS.md` §12，本文不复述；**执行体定义域**（Unit / Companion / Job / Hook 各管什么）见 `MODEL-LEVEL-ORCHESTRATION-ANALYSIS.md`。本文只回答第三个问题：**同样的能力，代码凭什么排得清**。
 
 ---
 
-## 0 结论速览
+## 0 命题核对
 
-| # | 命题 | 判定 | 依据 |
+| # | 命题 | 核对 | 依据 |
 |---|---|---|---|
 | 1 | 「清晰」可以被设计出来（先定风格再写代码） | **不成立** | 参考项目里每一处被抽出的纯模块，docstring 都写着一个**具体的第二个调用点**或**一次具体的越界事实**；拆分是被协调压力逼出来的，不是审美驱动的（§2.5） |
 | 2 | 目录整齐就是清晰 | **不成立** | Dify 10 个节点目录中，漂移只发生在**文件名拼写**（`exc.py`/`_exc.py`、`node.py`/`<name>_node.py`），**结构从不漂移**；被约束的是「四个问题各有一处可寻址文件」，不是模板（§2.2） |
@@ -24,7 +26,7 @@
 | 10 | 端口层是最后一道防线，所以词汇一定是通用的 | **不成立** | `kernel/ports/mod.rs` 的 `TurnEvent` 已含 `Node(AgentNodeEvent)` / `Tool(ToolEvent)` 两个 agent 专有变体——端口层已被单一链路占据（§4.2） |
 | 11 | 不做缝也能做编排 | **不成立** | 编排层要能表达「任意节点的状态」；当前 `TurnEvent` 只能表达「agent 节点」，所以只能编排 agent，无法编排 Companion / Job 等第二种执行体（§4.4） |
 
-一句话：**参考项目的「清晰」不是代码风格，是三个可复述的机制——单向的缝、可枚举的命名、被协调压力逼出来的下沉。本项目当前一条都没有：`kernel` 与 `agent` 互指，端口层词汇已被单一链路占据。这不是重构洁癖，而是编排层能否容纳第二种执行体的前置条件。**
+一句话：**参考项目的「清晰」不是代码风格，是三个可复述的机制——单向的缝、可枚举的命名、被协调压力逼出来的下沉。本项目当前一条都不具备：`kernel` 与 `agent` 互指，端口层词汇已被单一链路占据。这是结构事实，其后果是编排层能否容纳第二种执行体的前置条件不成立。**
 
 ---
 
@@ -54,11 +56,11 @@
 - **缝怎么被认出来**：命名前缀 / 包名 / 动词，能否一次 grep 枚举？
 - **缝凭什么不被击穿**：注册、bootstrap、纯函数下沉分别归谁？
 
-§2 按这三个子问题逐个项目取证；§3 给反面参照；§4 落到本项目；§5 收成五条可执行判据。
+§2 按这三个子问题逐个项目取证；§3 给反面参照；§4 落到本项目；§5 收成五条判据。
 
 ---
 
-## 2 事实基线：四个参考项目的缝
+## 2 参考对照：四个参考项目的缝
 
 ### 2.1 Dify：缝是包边界，产品单向依赖引擎
 
@@ -212,7 +214,7 @@ langgraph 的 `pregel/` 里，状态访问本身被升成了与节点同一代�
 | 状态放哪 | 产品实体子类 | channel + checkpoint | execution data | 继承字段 |
 | 最大短板 | 适配器数量多 | 抽象层级高、总量大 | —— | 文件级与状态级无形状 |
 
-结论：**ComfyUI 的清晰是「类级契约清晰 + 文件级与状态级不清晰」，不能整体照搬；可学的是「引擎只读词汇表」这一条。**
+核对：**ComfyUI 的清晰是「类级契约清晰 + 文件级与状态级不清晰」，不能整体平移；其中可复述的机制只有「引擎只读词汇表」这一条。**
 
 ---
 
@@ -226,7 +228,7 @@ langgraph 的 `pregel/` 里，状态访问本身被升成了与节点同一代�
 | `kernel → agent`（测试面，不计入） | 2 | `kernel/ports/test_doubles.rs` |
 | `agent → kernel` | **17** | 分布 9 个文件：`middleware` 1、`round_executor` 1、`stop` 1、`loop_executor/budget` 1、`loop_executor/call` 4、`loop_executor/execute` 1、`loop_executor/mod` 3、`loop_executor/persist` 2、`loop_executor/terminal` 3 |
 
-结论：**双向互指，缝不存在。** 参考项目在这个指标上全是 0（§3.3）。
+核对：**双向互指，缝不存在。** 参考项目在这个指标上全是 0（§3.3）。
 
 ### 4.2 三处最重的击穿
 
@@ -264,20 +266,34 @@ K7 原文：链路差异只经 `TurnSpec` 参数表达，内核内不写 `if is_
 
 ### 4.4 为什么这是编排的前置问题
 
-`AGENT-WORKFLOW-ORCHESTRATION-ANALYSIS.md` §12 已判定：调度器要能驱动一张图，前提是「被编排的单元能自述形状」。本文从另一侧给出同一条结论的**结构证据**：
+`AGENT-WORKFLOW-ORCHESTRATION-ANALYSIS.md` §12 已给出：调度器要能驱动一张图，前提是「被编排的单元能自述形状」。本文从另一侧提供同一条判断的**结构证据**：
 
 - 编排层要能表达「**任意**节点的状态」；
 - 当前 `TurnEvent` 只能表达「**agent** 节点」；
 - 因此当前编排能力只能编排 agent 一种执行体，无法编排 Companion / Job；
 - 而 `MODEL-LEVEL-ORCHESTRATION-ANALYSIS.md` 的四种执行体（Unit / Companion / Job / Hook）恰恰要求引擎认识「节点」而不是「agent 节点」。
 
+### 4.5 观测面（V0）带来的反向边
+
+在 §4.1 的 12 条 `kernel → agent` 边中，由 P15 观测面净新增的是 3 条，其余为既有积累：
+
+| 位置 | 引入的边 | 类别 |
+|---|---|---|
+| `kernel/ports/mod.rs` | `use crate::agent::node_event::AgentNodeEvent` | 词汇进入端口层（S3 违规） |
+| `kernel/turn/emit.rs` | `use crate::agent::node_event::{AgentNode, AgentNodeDetail, AgentNodeEvent, NodeState}` | 发射器依赖链路类型 |
+| `kernel/turn/runner.rs` | `use crate::agent::node_event::{AgentNode, AgentNodeDetail, NodeState, ROOT_AGENT_ID}` | 执行器依赖链路类型 |
+
+`agent → kernel` 的 17 条中没有 V0 新增。三处性质不同：端口层那条属词汇问题（与 `ToolEvent` 同属一类），`emit.rs` / `runner.rs` 两条属事件词汇与执行器构造问题——后者与 U2 的通用 `NodeEvent` 方向同域；若只处理端口层，结果是「缝立了，事件仍绑着 agent」。
+
+**处理这三条边不等于取消观测**：把 agent 专名从内核端口层挪走后，观测能力由适配层投影继续提供；适配层认识 agent 词汇不越界（Dify 的做法），内核端口层认识才越界。
+
 ---
 
-## 5 可执行判据（五条）
+## 5 判据（供规格验收）
 
 | # | 判据 | 可机检形态 | 参考项目证据 | 本项目现状 |
-|---|---|---|---|---|
-| **S1** | 反向依赖边 = 0 | 对模块路径做 grep 计数，进 CI | 四项目全 0 | `kernel↔agent` 12 / 17 |
+| --- | --- | --- | --- | --- |
+| **S1** | 反向依赖边 = 0 | 对模块路径做 grep 计数 | 四项目全 0 | `kernel↔agent` 12 / 17 |
 | **S2** | 缝面有统一前缀，一次搜索可枚举 | `grep "class Dify"` / `grep "_read"` | Dify / langgraph | 无前缀，两侧直接互指 |
 | **S3** | 引擎词汇是节点级通用词 | 引擎内不出现链路专名 | ComfyUI / Dify | `TurnEvent::Node(AgentNodeEvent)` |
 | **S4** | 注册表在引擎、bootstrap 在产品、注册项是**数据** | 加一个条目 = 加一个目录 / 文件，不改引擎 | Dify `register_nodes()`、ComfyUI `NODE_CLASS_MAPPINGS` | 无注册表；`TurnSpec::chat/agent` 是**构造器** |
@@ -287,20 +303,20 @@ K7 原文：链路差异只经 `TurnSpec` 参数表达，内核内不写 `if is_
 
 - 只数 `use crate::<模块>` 路径边，**不数测试面**（`test_doubles.rs` 这类端口替身豁免）；
 - 边按**出现次数**计（同一文件多次 import 同一模块记多次），因为每次 import 都是一次耦合点；
-- 阈值是 **0**，不接受「少量可接受」——一旦允许少量，缝就会在下次重构里被扩成大量。
+- 口径是 **0**；一旦口径放宽为「少量可接受」，缝就会在下次重构里被扩成大量。
 
 ### 5.2 S3 的度量口径
 
 - 在引擎文件里搜链路专名（`agent` / `chat` / `orb` / `compaction`）；
-- **允许的例外**：`TurnSpec` 的构造器名（`chat()` / `agent()`）——它是「选择哪条链路」的唯一入口，名字本身就是策略面；
-- **不允许的例外**：构造器体内出现 `crate::<链路>` 的具体类型。当前 `TurnSpec::agent()` 与 `agent_stop_hooks()` 正是踩这一条。
+- **例外**：`TurnSpec` 的构造器名（`chat()` / `agent()`）——它是「选择哪条链路」的唯一入口，名字本身就是策略面；
+- **不算例外**：构造器体内出现 `crate::<链路>` 的具体类型。当前 `TurnSpec::agent()` 与 `agent_stop_hooks()` 正是踩这一条。
 
 ### 5.3 S4 的形状
 
 - 「注册项是数据」意味着**新增链路不改引擎代码**：Dify 靠 `_import_node_package` 遍历目录；ComfyUI 靠节点模块被 import 时写入 `NODE_CLASS_MAPPINGS`。
 - 反例：`TurnSpec::chat()` / `TurnSpec::agent()` 是构造器，新增链路必须改 `kernel/mod.rs`——这不是注册，这是硬编码。
 
-### 5.4 S5 的落地形态
+### 5.4 S5 的形态
 
 - 不新增文档；证据写在**代码注释**里，与实现同址；
 - 参考句式：「从 X 抽出，使两处解析同一形状」/「本层拥有 bootstrap，因为必须组合 Y，且不得把 bootstrap 塞回低层原语」；
@@ -308,41 +324,48 @@ K7 原文：链路差异只经 `TurnSpec` 参数表达，内核内不写 `if is_
 
 ---
 
-## 6 三条不能照搬的地方
+## 6 差异对照：不能直接平移的三处
 
-| # | 参考做法 | 为什么不能照搬 | 本项目应有的等价物 |
+| # | 参考做法 | 差异原因 | 本项目对应的结构形态 |
 |---|---|---|---|
 | 1 | ComfyUI 的类属性契约 | 无类型约束，靠 `hasattr` 运行时探测；Rust 侧没有运行时属性表 | 显式 `Spec` 结构 + 编译期构造，`Option<OutputSchema>` 缺省即编译错误 |
-| 2 | langgraph 的动词抽象 | 把读 / 写升为 `Runnable` 需要 channel + checkpoint 全栈；本项目无 checkpoint 概念 | 只借「状态访问要有唯一入口」这一条，不借它的对象代数 |
-| 3 | Dify 的包边界 | `graphon` 是独立分发包；本项目是 workspace 内 crate | 拆 crate 是彻底解，但成本高于模块级 grep 门禁（见 U1） |
+| 2 | langgraph 的动词抽象 | 把读 / 写升为 `Runnable` 需要 channel + checkpoint 全栈；本项目无 checkpoint 概念 | 只对应「状态访问要有唯一入口」这一条，不对应它的对象代数 |
+| 3 | Dify 的包边界 | `graphon` 是独立分发包；本项目是 workspace 内 crate | 拆 crate 可彻底隔离，但成本高于模块级 grep（见 U1） |
 
 ---
 
-## 7 未决问题
+## 7 待定案项
 
-| # | 问题 | 影响面 |
+以下取舍属规格职责，本文只列各项的后果对照，不给结论：
+
+| # | 待定案项 | 选项与后果 |
 |---|---|---|
-| **U1** | S1 用「模块级 grep 门禁」还是「拆 crate 编译期强制」 | 前者便宜但可绕过（`#[path]`、`pub(crate)` 滥用）；后者彻底但要动 crate 结构。判据是「缝要不要跨 crate 共享」：只在本 crate 内则 grep 足够 |
-| **U2** | `TurnEvent` 通用化的方向：抽出 `Node(NodeEvent)` 抽象层，还是让适配层做映射 | 前者改端口契约（影响 wire 投影输入面）；后者把映射责任推给适配层（Dify 的做法）。两者都可行，但不能只改一半 |
-| **U3** | `TurnSpec::agent()` 留在 `kernel/mod.rs` 是否可接受 | 若视为「选择入口」可保留；但按 S3 口径，构造器体内不得出现 agent 类型，否则 S3 不成立 |
-| **U4** | 注册表下沉到引擎，会不会让内核变成插件框架 | Dify 的注册表只是 `dict[NodeType, dict[version, type[Node]]]`，**不持生命周期、不持状态**；判据是「注册表只做查找」 |
-| **U5** | 是否给 `scripts/probe-structure.mjs` 增加反向边统计 | 它已用 `cargo metadata` 覆盖 crate 间依赖；crate 内模块边需要另加一步源码 grep |
+| **U1** | S1 用「模块级 grep」还是「拆 crate 编译期强制」 | 前者便宜但可绕过（`#[path]`、`pub(crate)` 滥用）；后者彻底但要动 crate 结构。分界在「缝要不要跨 crate 共享」：只在本 crate 内则 grep 足够 |
+| **U2** | `TurnEvent` 通用化的方向：抽出 `Node(NodeEvent)` 抽象层，还是让适配层做映射 | 前者改端口契约（影响 wire 投影输入面）；后者把映射责任推给适配层（Dify 的做法）。两者都可行，但只做一半会留下「缝立了、事件仍绑 agent」的中间态 |
+| **U3** | `TurnSpec::agent()` 留在 `kernel/mod.rs` 是否成立 | 若视为「选择入口」则可保留；但按 S3 口径，构造器体内出现 agent 类型即 S3 不成立 |
+| **U4** | 注册表下沉到引擎后，内核会不会变成插件框架 | Dify 的注册表只是 `dict[NodeType, dict[version, type[Node]]]`，**不持生命周期、不持状态**；分界在「注册表只做查找」 |
+| **U5** | 是否给 `scripts/probe-structure.mjs` 增加反向边统计 | 它已用 `cargo metadata` 覆盖 crate 间依赖；crate 内模块边需另加一步源码 grep |
 
 ---
 
-## 8 收口
+## 8 结构核对
 
 参考项目的「清晰」不是风格，是三个可复述的机制：**单向的缝**、**可枚举的命名**、**被协调压力逼出来的下沉**。
 
 本项目当前**没有缝**：`kernel` 与 `agent` 互指（12 / 17），端口层词汇已被单一链路占据。
 
-这不是重构洁癖。不做缝，编排层只能编排 agent 一种执行体；而 §12 的缺口清单与 `MODEL-LEVEL-ORCHESTRATION-ANALYSIS.md` 的四种执行体，都要求引擎认识「节点」而不是「agent 节点」。
+结构后果：不做缝，编排层只能编排 agent 一种执行体；而 §12 的缺口清单与 `MODEL-LEVEL-ORCHESTRATION-ANALYSIS.md` 的四种执行体，都要求引擎认识「节点」而不是「agent 节点」。
 
-最小动作（**不排期，只列形状**）：
+反向边的结构分布（§4.1 实测）：
 
-1. 把 `TurnEvent` 里的 agent 专有变体挪出端口层（解 `kernel/ports/mod.rs` 2 条边）；
-2. 把 `agent_stop_hooks()` 挪出 `kernel/mod.rs`（解 3 条边，同时使 S3 在 `TurnSpec::agent()` 上成立）；
-3. 这两步一做完，12 条反向边自然降到 7 条，且全部集中在 `kernel/turn/runner.rs`（5）与 `kernel/turn/emit.rs`（2）——届时再决定 U2 的方向，因为剩下的 7 条都是「事件词汇」与「执行器构造」两类，正好对应 U2 与 U3。
+| 边集 | 条数 | 集中位置 | 性质 |
+| --- | --- | --- | --- |
+| `kernel/ports/mod.rs` | 2 | 端口层词汇 | 词汇进入端口层（S3 违规） |
+| `kernel/mod.rs`（`agent_stop_hooks()`） | 3 | 选择入口旁的构造 | 构造器体内出现 agent 类型（S3 违规） |
+| `kernel/turn/runner.rs` | 5 | 执行器 | 执行器依赖链路类型 |
+| `kernel/turn/emit.rs` | 2 | 发射器 | 发射器依赖链路类型 |
+
+两类性质：前两处是**词汇与构造**，后两处是**事件词汇与执行器构造**——正好对应 U2 与 U3 的待定案范围。这个分布说明「缝」的剩余工作不是均匀的，而是集中在两个文件的两个问题上。
 
 ---
 
