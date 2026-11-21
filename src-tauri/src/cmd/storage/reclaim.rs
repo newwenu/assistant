@@ -401,7 +401,7 @@ async fn execute_orphans(
             Totals::default(),
             vec![error_dto(
                 StorageReclaimErrorCodeDto::OwnerUnavailable,
-                "数据库未装配",
+                "数据库暂不可用",
             )],
             StorageReclaimStatusDto::Failed,
         );
@@ -443,7 +443,7 @@ async fn execute_orphans(
                 Totals::default(),
                 vec![error_dto(
                     StorageReclaimErrorCodeDto::Io,
-                    "附件引用集合读取失败",
+                    "读取附件引用失败",
                 )],
                 StorageReclaimStatusDto::Failed,
             );
@@ -455,7 +455,7 @@ async fn execute_orphans(
                 Totals::default(),
                 vec![error_dto(
                     StorageReclaimErrorCodeDto::Unknown,
-                    "执行线程异常".to_string(),
+                    "清理任务出错".to_string(),
                 )],
                 StorageReclaimStatusDto::Failed,
             );
@@ -528,7 +528,7 @@ async fn execute_index(
                 Totals::default(),
                 vec![error_dto(
                     StorageReclaimErrorCodeDto::Unknown,
-                    "执行线程异常".to_string(),
+                    "清理任务出错".to_string(),
                 )],
                 StorageReclaimStatusDto::Failed,
             );
@@ -567,7 +567,7 @@ async fn execute_tool_results(
             Totals::default(),
             vec![error_dto(
                 StorageReclaimErrorCodeDto::OwnerUnavailable,
-                "工具执行管线未装配",
+                "工具功能未启用",
             )],
             StorageReclaimStatusDto::Failed,
         );
@@ -604,7 +604,7 @@ async fn execute_tool_results(
                 Totals::default(),
                 vec![error_dto(
                     StorageReclaimErrorCodeDto::OwnerUnavailable,
-                    "存储未提供回收入口",
+                    "该存储项暂不支持清理",
                 )],
                 StorageReclaimStatusDto::Failed,
             );
@@ -616,7 +616,7 @@ async fn execute_tool_results(
                 Totals::default(),
                 vec![error_dto(
                     StorageReclaimErrorCodeDto::Unknown,
-                    "执行线程异常".to_string(),
+                    "清理任务出错".to_string(),
                 )],
                 StorageReclaimStatusDto::Failed,
             );
@@ -671,7 +671,7 @@ async fn execute_backups(
             Totals::default(),
             vec![error_dto(
                 StorageReclaimErrorCodeDto::OwnerUnavailable,
-                "备份目录未登记为可选能力",
+                "备份功能未启用",
             )],
             StorageReclaimStatusDto::Failed,
         );
@@ -683,7 +683,7 @@ async fn execute_backups(
             Totals::default(),
             vec![error_dto(
                 StorageReclaimErrorCodeDto::OwnerUnavailable,
-                "备份目录所属能力未装配",
+                "备份功能未启用",
             )],
             StorageReclaimStatusDto::Failed,
         );
@@ -713,7 +713,7 @@ async fn execute_backups(
                 Totals::default(),
                 vec![error_dto(
                     StorageReclaimErrorCodeDto::OwnerUnavailable,
-                    "存储未提供回收入口",
+                    "该存储项暂不支持清理",
                 )],
                 StorageReclaimStatusDto::Failed,
             );
@@ -725,7 +725,7 @@ async fn execute_backups(
                 Totals::default(),
                 vec![error_dto(
                     StorageReclaimErrorCodeDto::Unknown,
-                    "执行线程异常".to_string(),
+                    "清理任务出错".to_string(),
                 )],
                 StorageReclaimStatusDto::Failed,
             );

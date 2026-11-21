@@ -1,7 +1,7 @@
 //! 13 条条目的并行采样装配（I61 §3.10）：每条一个独立任务 + 单条 500 ms 超时。
 //!
 //! 三条纪律：①`E1` 与顶层字段同源，由调用方传入同一份 `list_all` 结果，这里不重扫；
-//! ②除 `E1` 外全部并行，单条超时只降级该条（`unavailable + timeout`），不拖整页；
+//! ②除 `E1` 外全部并行，单条超时只降级该条（`unavailable` + 「统计超时」），不拖整页；
 //! ③超时只是放弃等待，任务线程仍会跑完——因此 owner stats 必须只读、幂等、不持锁。
 //!
 //! 本模块不读配置：策略一律由 owner 自述（`result_retention` / `audit_policy`），
@@ -36,12 +36,20 @@ pub const SAMPLE_TIMEOUT: Duration = Duration::from_millis(500);
 type SampleFuture = Pin<Box<dyn Future<Output = (&'static str, EntrySample)> + Send>>;
 
 fn timeout_sample() -> EntrySample {
-    EntrySample::degraded(StorageAvailabilityDto::Unavailable, "timeout")
+    EntrySample::degraded(StorageAvailabilityDto::Unavailable, "统计超时")
 }
 
-/// IO 错误类别：`availabilityReason` 只放类别，不放整条错误文案。
+/// IO 错误类别：`availabilityReason` 只放用户能懂的类别，不放整条错误文案或内部枚举名。
 fn io_reason(error: &std::io::Error) -> String {
-    format!("{:?}", error.kind())
+    use std::io::ErrorKind;
+    let text = match error.kind() {
+        ErrorKind::PermissionDenied => "没有访问权限",
+        ErrorKind::NotFound => "文件不存在",
+        ErrorKind::StorageFull => "磁盘空间不足",
+        ErrorKind::InvalidData => "文件内容异常",
+        _ => "读取失败",
+    };
+    text.to_string()
 }
 
 fn from_dir_stats(stats: impl StatsView) -> EntrySample {
@@ -132,7 +140,7 @@ fn probe_sample(stats: ProbeStats) -> EntrySample {
         _ => StorageAvailabilityDto::Unreadable,
     };
     let availability_reason = if availability == StorageAvailabilityDto::Unreadable {
-        Some("owner 未给出该维度".to_string())
+        Some("该条目未提供这项数据".to_string())
     } else {
         None
     };
@@ -168,7 +176,7 @@ pub fn probe_sample_for(probes: Option<&ProbeRegistry>, root: &ManagedRoot) -> E
         RootMount::Always => {
             return EntrySample::degraded(
                 StorageAvailabilityDto::NotImplemented,
-                "登记表声明为无条件能力，不得走 provider",
+                "该条目无需单独统计",
             )
         }
     };
@@ -176,10 +184,7 @@ pub fn probe_sample_for(probes: Option<&ProbeRegistry>, root: &ManagedRoot) -> E
         return unmounted_probe_sample();
     };
     match probe.stats(root.key) {
-        None => EntrySample::degraded(
-            StorageAvailabilityDto::NotImplemented,
-            "provider 未提供该条目",
-        ),
+        None => EntrySample::degraded(StorageAvailabilityDto::NotImplemented, "该条目暂未提供统计"),
         Some(Ok(stats)) => probe_sample(stats),
         Some(Err(error)) => probe_error(error),
     }
@@ -217,7 +222,7 @@ where
         Ok(Ok(sample)) => (entry, sample),
         Ok(Err(_)) => (
             entry,
-            EntrySample::degraded(StorageAvailabilityDto::Unreadable, "采样任务失败"),
+            EntrySample::degraded(StorageAvailabilityDto::Unreadable, "统计失败"),
         ),
         Err(_) => (entry, timeout_sample()),
     }
@@ -228,7 +233,7 @@ fn sample_tool_results(storage: &Arc<dyn ToolResultStorage>) -> EntrySample {
         None => {
             return EntrySample::degraded(
                 StorageAvailabilityDto::NotImplemented,
-                "本存储不参与条目观测",
+                "该存储方式不支持统计占用",
             )
         }
         Some(Ok(stats)) => stats,
@@ -297,7 +302,7 @@ fn sample_database(db: &DbState) -> EntrySample {
 pub fn attachment_reason(error: &assistant_storage::attachment_store::AttachmentError) -> String {
     match error {
         assistant_storage::attachment_store::AttachmentError::Io(io) => io_reason(io),
-        _ => "invalidState".to_string(),
+        _ => "文件状态异常".to_string(),
     }
 }
 
@@ -399,7 +404,7 @@ pub async fn collect_with(inputs: SampleInputs<'_>) -> [EntrySample; ENTRY_COUNT
         None => set_sample(
             &mut samples,
             "E3",
-            EntrySample::degraded(StorageAvailabilityDto::NotImplemented, "工具执行管线未装配"),
+            EntrySample::degraded(StorageAvailabilityDto::NotImplemented, "工具功能未启用"),
         ),
     }
 
@@ -425,7 +430,7 @@ pub async fn collect_with(inputs: SampleInputs<'_>) -> [EntrySample; ENTRY_COUNT
         None => set_sample(
             &mut samples,
             "E6",
-            EntrySample::degraded(StorageAvailabilityDto::Unavailable, "主库状态未装配"),
+            EntrySample::degraded(StorageAvailabilityDto::Unavailable, "数据库暂不可用"),
         ),
     }
 
@@ -440,13 +445,13 @@ pub async fn collect_with(inputs: SampleInputs<'_>) -> [EntrySample; ENTRY_COUNT
         })));
     }
 
-    // E12：插件不暴露 stats，恒为常量降级。
+    // E12：日志组件不提供占用统计，恒为常量降级。
     set_sample(
         &mut samples,
         "E12",
         EntrySample::degraded(
             StorageAvailabilityDto::NotImplemented,
-            "tauri-plugin-log 不暴露 stats",
+            "该组件不提供占用统计",
         ),
     );
 
@@ -545,7 +550,7 @@ mod tests {
     fn timeout_sample_is_unavailable_with_reason() {
         let sample = timeout_sample();
         assert_eq!(sample.availability, StorageAvailabilityDto::Unavailable);
-        assert_eq!(sample.availability_reason.as_deref(), Some("timeout"));
+        assert_eq!(sample.availability_reason.as_deref(), Some("统计超时"));
         assert_eq!(sample.bytes, None);
         assert_eq!(sample.count, None);
     }

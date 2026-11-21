@@ -95,6 +95,9 @@ pub struct BreakdownBase {
 }
 
 /// 静态部分：T1 的资格是「按当时代码真实可执行性」填的（§11 切片期资格表）。
+///
+/// `note` 只承载结构性的能力缺口说明（前端原文展示）：不写策略数值（上限 / 份数 / 天数）、
+/// 路径、时间点或错误原文——这些内容会随配置与版本变化而过时。
 struct EntryStatic {
     action: StorageReclaimActionDto,
     eligibility: StorageEligibilityDto,
@@ -157,7 +160,7 @@ fn static_for(entry: &str) -> EntryStatic {
             policy: owner_policy(),
             auto_active: false,
             counts_self_logs: false,
-            note: Some("单文件 64 MiB、内存 LRU 64 MiB 由 owner 自述"),
+            note: None,
         },
         "E5" => EntryStatic {
             action: StorageReclaimActionDto::None,
@@ -233,7 +236,7 @@ fn static_for(entry: &str) -> EntryStatic {
             policy: constant_policy(Some(3)),
             auto_active: true,
             counts_self_logs: true,
-            note: Some("tauri-plugin-log 不暴露 stats，3 份 × 10 MiB 轮转由插件管理"),
+            note: None,
         },
         "E13" => EntryStatic {
             action: StorageReclaimActionDto::None,
@@ -242,7 +245,7 @@ fn static_for(entry: &str) -> EntryStatic {
             policy: ReclaimPolicyDto::default(),
             auto_active: false,
             counts_self_logs: false,
-            note: Some("缺 assistant_crash::prune_to_limit（OQ8 未定案，本期只观测）"),
+            note: Some("暂未提供清理功能，这里只展示占用情况"),
         },
         other => unreachable!("entry id out of range: {other}"),
     }
@@ -545,12 +548,9 @@ pub fn assemble_breakdown(
     }
 }
 
-/// 关闭特性构建 / 插件未装配时 `E7`–`E11` 的统一降级：点名「可选能力未装配」。
+/// 关闭特性构建 / 插件未装配时 `E7`–`E11` 的统一降级：点名「可选能力未启用」。
 pub fn unmounted_probe_sample() -> EntrySample {
-    EntrySample::degraded(
-        StorageAvailabilityDto::NotImplemented,
-        "可选能力未装配（StorageOwnerProbe 未注入）",
-    )
+    EntrySample::degraded(StorageAvailabilityDto::NotImplemented, "可选功能未启用")
 }
 
 #[cfg(test)]
@@ -564,7 +564,10 @@ mod tests {
         set_sample(
             &mut samples,
             "E12",
-            EntrySample::degraded(StorageAvailabilityDto::NotImplemented, "插件不暴露 stats"),
+            EntrySample::degraded(
+                StorageAvailabilityDto::NotImplemented,
+                "该组件不提供占用统计",
+            ),
         );
         // `E3` 的资格随 owner 自述的保留天数变化：`> 0` 才 `eligible`。
         set_sample(
@@ -646,7 +649,7 @@ mod tests {
         }
         assert!(
             dto.entries[12].reclaim.note.is_some(),
-            "notImplemented 必须点名缺的方法"
+            "notImplemented 必须给出能力缺口说明"
         );
     }
 
