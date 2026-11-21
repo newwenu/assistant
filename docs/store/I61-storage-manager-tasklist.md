@@ -4,7 +4,7 @@
 > 事实基线：I61 §2 的 N1–N18；分析：[STORAGE-MONITOR-ANALYSIS.md](../analysis/STORAGE-MONITOR-ANALYSIS.md)
 > 关联：[I54-resource-monitor-spec.md](./I54-resource-monitor-spec.md) §3（资源监视器页面壳，存储 tab 的挂载容器）
 
-切片对应规格章节：T1 观测补全（§3.1–§3.2 / §3.9 / §3.10 / §3.11 / §6.2 / §7.1）→ T2 骨架 + 低风险回收（§5.1–§5.4 / §6.1 / §3.3 白名单）→ T3 中风险回收（§3.10 接口形状 / §5.5 / §3.6）→ T4 前端与收尾（§6.3 / §10 / §12）。
+切片对应规格章节：T1 观测补全（§3.1–§3.2 / §3.9 / §3.10 / §3.11 / §6.2 / §7.1）→ T2 骨架 + 低风险回收（§5.1–§5.4 / §6.1 / §3.3 白名单）→ T3 中风险回收（§3.10 接口形状 / §5.5 / §3.6）→ T4 前端与收尾（[前端设计文档](./I61-storage-manager-frontend.md) / §10 / §12；规格 §6.3 已整体划出作废）。
 
 依赖：T1 无前置（后端可独立验收）；T2 依赖 T1；T3 依赖 T2（骨架 + 按 ID 锁）；T4 依赖 T1–T3 **且**依赖 I54 的 `R0`（页面容器与三 tab 挂载位，当前未开工）。
 
@@ -382,22 +382,22 @@
 
 前置：I54 `R0` 已交付（页面容器 + 三 tab 挂载位）。R0 未开工前，T4 只能先做与容器无关的组件内部改造，**不得**自行新建第二个页面。
 
-> 前端实现基线：[I61 存储管理器前端设计](./I61-storage-manager-frontend.md)（组件拆分、视图模型、列定义、文案键树、样式类、测试矩阵）。本清单只保留「改哪里 + 验收动作」，实现细节不在此重述；与规格 §6.3 冲突时以规格为准。
+> 前端实现基线：[I61 存储管理器前端设计](./I61-storage-manager-frontend.md)（页面结构、组件拆分、视图模型、列与分组、文案键树、样式类、测试矩阵）。本清单只保留「改哪里 + 验收动作」，实现细节不在此重述；规格 §6.3 已整体划出作废，前端口径以该设计文档为准，判据 / 字段语义 / 资格与档位仍以规格 §3 / §5 / §6.1 / §6.2 / §7 / §10 为准（冲突时以规格为准并回改设计文档）。
 
 ### T4-a 数据与交互
 
 - [ ] `src/services/desktop/storageService.ts`：**扩展现有 service**（不新建 store、不新建 service）——加 `getStorageReclaimPlan(entryKeys)` 与 `reclaimStorage(planId, entries, confirmed)`，以及 `refreshStorageInventory()`（返回 `StorageInventoryStatusDto`，只取 `status`，**不取数字**）
-- [ ] `src/settings/pages/StorageSettings.tsx`：**保留附件明细区全部既有能力**（会话分组 / 孤儿分组 / 折叠 / 组全选 / 勾选删除，服务 `A2`），在其后**追加** 13 行条目表（G14 / V16）
-- [ ] `src/settings/pages/StorageSettings.tsx`：条目行渲染名称、字节、条数、`availability`、`reclaim.eligibility` 徽标、`reclaim.action` 按钮、策略摘要；`bytes = null` 显示占位符（**不得**直接传 `formatBytes`，N17），不改 `src/utils/formatBytes.ts` 的签名
+- [ ] `src/settings/pages/StorageSettings.tsx`：**保留附件明细区全部既有能力**（会话分组 / 孤儿分组 / 折叠 / 组全选 / 勾选删除，服务 `A2`），在其后**追加**已知条目清理区块（4 列：名称 / 占用·条数 / 策略 / 清理；条目数由后端决定，前端不假设 13 条，G14 / V16）
+- [ ] `src/settings/pages/StorageSettings.tsx`：条目行按前端设计 §5.4 / §5.6 / §5.7 渲染（可用性 = 占用列角标 + 详情「诊断」行，资格 = 清理按钮可用态，不单独成列）；`bytes = null` 显示占位符（**不得**直接传 `formatBytes`，N17），不改 `src/utils/formatBytes.ts` 的签名
 - [ ] `src/settings/pages/StorageSettings.tsx`：不可回收条目按钮禁用并显示 `reason` 文案；`notImplemented` 额外显示 `note`（「缺少 owner 方法」）
 - [ ] `src/settings/pages/StorageSettings.tsx`：回收流程固定为 `get_storage_reclaim_plan` → 确认（`strongConfirm` 需二次输入条目名或等价强交互）→ `reclaim_storage` → 结果 toast → 重新 `get_storage_breakdown`
 - [ ] `src/settings/pages/StorageSettings.tsx`：**禁止**前端自算「可回收字节 / 是否安全」，**禁止**按 `expectedBytes` 自行降档确认强度（档位只信后端 `confirmation`）
 - [ ] `src/settings/pages/StorageSettings.tsx`：`planExpired` / `planNotFound` / `busy` 提示重试，**不自动重放**；`complete = false` 时不展示跨条目合计（G10）
-- [ ] `src/settings/pages/StorageSettings.tsx`：13 行条目表**不**提供第二套「删指定附件」入口，也**不得**把明细区删除按钮搬进条目表
-- [ ] `src/settings/pages/StorageSettings.tsx`：**第三段只读余量区**（`breakdown.inventory`）——五态渲染、`partial` / `overRegistered` 提示、列示范围与 `declared` 折叠条件全部按 §6.3 第 9 条；**禁止**任何删除 / 清理按钮，**禁止**把余量数字加进页面任何合计（G10）
+- [ ] `src/settings/pages/StorageSettings.tsx`：条目清理区块**不**提供第二套「删指定附件」入口，也**不得**把明细区删除按钮搬进条目表
+- [ ] `src/settings/pages/StorageSettings.tsx`：**第二段只读余量区（未登记占用）**（`breakdown.inventory`）——五态渲染、`partial` / `overRegistered` 提示、列示范围与 `declared` 折叠条件全部按前端设计 §7；**禁止**任何删除 / 清理按钮，**禁止**把余量数字加进页面任何合计（G10）
 - [ ] `src/settings/pages/StorageSettings.tsx`：`useEffect` 内 `listen("storage:inventory-updated", ...)`（与 `src/vault/core/hooks/useVaultEvents.ts` 同款写法，清理函数里调 `UnlistenFn`），收到后**只重拉一次** `getStorageBreakdown`，**不新增轮询**；「重新扫描」按钮调 `refreshStorageInventory()` 后按返回的 `status` 刷新按钮态
 - [ ] `src/settings/styles/settings.css`：新增条目表样式（与既有 `storage-*` 类名同族，不重命名既有类）＋ 余量区样式（含 `overRegistered` 警示态）
-- [ ] `src/i18n/locales/zh-CN.json` / `en-US.json`：新增条目名、`availability` / `eligibility` / `reason` 词表、策略摘要、确认文案（`strongConfirm` 必须含条目 / 数量 / 字节三件套）、结果 toast 文案，以及余量区文案（覆盖 §6.3 第 9 条涉及的全部提示）；两份 key 结构必须一致
+- [ ] `src/i18n/locales/zh-CN.json` / `en-US.json`：新增条目名、`availability` / `eligibility` / `reason` 词表、策略摘要、确认文案（`strongConfirm` 必须含条目 / 数量 / 字节三件套）、结果 toast 文案，以及余量区文案（按前端设计 §11 键树；`residual.hint` 必须覆盖 `declared` 节点，不能写成「不属于任何条目」）；两份 key 结构必须一致
 
 ### T4-b 收尾
 

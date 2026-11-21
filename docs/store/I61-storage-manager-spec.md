@@ -5,13 +5,13 @@
 | 状态 | 定稿（设计已定案，待按 §11 切片实施；观测承接原 I54 存储 tab（已迁入本文），新增回收与策略治理） |
 | 日期 | 2026-11-19 |
 | 关联 | [I54 资源监视器规格](./I54-resource-monitor-spec.md)（存储 tab 已由本文承接并在 I54 中收敛为指针；进程 / 自身占用仍归 I54）、[STORAGE-MONITOR-ANALYSIS](../analysis/STORAGE-MONITOR-ANALYSIS.md)（存储观测机制的唯一事实基线）、[CODE-SPLIT-PRINCIPLE](../principle/CODE-SPLIT-PRINCIPLE.md)（拆分原则唯一来源，本文只引用不复述）、I44 应用目录管理规格（已归档）（目录归属与字面量门禁）、I58 超级工具规格（已归档）（`tool-index/` 的 owner 与缓存边界） |
-| 影响范围 | 后端：`src-tauri/src/cmd/storage/`（`mod.rs` 命令与快照、`probe.rs` 可选能力 trait、`inventory.rs` 对账扫描、`reclaim.rs` 计划与执行；由现有 `cmd/storage.rs` 拆分而来）、`src-tauri/src/app_dirs/registry.rs`（受管根登记表）、`src-tauri/src/protocol/dto/storage.rs`（DTO 扩展）、`src-tauri/src/protocol/events.rs`（`storage:inventory-updated` 广播）、`src-tauri/src/ipc.rs`（命令注册）、各 owner 的 stats / 回收方法（`assistant-storage`、`assistant-tools`、`assistant-vault`、`assistant-crash`）；前端：`src/settings/pages/StorageSettings.tsx`、`src/services/desktop/storageService.ts`、i18n 两份 locale、`src/settings/__tests__/fixtures/*.json`（golden 投影） |
+| 影响范围 | 后端：`src-tauri/src/cmd/storage/`（`mod.rs` 命令与快照、`section.rs` 可选功能分区契约、`inventory.rs` 对账扫描、`reclaim.rs` 计划与执行；由现有 `cmd/storage.rs` 拆分而来）、`src-tauri/src/app_dirs/registry.rs`（受管根登记表）、`src-tauri/src/protocol/dto/storage.rs`（DTO 扩展）、`src-tauri/src/protocol/events.rs`（`storage:inventory-updated` 广播）、`src-tauri/src/ipc.rs`（命令注册）、各 owner 的 stats / 回收方法（`assistant-storage`、`assistant-tools`、`assistant-vault`、`assistant-crash`）；前端：`src/settings/pages/StorageSettings.tsx`、`src/services/desktop/storageService.ts`、i18n 两份 locale、`src/settings/__tests__/fixtures/*.json`（golden 投影） |
 
 > 一句话：存储管理器把「存储占用」从监视器的一行提升为**可观测、可计划、可回收**的资源监视条目集合——**对外是唯一的发起与展示通道，对内不是唯一执行者**（观测来自 owner stats、删除来自 owner 方法，owner 自己的自动清理照旧）；任何删除都必须先有 owner 的方法，任何数字都必须带可用性与采样时刻，任何「不知道」都不许写成 `0`。
 
 本文中的「必须 / 禁止」为可验收约束；「应当」为默认做法，偏离需在代码注释里写明理由。
 
-**编号约定**：`E1–E13` 是资源监视条目（Entry），`A1–A7` 是回收动作，`Q1–Q5` 是资格状态，`N1–N19` 是现状事实，`G1–G19` 是门禁，`V1–V24` 是验收判据，`T1–T5` 是实施切片，`X1–X18` 是拒绝方案，`OQ1–OQ11` 是开放问题。§3.11 的「对账余量」**不是条目**（无 `E` 编号、不进 `entries`、不进任何合计、不可回收），它只回答「基根上有没有未被 13 条登记认领的东西」。
+**编号约定**：`E1–E13` 是资源监视条目（Entry），`A1–A7` 是回收动作，`Q1–Q5` 是资格状态，`N1–N19` 是现状事实，`G1–G19` 是门禁，`V1–V24` 是验收判据，`T1–T5` 是实施切片，`X1–X18` 是拒绝方案，`OQ1–OQ11` 是开放问题。§3.11 的「对账余量」**不是条目**（无 `E` 编号、不进 `entries`、不进任何合计、不可回收），它只回答「基根上有没有未被已声明条目认领的东西」。
 
 ---
 
@@ -21,12 +21,12 @@
 
 存储管理器是**存储类资源监视条目在 UI / IPC 层的唯一观测聚合与回收发起入口**（下称「唯一对外入口」）。它**不是唯一执行者**，owner 在自己路径上的自动清理不受本管理器约束：
 
-1. 它承接原 [I54](./I54-resource-monitor-spec.md) 存储 tab 的全部内容（12 行观测表、D1–D4 四个方向、三个口径、账本闭合），I54 §4 现已收敛为指向本文的指针；本文把 12 行扩展为 13 行；
+1. 它承接原 [I54](./I54-resource-monitor-spec.md) 存储 tab 的全部内容（12 行观测表、D1–D4 四个方向、三个口径、账本闭合），I54 §4 现已收敛为指向本文的指针；本文把 12 行扩展为 13 个**规格编号**（core 自有 8 条 + 可选功能分区自述 5 条，后者随功能挂载存在、随退役消失，§3.1.1）；
 2. 它新增原 I54 明确推迟的**回收动作**与**策略治理**（I54 §1.3 现已改为指向本文）；
 3. I54 收敛为「资源监视器」，只保留**进程**与**自身占用**两类资源监视条目；存储类条目不再由 I54 维护；
-4. 它不是新 crate：落在应用层 `src-tauri/src/cmd/storage/`（`mod.rs` 承载命令、`probe.rs` 承载可选能力 trait、`inventory.rs` 承载 §3.11 的对账扫描、`reclaim.rs` 承载计划与执行），因为它需要 `AppDirs` 与各 owner 的 stats / 回收方法（与 [STORAGE-MONITOR-ANALYSIS](../analysis/STORAGE-MONITOR-ANALYSIS.md) §10 第 1 条一致）；
+4. 它不是新 crate：落在应用层 `src-tauri/src/cmd/storage/`（`mod.rs` 承载命令、`section.rs` 承载可选功能分区契约、`inventory.rs` 承载 §3.11 的对账扫描、`reclaim.rs` 承载计划与执行），因为它需要 `AppDirs` 与各 owner 的 stats / 回收方法（与 [STORAGE-MONITOR-ANALYSIS](../analysis/STORAGE-MONITOR-ANALYSIS.md) §10 第 1 条一致）；
 5. 它**不拥有任何目录**：目录名与基根只来自 `AppDirs` 与可选能力模块的 getter，本文不新增目录名、不新增目录字面量；
-6. 它的观测由**两层**组成，两者互不替代（§3.11）：**声明层**（13 条条目，数字来自 owner 实测，回答「这块多大、属于谁、能否回收」）与**对账层**（对基根做有界枚举后与声明层相减，回答「还有多少没被认领」）。对账层不新增条目、不进任何合计、不可回收，因此「唯一对外入口」不变：存储数字仍然只来自 `get_storage_breakdown`。
+6. 它的观测由**两层**组成，两者互不替代（§3.11）：**声明层**（core 8 条 + 已挂载分区自述条目，数字来自 owner 实测，回答「这块多大、属于谁、能否回收」）与**对账层**（对基根做有界枚举后与声明层相减，回答「还有多少没被认领」）。对账层不新增条目、不进任何合计、不可回收，因此「唯一对外入口」不变：存储数字仍然只来自 `get_storage_breakdown`。
 
 **「唯一」的准确范围（本节最关键的一句）**：
 
@@ -63,7 +63,7 @@
 
 | 纳入 | 排除 |
 |---|---|
-| 13 个存储类资源监视条目的观测（`E1–E13`） | 进程与自身占用（归 I54） |
+| core 8 条 + 可选分区自述条目的观测（`E1–E13`，分区未挂载时该组不存在） | 进程与自身占用（归 I54） |
 | 每个条目的回收资格、策略、计划、执行、结果 | 任务级资源归因、进程登记表、停止 / 回收进程树 |
 | 附件孤儿判定与删除、过期清扫、数量裁剪、可重建缓存清理 | 数据库 `VACUUM`、日志轮转实现、vault git 历史整理 |
 | 回收留痕（应用日志）与账本闭合复算 | 跨 tab / 跨条目的「总占用」展示 |
@@ -80,8 +80,8 @@
 | `delete_attachments` | **保留**，仍是「用户显式选中附件」的唯一入口（`A2`）；存储管理器的 `reclaim_storage` **不**接管它，避免两条删除路径 |
 | `delete_derived_text` | **保留**，仅随附件删除调用；管理器不直接调用 |
 | `open_attachment` / `import_attachment` / `get_asset_dirs` / `get_attachment_limits` | **不动**：签名、语义、错误串均不改。前两条服务聊天侧（`src/chat/attachment/`、`src/orb/panelActions.ts`），后两条服务导入流程；本文不新增同义命令 |
-| `src/settings/pages/StorageSettings.tsx` | **并入** I54 §3 的三 tab 资源监视器页：页面壳由 I54 定（R0 先建容器并留三个 tab 挂载位），本文只提供**存储 tab 的内容与交互契约**（§6.3），不重复页面决策。并入时**必须保留**现有附件明细区（会话分组 / 孤儿分组 / 折叠 / 组全选 / 勾选删除），它承载 `A2`；13 行条目表与明细区是**同页两段**，不是替代关系 |
-| `src/services/desktop/storageService.ts` | **保留并扩展**：既有 6 个方法签名不变，新增 2 个（计划 / 执行）。本文 §6.3 的「不新建 service」指不另建文件，不是不扩展现有文件 |
+| `src/settings/pages/StorageSettings.tsx` | **并入** I54 §3 的三 tab 资源监视器页：页面壳由 I54 定（R0 先建容器并留三个 tab 挂载位），本文只提供**存储 tab 的数据与交互契约**（§3 / §5 / §6.1 / §6.2）；页面结构与前端实现口径见 [I61 存储管理器前端设计](./I61-storage-manager-frontend.md)（原 §6.3 已划出），不重复页面决策。并入时**必须保留**现有附件明细区（会话分组 / 孤儿分组 / 折叠 / 组全选 / 勾选删除），它承载 `A2` |
+| `src/services/desktop/storageService.ts` | **保留并扩展**：既有 6 个方法签名不变，新增 2 个（计划 / 执行）。前端设计的「不新建 service」指不另建文件，不是不扩展现有文件 |
 | `get_storage_reclaim_plan` / `reclaim_storage` | **新增**（§6.1），只服务策略派生动作（`A1` / `A3` / `A4` / `A5`），且**只对 §4 白名单条目开放** |
 
 ---
@@ -104,19 +104,24 @@
 | N12 | `security/recovery/` 在 `vault_setup` 与恢复流程后由 `cleanup_recovery_dir` 清理；无 stats | `src-tauri/src/cmd/vault/mod.rs`、`recovery.rs` |
 | N13 | `logs/` 由 `tauri-plugin-log` 轮转（`KeepSome(3)` + 10 MiB）；插件不暴露 stats，应用侧无法枚举 | `src-tauri/src/plugins.rs` |
 | N14 | `crashes/` 每次事件写 `panic_<ts>.log` / `crash_<ts>.dmp` / `crash_<ts>.log` 三个文件；`assistant-crash` 无 `list` / `stat` / `prune`（I54 N14） | `src-tauri/crates/assistant-crash/` |
-| N15 | `cmd/storage.rs` 在 `ipc.rs` 无条件注册；`cmd/vault` 受 `feature = "vault"` 门控。装配契约要求 `#[cfg]` 只能出现在 `cmd/mod.rs` 与 `*_plugin.rs`，因此安全域 5 条（`E7`–`E11`）的 stats **不能**由 `cmd/storage.rs` 直接调用 vault crate，必须经「可选能力 provider」注入（§3.10） | `src-tauri/src/ipc.rs`、`src-tauri/src/cmd/mod.rs`、`src-tauri/tests/assembly_contract.rs` |
-| N16 | `get_storage_breakdown` 现有会话标题 / 更新时间查询是每会话 2 次 `query_row` 的 N+1；再串行叠加 12 条 stats 会让「刷新」明显变慢 | `src-tauri/src/cmd/storage.rs` |
+| N15 | `cmd/storage.rs` 在 `ipc.rs` 无条件注册；`cmd/vault` 受 `feature = "vault"` 门控。装配契约要求 `#[cfg]` 只能出现在 `cmd/mod.rs` 与 `*_plugin.rs`，因此安全域 5 条（`E7`–`E11`）的 stats **不能**由 `cmd/storage.rs` 直接调用 vault crate，必须由 vault 作为可选功能分区自述并自注册（§3.10） | `src-tauri/src/ipc.rs`、`src-tauri/src/cmd/mod.rs`、`src-tauri/tests/assembly_contract.rs` |
+| N16 | `get_storage_breakdown` 现有会话标题 / 更新时间查询是每会话 2 次 `query_row` 的 N+1；再串行叠加十余条 stats 会让「刷新」明显变慢 | `src-tauri/src/cmd/storage.rs` |
 | N17 | `formatBytes(bytes: number)` 只接受 `number`；新条目表的 `bytes` 是 `number \| null`，直接传入会渲染成 `null B` | `src/utils/formatBytes.ts` |
 | N18 | 新增 DTO 必须同时登记在 `protocol_bindings.rs` 的 `use` 与 `decl()` 列表，否则 `protocol_bindings` 测试直接失败；命令注册与 ACL 由 `assembly_contract` 校验（ACL 由构建生成，不手写） | `src-tauri/tests/protocol_bindings.rs`、`src-tauri/tests/assembly_contract.rs`、`src-tauri/gen/schemas/acl-manifests.json` |
-| N19 | 受管目录的「知识」是**散的**：`dir_name` 7 个无条件常量、`roots.rs` 7 个 getter、vault 自持的 `SECURITY_DIR` 与其子目录各在自己 crate；**没有任何断言**把「常量 / getter 集合」钉到「13 条 key」，`app_dirs_contract` 只校验 identifier 与 asset 作用域，`roots.rs` 单测只逐个断言路径字符串。因此新增一个受管目录却不加条目时**构建不会红**，表现为 UI 存储数字「凭空少一块」的静默漏账；反之，磁盘上存在但从未登记的目录（历史残留、第三方写入）在管理器视野里根本不存在 | `src-tauri/src/app_dirs/dir_name.rs`、`roots.rs`、`src-tauri/tests/app_dirs_contract.rs`、`src-tauri/crates/assistant-vault/src/security_db/` |
+| N19 | 受管目录的「知识」是**散的**：`dir_name` 7 个无条件常量、`roots.rs` 7 个 getter、vault 自持的 `SECURITY_DIR` 与其子目录各在自己 crate；**没有任何断言**把「常量 / getter 集合」钉到「core 8 条 key 与 `OPTIONAL_SEGMENTS` 首段」，`app_dirs_contract` 只校验 identifier 与 asset 作用域，`roots.rs` 单测只逐个断言路径字符串。因此新增一个受管目录却不加条目时**构建不会红**，表现为 UI 存储数字「凭空少一块」的静默漏账；反之，磁盘上存在但从未登记的目录（历史残留、第三方写入）在管理器视野里根本不存在 | `src-tauri/src/app_dirs/dir_name.rs`、`roots.rs`、`src-tauri/tests/app_dirs_contract.rs`、`src-tauri/crates/assistant-vault/src/security_db/` |
 
-**事实结论**：13 个条目里，真正「观测 + 回收」都已有的只有附件（观测 + 显式删除）与安全备份（自动裁剪）；`tool-results` / 审计有回收但无观测与手动入口；`tool-index` / 派生文本 / `crashes` 有回收欠账；`logs` 由插件管；`vault` / `assistant.db` / `security.db` 禁止回收。
+**事实结论**：13 个条目（core 8 条 + 分区自述 5 条）里，真正「观测 + 回收」都已有的只有附件（观测 + 显式删除）与安全备份（自动裁剪）；`tool-results` / 审计有回收但无观测与手动入口；`tool-index` / 派生文本 / `crashes` 有回收欠账；`logs` 由插件管；`vault` / `assistant.db` / `security.db` 禁止回收。
 
 ---
 
-## 3 资源监视条目（13 行）+ 对账余量（§3.11，非条目）
+## 3 资源监视条目（core 8 条 + 可选分区自述）+ 对账余量（§3.11，非条目）
 
 ### 3.1 条目表
+
+条目按**归属地**分两组，各自在各自的地方声明，core 不代管另一组：
+
+- **core 自有 8 条**（下表）：声明、观测、回收都在无条件编译的 core 侧，登记表见 §3.11.1；
+- **可选功能分区条目**（§3.1.1）：条目清单与全部行为由功能 crate 自述，core 只做通用接收（§3.10）。功能未挂载 → 该组条目**整体不存在**（不是 `notImplemented` 占位行）。
 
 | ID | key | owner | 观测入口（现状） | 回收入口（现状） | 本期动作 | 风险 |
 |---|---|---|---|---|---|---|
@@ -126,11 +131,6 @@
 | E4 | `tool-index` | `SuperIndex` 缓存（`assistant-tools`） | 无 | 内存 LRU 逐出删文件；单文件 64 MiB | `A5`（欠账） | 低（可重建） |
 | E5 | `mascot-assets` | `cmd/mascot_asset` | 无 | 卸载 / 覆盖 | `none`（仅补 stats；`.tmp` 由 owner 在写入路径清扫） | 高（用户素材） |
 | E6 | `assistant.db` | `DbState` | 文件长度 | 无 | 无（禁止） | 禁止 |
-| E7 | `security/security.db` | `SecurityDbState` | 无 | 备份时裁剪审计行 | 无（禁止 / 锁定） | 禁止 |
-| E8 | `security/backups` | `SecurityDbState` | 无 | `prune_backups(5)`（备份时） | `A4`（现状仅备份时自动；T3 补对外 `pruneToLimit`） | 中（派生副本） |
-| E9 | `security/vault` | vault repo | 无 | 无 | 无（禁止） | 禁止（用户数据） |
-| E10 | `security/recovery` | `cmd/vault` | 无 | `cleanup_recovery_dir`（启动 / 恢复后） | `A3`（仅 owner 自动；**不给手动入口**） | 低（瞬态） |
-| E11 | `security/audit` | `SecurityDbState` / `AuditJsonlWriter` | 无 | `prune_before` + `cleanup_expired_audit` | `A3`（仅 owner 调度；**不给手动入口**） | 中（历史决策证据） |
 | E12 | `logs` | `tauri-plugin-log` | 无 | 插件轮转 `KeepSome(3)` + 10 MiB | `A6`（仅展示） | 低 |
 | E13 | `crashes` | `assistant-crash` | 无 | 无 | `none`（仅补 stats；`A4` 见 OQ8） | 低（诊断产物） |
 
@@ -141,16 +141,37 @@
 | `E1` | `deleteOrphans` | 有孤儿 → `eligible`；无孤儿 → `notEligible` | `orphan` / `referenced` | `none` | `A2` 不在本表（走 `delete_attachments`） |
 | `E2` | `rebuildCache` | T1：`notImplemented`（`noReclaimApi`）；T2 后 → `eligible` | T1：`noReclaimApi`；T2 后 `derivedCache` | `none` | `note` 点名缺 `AttachmentStore::list_derived` / `purge_derived_orphans` |
 | `E3` | `sweepExpired` | `retentionDays > 0` → `eligible`；`0` → `notEligible` | `expired` / `policyDisabled` | `config` | 回放风险只在 UI 文案提示 |
-| `E4` | `rebuildCache` | T1：`notImplemented`（`noReclaimApi`）；T2 后 → `eligible` | T1：`noReclaimApi`；T2 后 `derivedCache` | `owner` | 单文件 64 MiB 上限写 `note`，不填 `maxBytes` |
+| `E4` | `rebuildCache` | T1：`notImplemented`（`noReclaimApi`）；T2 后 → `eligible` | T1：`noReclaimApi`；T2 后 `derivedCache` | `owner` | 单文件 64 MiB 属策略数值，不写 `note`（会随策略变化过时）、也不填 `maxBytes`；自动管理由 `policy.source = owner` 表达 |
 | `E5` | `none` | `notEligible` | `userData` | `none` | 只出 stats |
 | `E6` | `none` | `notEligible` | `businessData` | `none` | 只出文件长度 |
+| `E12` | `rotate` | `ownerManaged` | `externalOwner` | `constant` | `availability = notImplemented` + `availabilityReason` 写「该组件不提供占用统计」；`bytes` / `count` 恒 `null` |
+| `E13` | `none` | `notImplemented` | `noReclaimApi` | `none` | `note` 说明「暂未提供清理入口」，用户可读，不写内部方法名 |
+
+#### 3.1.1 可选功能分区条目（由功能自述）
+
+这五条**不在** core 的登记表里，也不在 core 的任何常量或分派里：条目清单（`key` / `segments` / `owner` / 动作 / 确认档 / `autoActive` / `note`）、取数、策略、资格判据与回收实现，全部写在功能 crate 内（vault → `assistant-vault/src/storage_section.rs` 的 `VaultStorageEntry` 清单 + `stats` / `policy` / `eligibility` / `reclaim` 函数），随功能一起编译、一起退役。core 只经通用分区契约（§3.10）接收，不感知功能名。
+
+**依赖方向决定契约表面（否则本设计不成立）**：`StorageSection` 与 `SectionEntry` / `SectionStats` / `SectionError` 定义在 core 的 `cmd/storage/section.rs`（无条件编译），而功能 crate **不依赖 app crate**，因此功能侧只能用**自有的普通声明类型**（`VaultStorageEntry` / `VaultStats` / `VaultSectionError`）自述清单与取数；`vault_plugin.rs` 的 `#[cfg(feature = "vault")] mod mounted` 提供 `StorageSection` 适配器，把功能侧返回值**无损映射**成 core 类型（漏字段或改语义即 V21 负例失败）。适配器只做类型翻译与 `key` 分派：条目 `key` / `segments` / 策略数值 / 判据全部来自功能侧静态声明，适配器内**不出现**任何条目字面量（G17(b) / V24）。core 的 `cmd/storage/` 不出现任何 vault 条目字面量。
+
+| ID | key | 声明方 | 观测入口（现状） | 回收入口（现状） | 本期动作 | 风险 |
+|---|---|---|---|---|---|---|
+| E7 | `security/security.db` | `assistant-vault` 分区 | 无 | 备份时裁剪审计行 | 无（禁止 / 锁定） | 禁止 |
+| E8 | `security/backups` | `assistant-vault` 分区 | 无 | `prune_backups(5)`（备份时） | `A4`（现状仅备份时自动；T3 补对外 `pruneToLimit`） | 中（派生副本） |
+| E9 | `security/vault` | `assistant-vault` 分区 | 无 | 无 | 无（禁止） | 禁止（用户数据） |
+| E10 | `security/recovery` | `assistant-vault` 分区 | 无 | `cleanup_recovery_dir`（启动 / 恢复后） | `A3`（仅 owner 自动；**不给手动入口**） | 低（瞬态） |
+| E11 | `security/audit` | `assistant-vault` 分区 | 无 | `prune_before` + `cleanup_expired_audit` | `A3`（仅 owner 调度；**不给手动入口**） | 中（历史决策证据） |
+
+| 条目 | `action` | `eligibility` | `reason` | `policy.source` | 备注 |
+|---|---|---|---|---|---|
 | `E7` | `none` | `notEligible`（`businessData`）；仅当 security 文件正在被替换 / 迁移（`metadata` 失败）→ `locked` | `businessData` / `locked` | `none` | **只读 `metadata`，不需要解锁**；vault 锁定**不**影响本条目（见 §7.1） |
 | `E8` | `pruneToLimit` | 备份数 > 5 → `eligible`；否则 `notEligible` | `overLimit` | `constant` | `autoActive = true` |
-| `E9` | `none` | `notEligible`（`userData`）；vault 锁定态 → `locked`；vaultless 构建 → `notEligible`（`userData`） | `userData` / `locked` | `none` | **永不 `eligible`**；锁定态观测 `locked`、vaultless 观测 `notImplemented`（§7.1 特例 3 / 4） |
+| `E9` | `none` | `notEligible`（`userData`）；vault 锁定态 → `locked` | `userData` / `locked` | `none` | **永不 `eligible`**；锁定态观测 `locked`（§7.1 特例 3） |
 | `E10` | `sweepExpired` | `ownerManaged` | `transient` | `constant` | `autoActive = true`，不给手动入口 |
 | `E11` | `sweepExpired` | `ownerManaged` | `expired` | `config` | `autoActive = true`，不给手动入口 |
-| `E12` | `rotate` | `ownerManaged` | `externalOwner` | `constant` | `availability = notImplemented` + `availabilityReason` 写「`tauri-plugin-log` 不暴露 stats」；`bytes` / `count` 恒 `null` |
-| `E13` | `none` | `notImplemented` | `noReclaimApi` | `none` | `note` 点名缺裁剪入口（`assistant_crash` 现只导出 `install`，无 `prune_to_limit`） |
+
+**分区的自述要求**（缺一条即验收失败，V22）：①每条声明条目都必须由该分区自己应答 `stats(key)`（返回 `Err` 也算应答，但**不得**返回「不属于我」）；②`policy` / `eligibility` 必须给出，且 `eligibility` 与 `action` 组合必须落在 §3.3 白名单；③`segments` 首段必须与 core 的磁盘事实集合（`OPTIONAL_SEGMENTS`，§3.11.1）或 core 静态条目的首段一致——分区不得发明一个 core 不认识的基根段；④`key` 不得与 core 静态条目或其他分区条目重名（注册时校验）。
+
+**为什么把条目声明交给功能**：这五条的身份、判据、策略数值（备份份数、审计保留期）本来就只由 vault 侧决定；core 再写一份就是双份声明，两者之间没有断言，改一处忘另一处会静默错位（这正是 G17 要防的形态）。移到功能内部后，core 只保留一条**磁盘格式事实**：`security/` 这个首段属于可选功能（§3.11.1 的 `OPTIONAL_SEGMENTS`），因此功能未挂载时仍能把它归 `optionalNotMounted`，而不是误报「未登记目录」。
 
 **与 I54 原 12 行的差异**：新增 `E4 tool-index`（I58 之后才出现的受管目录）；I54 说「安全域各子目录无保留策略」已过时（N11 的审计保留已存在）；I54 说「回收不在本期」由本文取代。其余 12 行的身份与字节口径沿用原 I54 §4 的结论（该节已改为指向本文的指针，事实基线仍为 [STORAGE-MONITOR-ANALYSIS](./../analysis/STORAGE-MONITOR-ANALYSIS.md)），不在此重述。
 
@@ -158,7 +179,7 @@
 
 > **`eligibility = eligible` 当且仅当该 `key + action` 落在 §3.3 白名单且 owner 方法已存在**；也就是「UI 显示可回收」必须等于「`reclaim_storage` 会接受」。**禁止**出现「显示可回收、执行被拒」的中间态，也禁止用 `eligible` + `note` 表达「还不能执行」。
 
-因此中间切片里，`E1`（缺 `delete_orphans_by_ids`）、`E3`（缺手动入口封装）、`E8`（缺对外 `pruneToLimit`）一律 `notImplemented` + `reason = noReclaimApi`，`note` 点名缺的方法，直到对应切片补齐。
+因此中间切片里，`E1`（缺 `delete_orphans_by_ids`）、`E3`（缺手动入口封装）、`E8`（缺对外 `pruneToLimit`）一律 `notImplemented` + `reason = noReclaimApi`，`note` 说明缺的能力（不写内部方法名），直到对应切片补齐。
 
 ### 3.2 条目字段
 
@@ -168,12 +189,12 @@
 |---|---|---|
 | `key` | `String` | 稳定身份，不是路径；前端不据此拼路径 |
 | `layer` | 封闭枚举 | `data` / `local`；安全域条目仍是 `data`，靠 `security/` 前缀分组，**不新增第三层** |
-| `owner` | `String` | 提供 stats 的 owner 名，用于「由 X 提供」文案 |
+| `owner` | `String` | 提供 stats 的 owner 名，用于「统计来源：X」文案（前端统一译作「统计来源」，不译成「所有者」）。core 条目在登记表里声明；分区条目由分区自述，规则同 G17(a)：构建无关的归属域标识，不得是功能 crate 的类型名、feature 名或模块路径 |
 | `bytes` / `count` | `u64 \| null` | 取不到数为 `null`，禁止填 `0` 冒充；**唯一例外**是 `availability = missing`（确实没有，计 `0`，见 I54 §2.4）；键恒在。`E1` 的取数失败不降级为 `null`，而是整条命令 `Err`（§7.1） |
 | `oldestAt` / `newestAt` | `i64 \| null` | 输出侧 `Option` 不加 `skip_serializing_if`；键恒在 |
 | `availability` | 封闭枚举 | I54 §2.4 词表 |
-| `availabilityReason` | `String \| null` | `notImplemented` 时必填：正常构建点名缺的方法，vaultless 构建写「可选能力未装配」；`locked` 写「vault 未解锁」；`unavailable` / `unreadable` 填错误类别；`available` 与 `missing` 为 `null`；键恒在 |
-| `includesDerived` | `bool` | 语义固定为「本条目 `bytes` 是否**包含**派生 / 伴生文件字节」。13 条全为 `false`：`E1` 不含 `derived/`（派生独立成 `E2`），`E2` 自身即派生，`E3`–`E13` 不含伴生文件（§3.9 包含范围）。将来若某 owner 把伴生文件计入自身，该条改 `true` 并在 `note` 说明 |
+| `availabilityReason` | `String \| null` | `notImplemented` 时必填：写用户能懂的缺口说明（如「该条目暂未提供统计」「暂未提供清理入口」）；`locked` 写「尚未解锁」；`unavailable` / `unreadable` 填错误类别（「没有访问权限」「文件不存在」「磁盘空间不足」「读取失败」等）；`available` 与 `missing` 为 `null`；键恒在。**禁止**写内部枚举名、方法名、插件名或整条错误文案 |
+| `includesDerived` | `bool` | 语义固定为「本条目 `bytes` 是否**包含**派生 / 伴生文件字节」。全部条目为 `false`：`E1` 不含 `derived/`（派生独立成 `E2`），`E2` 自身即派生，其余条目不含伴生文件（§3.9 包含范围）。将来若某 owner 把伴生文件计入自身，该条改 `true` 并在 `note` 说明 |
 | `countsSelfLogs` | `bool` | 自指标注；`E12` 为 `true`，其余为 `false` |
 | `reclaim` | `ReclaimViewDto` | **必填**，无回收能力的条目用 `action = none` 表达，不用 `null` |
 
@@ -188,7 +209,7 @@
 | `reclaimableBytes` / `reclaimableCount` | `u64 \| null` | 只对 `eligible` 给数；必须 `≤ bytes`；`bytes` 为 `null` 时本字段也 `null` |
 | `confirmation` | 封闭枚举 | `none` / `confirm` / `strongConfirm`；**两步判定**（§3.6 硬约束 5）：`eligibility ≠ eligible` 恒 `none`；`eligible` 按条目风险档定档。与 `expectedBytes` 无关，`expectedBytes` 只用于确认文案 |
 | `autoActive` | `bool` | owner 已在启动 / 写入路径自动执行（如备份裁剪、审计裁剪） |
-| `note` | `String \| null` | 只放「缺哪个 owner 方法」这类结构性说明，不放路径、不放临时错误；长度上限 120 字符（前端单行展示） |
+| `note` | `String \| null` | 只放结构性、不会随配置 / 版本变化的能力缺口说明（如「暂未提供清理入口」，前端原文展示）；**禁止**写策略数值（上限 / 份数 / 天数）、路径、时间点、临时错误或内部方法名——这些内容会过时；长度上限 120 字符（前端单行展示） |
 
 ### 3.3 动作词表（封闭）
 
@@ -239,13 +260,13 @@
 | `businessData` | 业务数据 | `E6` / `E7` |
 | `replayRisk` | 删除会让历史回放定位失效 | `E3` |
 | `locked` | 受保护 | `E9`（`E7` 不用 `locked`，见 §7.1 特例 2） |
-| `noStats` | 缺 stats 入口 | **保留值，本期不产出**：`availabilityReason` 用自由文本点名缺的方法（§3.2），`E12` 的 `reason` 归 `externalOwner`；T1 完成后所有条目都有 stats 或已归其他 reason |
+| `noStats` | 缺 stats 入口 | **保留值，本期不产出**：`availabilityReason` 用自由文本说明缺的能力（§3.2），`E12` 的 `reason` 归 `externalOwner`；T1 完成后所有条目都有 stats 或已归其他 reason |
 | `noReclaimApi` | 缺回收入口 | `E13`（全程）、`E1` / `E3` / `E8`（T1–T2）、`E2` / `E4`（T1） |
 | `externalOwner` | 外部 owner 管理 | `E12` |
 | `policyDisabled` | 策略为 `0` / 未注入 | `E3` / `E11` |
 | `unknown` | 判据推不出 | 所有条目 |
 
-**硬约束**：`notEligible` / `notImplemented` / `locked` / `ownerManaged` 的 `reason` 不得为空；`notImplemented` 的 `note` 必须点名缺哪个 owner 的哪个方法（`reason` 是封闭枚举，装不下方法名），否则用户会把「未实现」误读为「系统认为没问题」。
+**硬约束**：`notEligible` / `notImplemented` / `locked` / `ownerManaged` 的 `reason` 不得为空；`notImplemented` 的 `note` 必须说明缺哪个能力 / 入口（`reason` 是封闭枚举，装不下具体说明），否则用户会把「未实现」误读为「系统认为没问题」；`note` 用用户能懂的表述，且不写会随策略变化过时的数值。
 
 ### 3.5 策略模型
 
@@ -256,7 +277,7 @@
 | `source` | 封闭枚举 | `config` / `constant` / `owner` / `none` |
 | `retentionDays` | `u32 \| null` | 仅时间判据；`0` 表示禁用 |
 | `keepCount` | `u32 \| null` | 仅数量判据 |
-| `maxBytes` | `u64 \| null` | **条目级**配额（整个条目允许占用的字节上限）；本期仅展示、不执行。`E4` 的「单文件 64 MiB」是**单文件**上限，不是条目配额，因此 `E4` 的 `maxBytes = null`，该上限写进 `note` |
+| `maxBytes` | `u64 \| null` | **条目级**配额（整个条目允许占用的字节上限）；本期仅展示、不执行。`E4` 的「单文件 64 MiB」是**单文件**上限，不是条目配额，因此 `E4` 的 `maxBytes = null`；该数值属于策略，不写进 `note`（避免随策略变化过时），自动管理由 `policy.source = owner` 表达 |
 | `effectiveSince` | `i64 \| null` | `config` 来源必填：本次启动注入时刻（秒） |
 | `mutable` | `bool` | `config` 为 `true`；常量 / owner 为 `false` |
 | `failClosed` | `bool` | 本期恒 `true` |
@@ -330,29 +351,29 @@
 
 | # | 门禁 |
 |---|---|
-| G1 | 管理器不得出现受管目录名字面量 / 路径拼接；受管根的段序列与首段一律来自 `app_dirs::registry::MANAGED_ROOTS`（§3.11.1），管理器只消费 `key` 与 `segments`。观测只调 `AppDirs`、可选能力模块 getter 与 **owner 的 stats / 回收方法**（owner 内部可以拼自己的目录，管理器不行）。`cmd/storage/` 不得 `use assistant_vault` / `assistant_security`，也不得出现 `#[cfg(feature = ...)]`；跨构建差异只能经 §3.10 的 `StorageOwnerProbeHandle` 表达 |
+| G1 | 管理器不得出现受管目录名字面量 / 路径拼接；受管根的段序列与首段一律来自 `app_dirs::registry::MANAGED_ROOTS`（§3.11.1），管理器只消费 `key` 与 `segments`。观测只调 `AppDirs`、可选能力模块 getter 与 **owner 的 stats / 回收方法**（owner 内部可以拼自己的目录，管理器不行）。`cmd/storage/` 不得 `use assistant_vault` / `assistant_security`，也不得出现 `#[cfg(feature = ...)]`；跨构建差异只能经 §3.10 的通用分区契约（`StorageSection`，无条件编译）表达，不得用 `cfg` 或「core 里写功能条目」代替 |
 | G2 | 管理器不得 `read_dir` 遍历**受管目录**；观测只调 owner 的 stats / list。**唯一例外**：`cmd/storage/inventory.rs`（§3.11.2）可对**整棵基根树**（`AppDirs::data()` / `AppDirs::local()`，含受管目录内部）做**只读、有界**递归，用于取对账的被减数；该例外必须同时满足三条——只读（不删 / 不移 / 不写 / 不写日志）、有界（§3.11.2 第 5 条）、产出**绝不回流** `entries`（G10 / V20） |
 | G3 | 管理器不得 `fs::remove_file` / `remove_dir` / `remove_dir_all`；回收只调 owner 方法 |
-| G4 | 每个条目必须有 owner getter 与 stats 入口；缺一个就不许把该条目标 `available`。**登记表是 getter 的唯一来源**（§3.11.1）：`MANAGED_ROOTS` 里没有该 key，就不许产出该条目；反过来，`dir_name` 里每新增一个受管目录常量都必须同时新增一条登记（V19） |
+| G4 | 每个条目必须有 owner getter 与 stats 入口；缺一个就不许把该条目标 `available`。**core 条目的声明来源是登记表**（§3.11.1）：`MANAGED_ROOTS` 里没有该 key，core 就不许产出该条目；反过来，`dir_name` 里每新增一个受管目录常量都必须同时新增一条登记（V19）。**分区条目的声明来源是功能分区**（§3.1.1）：core 不得补声明，也不得写功能条目的 key / 子段字面量 |
 | G5 | 策略读不到 / 判据推不出 / 非普通文件 / 符号链接 → 不删（fail-closed） |
 | G6 | 取不到数一律 `null` + `availability` + `reason`；禁止 `0` 冒充（例外：`missing` 计 `0`，因为「确实没有」是已知事实，不是「不知道」） |
 | G7 | 观测 / 计划 / 执行三步分离；计划无副作用；执行必须带 `planId` 与 `confirmed = true` |
 | G8 | 禁止自动回收用户数据（`E1` / `E5` / `E9`）与业务数据（`E6` / `E7`） |
 | G9 | 回收后必须重新采样；账本恒等式必须仍成立 |
-| G10 | 禁止把 13 条相加成一个「总占用」（`E12` 恒不可得、条目间可能重叠）。**只允许两处合计**：①附件账本（`total = once + shared + orphan`，全部来自 `E1` 同一数据源，§3.7）；②计划合计 `totalReclaimableBytes`（只累加 `eligible` 条目，且 `complete = true`）。**§3.11 的对账余量另立一栏**：`declared` / `companion` / `ignored` / `optionalNotMounted` / `unregistered` 都**不得**与 13 条相加，也不得与 `totalBytes` 相加成「总占用」 |
+| G10 | 禁止把所有条目（core 8 条 + 已挂载分区条目）相加成一个「总占用」（`E12` 恒不可得、条目间可能重叠）。**只允许两处合计**：①附件账本（`total = once + shared + orphan`，全部来自 `E1` 同一数据源，§3.7）；②计划合计 `totalReclaimableBytes`（只累加 `eligible` 条目，且 `complete = true`）。**§3.11 的对账余量另立一栏**：`declared` / `companion` / `ignored` / `optionalNotMounted` / `unregistered` 都**不得**与条目相加，也不得与 `totalBytes` 相加成「总占用」 |
 | G11 | 禁止全局回收锁；串行化由 owner 负责，管理器只串行化自己的执行请求 |
 | G12 | 回收留痕不得写绝对路径；只写条目 key、动作、数量、字节、`planId` |
 | G13 | **超集门禁**：既有 wire 字段不得改名、不得删除、不得窄化类型。`AttachmentSummary` / `ConversationAttachmentSummary` / `AttachmentDeleteResultDto` / `AssetDirsDto` / `AttachmentLimitsDto` / `AttachmentImportDto` 与 `StorageBreakdownDto` 的既有 4 字段全部原样保留；新语义只能用**新增**字段表达（`oldestAt` / `newestAt` 等） |
-| G14 | 前端必须保留附件明细区（会话分组 / 孤儿分组 / 折叠 / 组全选 / 勾选删除），它承载 `A2`；不得用 13 行条目表替代它。两者是同一页的两段 |
+| G14 | 前端必须保留附件明细区（会话分组 / 孤儿分组 / 折叠 / 组全选 / 勾选删除），它承载 `A2`；不得用条目表替代它。两者是同一页的两段 |
 | G15 | **口径声明唯一，遍历实现归 owner**：`bytes` / `count` / `oldestAt` / `newestAt` 的**规则**（§3.9 的字节口径 / 时间口径 / 包含范围 / 伴生后缀）只允许有一处**声明**（本文档 §3.9），代码里不得出现第二份「口径规则表」。但**遍历实现本身归各 owner**：每个 owner 只遍历自己的受管目录，按自己的锁语义与错误映射返回结果——这是 G1 / G2 的所有者边界，**不是**重复。判据不是「全仓只有一份遍历代码」，而是「同一棵 fixture 目录喂给任意 owner 的 stats 入口，四元组逐字一致」（V21）：口径改动时若某 owner 未跟上，V21 必然变红。**禁止**的是 owner 在实现里**另立**一套口径（自定义伴生后缀、把目录自身算进字节、把「取不到」写成 `0`），而不是「各有一份遍历代码」 |
-| G16 | **登记表子段是契约身份，不是路径知识**：`E7`–`E11` 的 `segments` 子段参与 `key`（V1 要求 `key` 与 §3.1 逐字一致），因此不得删除；但 core 不得把子段用于拼路径（`roots.rs` 的 `path_for` 只用 `dir_name` 常量）。子段与可选能力侧目录常量的一致性**必须由跨 crate 断言保证**（`#[cfg(feature = "vault")]` 下比对登记表子段与 `assistant-vault` / `cmd::vault` 的目录常量），不允许两边各写一遍然后期望它们不漂移 |
-| G17 | **声明与接收用同一套词汇**：一条登记的「归谁 / 谁提供观测」各只声明一次，且上下游用**同一个 token** 表达。(a) `owner` 只回答「数据归谁」，是展示字段（进 DTO / golden），**不承载路由**；粒度是**构建无关的归属域标识**，三条判据：①按 G19(b) 删掉实现后仍成立——**不得**是可选能力 crate 的类型名（`E7`–`E11` 写 `SecurityDbState` 即违反，该类型在 vaultless 构建里不存在）；②不含 `::`——**不得**是模块路径（`E5 = "cmd::mascot_asset"` / `E10 = "cmd::vault"` 即违反）；③不是 feature flag 名（`E9 = "vault"` 即违反）。形态可以是无条件 crate 内的类型名（`AttachmentStore`）、crate 名（`tauri-plugin-log`）或领域名词（`SecurityDb` / `SecurityRepo` / `SecurityRecovery`）；同一归属域全表只能有一个 token，不同归属域不得重名。(b) `provider` 只回答「谁提供观测」，由 `RootMount::Feature(capability)` 声明、由 `StorageOwnerProbe::capability()` 声明，两处是同一个字符串字面量（V22 断言）。**槽位名是「能力标识」，不是「实现标识」**（G18(g)）：`Feature` 载荷与 `capability()` 返回值写的是「这个位置需要哪种观测能力」（如 `"security-observability"`），**不得**写实现类型名（`"VaultProbe"`）、**不得**写 feature flag 名（`"vault"`）——否则换实现 / 退役特性时登记表必须跟着改，槽位名就随实现漂移，通用槽名存实亡。(c) 路由由登记表驱动（§3.10 取用第 5 条）：**禁止**管理器维护「下标 → provider 方法」映射，**禁止**管理器按数字下标接收（`sample.rs` 的 `const SECURITY_DB: usize = 6` / `entries.rs` 的 `LOGS_INDEX = 11` 必须改为按 `key` 分派）——位置耦合在登记表增删条目时会静默错位且编译通过，字符串 `key` 写错则立刻查不到、立刻红。(d) 本条只管**观测路由**；回收动作（如 `prune_backups(keep)`）按动作名具名是正当的：各动作参数与语义不同，无法用 `key` 表达 |
-| G18 | **provider 按能力名注册到通用槽，槽先于注册者存在**：可选能力不得各占一个 Tauri state 类型槽——`manage` / `try_state` 以 `TypeId` 为键，同类型只有一个槽位，第二个能力只能「改别名（管理器静默取不到，表现为永远降级）」或「覆盖（先注册的数据永远看不见）」，两者都不报编译错误。(a) **唯一槽是 `probe::ProbeRegistry`**（`capability → Arc<dyn StorageOwnerProbe>`），它无条件编译、不含任何 `#[cfg(feature = ...)]`、**不知道**有几个能力；(b) **创建先于注册**：Tauri 插件 `setup` 先于 app `setup` 执行，因此槽只能在 `Builder` 阶段 `manage`，**或**把注册动作下沉到 app `setup` 内的 `feature_mounts::on_setup` 循环——两者只能选一种，不得跨层（槽晚于注册 = 注册失败 = 静默永久降级）；(c) **槽位冲突 fail-fast**：同能力名重复注册返回 `Err`，装配方记 `log::error` 且**不覆盖**已有实例，**禁止**「先注册的赢」（那会让某条数据永远看不见且无任何红）；(d) **按能力名精确取**：`registry.find(capability)`，**禁止**「遍历所有 provider 找第一个返回 `Some` 的」（那是猜，不是按声明取）；(e) **快照克隆**：采样前 `snapshot()` 克隆 `Vec<Arc<…>>` 后立即释放锁，禁止持锁跨 `spawn_blocking` / `await`；(f) 空槽与「provider 不认该 `key`」是两种降级（前者 `notImplemented`「可选能力未装配」，后者「provider 未实现该维度」），但由**同一段代码**判定，不产生 `cfg` 分支；(g) **槽位名是能力标识，不是实现标识**：`Feature` 载荷与 `capability()` 返回值必须是「能力名」（稳定、构建无关、实现无关，如 `"security-observability"`），**禁止**填实现类型名（`"VaultProbe"`）、**禁止**填 feature flag 名（`"vault"`）、**禁止**填模块路径。理由：槽位名的职责是让 core 能声明「这个位置该有哪种观测能力」并据此表达缺失（`optionalNotMounted`），它属于**格式层**；实现类型名属于**实现层**——一旦把实现名写进登记表，换实现（`VaultProbe` → 重构后的另一个类型）就必须改登记表，特性退役则留下无人装配的死行，通用槽退化为「单实现专用槽」。实现侧改名 / 换实现 / 增删特性，登记表一个字都不动 |
-| G19 | **登记表陈述事实，不承载策略**：`MANAGED_ROOTS` 描述**磁盘格式**（构建无关、实现无关），不含条件分支、默认值、`Option` 兜底或「没装配就当作 X」的语义。(a) **三件事分家**：`兜底`（拿默认值填坑，如 `bytes = 0` / `_ =>` 分派）**任何一方都禁止**；`缺失处理`（把缺失标出来：`null` + `notImplemented` + 原因）**只由管理器做一次**；`分类`（对账归 `declared` / `optionalNotMounted` / `unregistered`）**只由 §3.11.3 做一次**。三者不得互相替代，登记表不参与其中任何一件。(b) **事实检验法**：把某个 provider 从实现里删掉，该行仍应成立（`security/` 仍是已知位置、仍归 `SecurityDb`、仍是 `E7`）；只在「恰好有这个实现」时才成立的行，描述的是实现而非格式，必须删除或改写。(c) **行恒在、与构建无关**：`security/` 在 vaultless 构建里可能仍在盘上（升级前用过 vault / 用户手工复制），因此 `E7`–`E11` 的行不得随特性裁剪——裁剪后 `security/` 只能落 `unregistered`（未知目录告警），每个 vaultless 用户都会看到永远消不掉的错误信号；同时 `unregistered` 才是「core 真正不知道是什么」的那一格，把已知位置塞进去等于把可表达的缺失降级成不可表达的未知。(d) **死行必须删**：某能力从**所有**构建里彻底退役时，对应行必须删除（V19 的 `dir_name` 双向断言 + 代码审查兜底），不得留下「任何构建都不装配」的行——那会让用户永远看到「未装配」，且动态分类掩盖了「这行已经死了」的事实 |
+| G16 | **条目身份归声明方，core 不持有功能子段**：`E7`–`E11` 的 `key` / `segments` 只在功能分区内声明（§3.1.1），core 的登记表不得出现 `security/vault` 这类功能内部子段，也不得出现功能条目的 `key` 字面量（V24）。core 只保留首段级**磁盘事实** `OPTIONAL_SEGMENTS`（§3.11.1），用于「功能未挂载时把已知目录归 `optionalNotMounted`」。分区声明的 `segments` 首段必须落在「core 静态首段 ∪ `OPTIONAL_SEGMENTS`」内（V22③）；子段只用于对账减数，core 不据此拼路径 |
+| G17 | **声明与接收用同一套词汇**：每条条目的「归谁 / 谁应答 / 怎么算」各只声明一次，且上下游用同一个 token 表达。(a) `owner` 只回答「数据归谁」，是展示字段（进 DTO / golden），**不承载路由**；粒度是**构建无关的归属域标识**，三条判据：①删掉实现后仍成立——**不得**是功能 crate 的类型名（`E7`–`E11` 写 `SecurityDbState` 即违反）；②不含 `::`——**不得**是模块路径（`E5 = "cmd::mascot_asset"` 即违反）；③不是 feature flag 名（`E9 = "vault"` 即违反）。形态可以是无条件 crate 内的类型名（`AttachmentStore`）、crate 名（`tauri-plugin-log`）或领域名词（`SecurityDb` / `SecurityRepo` / `SecurityRecovery`）；同一归属域全表只能有一个 token，不同归属域不得重名。(b) **条目身份由声明方自己给出并在自己那里应答**：core 条目 = 登记表 + core 入口；分区条目 = 分区 `entries()` + 分区 `stats(key)`（§3.10）。**禁止** core 声明分区条目的 `key`、再由分区「实现一份」——那是双份声明且两者之间没有断言（V22）。(c) 路由按 `key`，**禁止**数字下标：`sample.rs` 的下标常量与 `entries.rs` 的 `LOGS_INDEX` 必须删除——位置耦合在增删条目时会静默错位且编译通过，字符串 `key` 写错则立刻查不到、立刻红。(d) 回收动作按动作名具名是正当的：各动作参数与语义不同，无法用 `key` 表达 |
+| G18 | **分区注册到通用分区表，表先于注册者存在**：功能不得各占一个 Tauri state 类型槽——`manage` / `try_state` 以 `TypeId` 为键，同类型只有一个槽位，第二个功能只能「改别名（管理器静默取不到，表现为永远降级）」或「覆盖（先注册的数据永远看不见）」，两者都不报编译错误。(a) **唯一表是 `section::SectionRegistry`**（`id → Arc<dyn StorageSection>`），它无条件编译、不含任何 `#[cfg(feature = ...)]`、**不知道**有几个功能；(b) **创建先于注册**：在 `Builder` 阶段 `manage` 表，**或**把注册动作放在 `feature_mounts::on_setup` 循环里并在循环之前 `manage`——两者只能选一种，不得跨层（表晚于注册 = 注册失败 = 静默永久少一组条目）；(c) **id 冲突 fail-fast**：同 `id` 重复注册返回 `Err`，装配方记 `log::error` 且**不覆盖**已有实例；(d) **按声明取数**：core 由各分区 `entries()` 构建「条目 `key` → 所属分区」索引，采样时只问所属分区；**禁止**「遍历所有分区取第一个成功的」（那是猜，不是按声明取）；(e) **快照克隆**：采样前 `snapshot()` 克隆 `Vec<Arc<…>>` 后立即释放锁，禁止持锁跨 `spawn_blocking`；(f) **两种状态分开表达**：分区未挂载 → 该组条目**不存在**（`entries` 少一组，**不是** `notImplemented` 占位行）；分区已挂载但某条 `stats` 失败 → 该条降级（`unavailable` / `unreadable` / `locked`）。不得用「未挂载」冒充「降级」，也不得用占位行表达「未挂载」；(g) 分区 `id` 只用于去重与日志，不进 DTO、不承载路由、不得写成功能条目的 `key` |
+| G19 | **登记表陈述事实，不承载策略**：`MANAGED_ROOTS` 描述**磁盘格式**（构建无关、实现无关），不含条件分支、默认值、`Option` 兜底或「没装配就当作 X」的语义。(a) **三件事分家**：`兜底`（拿默认值填坑，如 `bytes = 0` / `_ =>` 分派）**任何一方都禁止**；`缺失处理`（把缺失标出来：`null` + `notImplemented` + 原因）**只由管理器做一次**；`分类`（对账归 `declared` / `optionalNotMounted` / `unregistered`）**只由 §3.11.3 做一次**。三者不得互相替代，登记表不参与其中任何一件。(b) **事实检验法**：把某个分区从实现里删掉，该首段仍应成立（`security/` 仍是已知位置、仍归 `SecurityDb`）；只在「恰好有这个实现」时才成立的条目，描述的是实现而非格式，必须删除或改写。(c) **磁盘事实恒在，条目行随功能**：`security/` 在 vaultless 构建里可能仍在盘上（升级前用过 vault / 用户手工复制），因此「`security` 属于可选功能」这条**首段事实**（`OPTIONAL_SEGMENTS`）必须与构建无关、恒在——否则 `security/` 只能落 `unregistered`（未知目录告警），每个 vaultless 用户都会看到永远消不掉的错误信号；同时 `unregistered` 才是「core 真正不知道是什么」的那一格，把已知位置塞进去等于把可表达的缺失降级成不可表达的未知。**但条目行不同**：`E7`–`E11` 归功能分区（§3.1.1），功能未挂载时不存在——事实层恒在、条目层随功能，两件事不得混为一谈。(d) **死行必须删**：某功能从**所有**构建里彻底退役时，其分区整体消失（core 无需改动）；core 的 `OPTIONAL_SEGMENTS` 中若该首段也不再属于任何构建，必须删除（V19 的双向断言 + 代码审查兜底），不得留下「任何构建都不会挂载」的残留首段 |
 
 ### 3.9 口径与包含范围（原 I54 §4.3，迁入后为唯一出处）
 
-**总则（口径声明唯一，上游对接、下游接收各自正确）**：本节是口径的**唯一声明处**，不是「唯一实现处」。owner（上游）在自己的 crate 里遍历自己的目录是正当的所有者行为（G1 / G2），它要做的是**按本节声明对接**：返回统一的契约形状、遵守字节 / 时间 / 包含范围规则、把 `io::Error` 映射成 `locked` / `unreadable` / `unavailable`。管理器（下游）要做的是**正确接收**：只经登记表 `key` 取数、把 owner 返回值无损搬进 `ProbeStats`、不自己补算也不二次遍历。**判据**：同一棵 fixture 目录喂给任意 owner 的 stats 入口，四元组逐字一致（V21）；若某条规则需要在两个文件里各改一次才能同时生效，说明口径被复制成了两份，本节即被违反。**注意**：本节只管「算什么」，不管「谁来遍历」——后者是所有权问题，不是口径问题。
+**总则（口径声明唯一，上游对接、下游接收各自正确）**：本节是口径的**唯一声明处**，不是「唯一实现处」。owner（上游）在自己的 crate 里遍历自己的目录是正当的所有者行为（G1 / G2），它要做的是**按本节声明对接**：返回统一的契约形状、遵守字节 / 时间 / 包含范围规则、把 `io::Error` 映射成 `locked` / `unreadable` / `unavailable`。管理器（下游）要做的是**正确接收**：只经条目 `key` 取数、把 owner 返回值无损搬进 `SectionStats`、不自己补算也不二次遍历。**判据**：同一棵 fixture 目录喂给任意 owner 的 stats 入口，四元组逐字一致（V21）；若某条规则需要在两个文件里各改一次才能同时生效，说明口径被复制成了两份，本节即被违反。**注意**：本节只管「算什么」，不管「谁来遍历」——后者是所有权问题，不是口径问题。
 
 **字节口径**：
 
@@ -374,15 +395,15 @@
 | 目标文件本体 | 计入 | — |
 | 伴生文件（`-journal` / `-wal` / `-shm`、`.tmp`、`.lock`、部分写入残留） | **不计入** | 由 owner 在 `note` 说明；回收时由 owner 一并处理，管理器不单独列条目 |
 | 目录自身 / 空目录 | 不计入 | — |
-| 旧位置残留（迁移后遗留的旧目录） | 不计入任何条目 | 归 owner 的迁移清理，**不**进 13 行 |
+| 旧位置残留（迁移后遗留的旧目录） | 不计入任何条目 | 归 owner 的迁移清理，**不**进 `entries` |
 | 符号链接 / 非常规文件 | 不计入 | **跳过、不计数，且不使整条降级**；`unreadable` 只用于目标路径本身的 `read_dir` / `metadata` 失败（§7.1）。回收跳过（G5） |
-| 未登记目录 / 未登记文件（§3.11 的 `unregistered`） | 不计入任何条目 | 只在 `inventory` 里报「单段名 + 字节 + 条数」，**不**进 13 行、**不**进任何合计、**不**可回收 |
+| 未登记目录 / 未登记文件（§3.11 的 `unregistered`） | 不计入任何条目 | 只在 `inventory` 里报「单段名 + 字节 + 条数」，**不**进 `entries`、**不**进任何合计、**不**可回收 |
 
 **自指产物**：观测与回收本身产生的日志（`E12`）计入该条目字节，但必须 `countsSelfLogs = true`；**禁止**把它算进「本次回收收益」，否则数字随观测频率自增。
 
-### 3.10 采样装配（owner 入口、可选能力与超时）
+### 3.10 采样装配（owner 入口、可选功能分区与超时）
 
-**13 条 owner 入口（唯一来源；标「+」的为 T1 需新增的方法）**：
+**全部条目的 owner 入口（唯一来源；core 8 条 + 分区 5 条；标「+」的为 T1 需新增的方法）**：
 
 | 条目 | stats 入口 | 路径来源 | 取数失败时的降级 |
 |---|---|---|---|
@@ -392,78 +413,60 @@
 | `E4` | `assistant_tools::os::tools::super_index::index_stats(root)`（+） | `AppDirs::indexes()` | `null` + `unreadable` |
 | `E5` | `cmd::mascot_asset::asset_stats()`（+） | `AppDirs::mascot_assets()` | `null` + `unreadable` |
 | `E6` | `DbState::db_file_stats()`（+，只 `metadata`） | `DbState` 自持 path | `null` + `unreadable` |
-| `E7` | `SecurityDbState::db_file_stats()`（+，只 `metadata`） | 可选能力 provider | `null` + `unavailable`（`metadata` 失败，如文件正被替换）/ `unreadable`；provider 未注入 → `null` + `notImplemented` |
-| `E8` | `SecurityDbState::backup_stats()`（+） | provider | `null` + `unreadable` |
-| `E9` | `VaultProbe::repo_stats()`（+） | provider | `null` + `locked`（vault 未解锁）/ `unreadable`；provider 未注入（vaultless 构建）→ `null` + `notImplemented`（**不是** `locked`） |
-| `E10` | `VaultProbe::recovery_stats()`（+） | provider | `null` + `unreadable` |
-| `E11` | `SecurityDbState::audit_stats()`（+） | provider | `null` + `unreadable` |
-| `E12` | 无（插件不暴露） | — | 恒 `null` + `notImplemented`（`availabilityReason` 写「`tauri-plugin-log` 不暴露 stats」） |
+| `E7` | `SecurityDbState::db_file_stats()`（+，只 `metadata`） | vault 分区自述 | `null` + `unavailable`（`metadata` 失败，如文件正被替换）/ `unreadable`；分区未挂载 → 该条目不存在 |
+| `E8` | `SecurityDbState::backup_stats()`（+） | vault 分区自述 | `null` + `unreadable` |
+| `E9` | `vault::repo_stats()`（+） | vault 分区自述 | `null` + `locked`（vault 未解锁）/ `unreadable`；vaultless 构建下该条目不存在（**不是** `locked`、也不是 `notImplemented` 占位） |
+| `E10` | `vault::recovery_stats()`（+） | vault 分区自述 | `null` + `unreadable` |
+| `E11` | `SecurityDbState::audit_stats()`（+） | vault 分区自述 | `null` + `unreadable` |
+| `E12` | 无（组件不提供统计） | — | 恒 `null` + `notImplemented`（`availabilityReason` 写「该组件不提供占用统计」） |
 | `E13` | `assistant_crash::dump_stats(dir)`（+） | `AppDirs::crashes()` | `null` + `unreadable` |
 
-> 表中 `E7`–`E11` 列出的 `SecurityDbState::backup_stats()` / `VaultProbe::repo_stats()` 等是 **owner 内部入口**（真实实现处）；provider 实现按登记 `key` 分派到它们，provider **trait 表面**只暴露 `stats(key)` 一个方法（G17），不为每条登记各写一个具名方法。`owner` 标签按 G17(a) 是**构建无关的归属域标识**，不得用模块路径、feature 名或可选 crate 的类型名（`E7` / `E8` / `E11` = `SecurityDb`，`E9` = `SecurityRepo`，`E10` = `SecurityRecovery`，V22 锁死）。
+> 表中 `E7`–`E11` 列出的 `SecurityDbState::backup_stats()` / `vault::repo_stats()` 等是 **owner 内部入口**（真实实现处）；vault 分区在自己的 `stats(key)` 内按 `key` 分派到它们，分区契约表面不为每条条目各写一个具名方法（G17）。`owner` 标签按 G17(a) 是**构建无关的归属域标识**，不得用模块路径、feature 名或可选 crate 的类型名（`E7` / `E8` / `E11` = `SecurityDb`，`E9` = `SecurityRepo`，`E10` = `SecurityRecovery`，V22 锁死）；该标签由分区自述，core 不代管。
 
 **三条 owner 接口的既有形状（决定 T1–T3 的改动量）**：
 
 1. `cleanup_expired_results(root, days)` 只返回 `CleanupReport { removed, failed }`，**没有字节**；它按 `mtime` 递归清扫会话子目录、跳过符号链接与非常规文件、`0` 禁用。因此 `E3` 的 `A3` 执行要报 `removedBytes`，必须新增「先按同一判据收集候选（path + bytes），再逐个删除并累加」的 owner 方法，**不能**复用 `CleanupReport` 后自己补算（补算时文件已删，长度取不到）；
-2. `result_stats` / `index_stats` 必须遵守 §3.9 的**同一份口径声明**（G15）：与各自的清扫函数用同一套判据（同一份伴生后缀表、同样跳过符号链接与非常规文件、同样不算目录自身），由 V21 的行为断言锁死——**不**要求共享同一段遍历代码，要求的是同一棵 fixture 下结果一致。两个 stats 都返回统一的 `{ bytes, count, oldestAt, newestAt }` 契约形状供条目与账本共用；owner 若因依赖方向不能直接返回 core 的 `ProbeStats`（如 `assistant-tools` 不依赖 core），必须在 core 侧适配层**无损搬运**（漏字段即 V21 负例失败），**不得**在 owner 侧另立字段含义；
+2. `result_stats` / `index_stats` 必须遵守 §3.9 的**同一份口径声明**（G15）：与各自的清扫函数用同一套判据（同一份伴生后缀表、同样跳过符号链接与非常规文件、同样不算目录自身），由 V21 的行为断言锁死——**不**要求共享同一段遍历代码，要求的是同一棵 fixture 下结果一致。两个 stats 都返回统一的 `{ bytes, count, oldestAt, newestAt }` 契约形状供条目与账本共用；owner 若因依赖方向不能直接返回 core 的 `SectionStats`（如 `assistant-tools` 不依赖 core），必须在 core 侧适配层**无损搬运**（漏字段即 V21 负例失败），**不得**在 owner 侧另立字段含义；
 3. `super_index` 在 `assistant-tools` 内是 `pub(crate)`，`index_stats` 需在 `os::tools` 加一层公开转发，管理器只调公开入口（G1）。
 
-**可选能力 provider（解决 N15，本文档唯一的 feature 缝）**：
+**可选功能分区自注册（解决 N15，本文档唯一的 feature 缝）**：
 
-1. **trait 定义位置**：`src-tauri/src/cmd/storage/probe.rs`（由 `storage/mod.rs` 内 `mod probe;` 引入）——该文件**无条件编译**，因此可以安全承载 trait。trait 声明为 `pub trait StorageOwnerProbe: Send + Sync`，表面只有三个方法：`fn capability(&self) -> &'static str`（**能力槽位标识**，与 `RootMount::Feature(capability)` 同一个字面量；名字是「能力名」而非实现类型名，见 G18(g)）、`fn stats(&self, key: &'static str) -> Option<Result<ProbeStats, ProbeError>>`（`None` = 该 key 不归本 provider）、`fn audit_policy(&self) -> Option<(u32, i64)>`。**禁止**用 `provider_label()` / `provider_id()` 之类的命名：那会把语义带偏成「实现的名字」，而这里要表达的是「我提供哪个能力槽」，实现叫什么名字与 core 无关（G18(g)）。**禁止**为 `E7`–`E11` 各写一个具名方法（`security_db_stats` / `backup_stats` / `repo_stats` / `recovery_stats` / `audit_stats`）：那会让同一条归属在 trait 里声明一次、在管理器分派里再声明一次，两份声明之间没有任何断言（见 X15、G17）。**参数与返回值只用普通数据**（`protocol::dto::storage` 里的 DTO 或纯 `u64/i64/bool`），**不得**出现 `assistant_vault` / `assistant_security` 的任何类型（否则 vaultless 构建直接编不过）；
-2. **方法必须是同步阻塞函数**，不写 `async fn`（`async fn` 在 trait 里不对象安全，需额外 box）；管理器在 `spawn_blocking` 里调用，trait 只需 `Send + Sync` 即可跨线程；
-3. **注册类型必须是 `Arc<dyn StorageOwnerProbe>`，且注册进唯一的通用槽**：定义 `pub type StorageOwnerProbeHandle = Arc<dyn StorageOwnerProbe>;`（`dyn` 本身不满足 `Sized`，不能直接 `manage` / `try_state`；`Arc` 同时满足 `Send + Sync + 'static` 与「克隆后释放锁」的需要）。槽是一个**无条件编译**的 `ProbeRegistry`：
-
-   ```rust
-   pub struct ProbeRegistry {
-       probes: std::sync::Mutex<Vec<StorageOwnerProbeHandle>>,
-   }
-
-   impl ProbeRegistry {
-       pub fn new() -> Self;
-       /// 槽位冲突 = 装配错误：返回 Err 且**不覆盖**已有实例（G18(c)）。
-       pub fn register(&self, probe: StorageOwnerProbeHandle) -> Result<(), String>;
-       /// 按登记表 `Feature(capability)` 的同一个字面量精确取（G18(d)）。
-       pub fn find(&self, capability: &str) -> Option<StorageOwnerProbeHandle>;
-       /// 采样前克隆快照，返回后锁已释放（G18(e)）。
-       pub fn snapshot(&self) -> Vec<StorageOwnerProbeHandle>;
-       /// 已注册能力槽集合，V22 / V23 的集合来源。
-       pub fn capabilities(&self) -> Vec<&'static str>;
-   }
-   ```
-
-   **禁止**把 provider 直接 `app.manage` 成独立 state（`TypeId` 只容一个，第二个能力要么覆盖要么静默取不到，见 G18 / X17）；**禁止**每个能力定义一个自己的别名（`VaultProbeHandle` / `XxxProbeHandle`）再让管理器逐个 `try_state`（清单回到 core 手里，且漏取不报错）；
-4. **实现位置与注册时序**：vault 侧实现在 `src-tauri/src/vault_plugin.rs` 的 `#[cfg(feature = "vault")] mod mounted` 里（该文件是装配契约承认的唯一 vault 特性缝），在插件 `setup` 阶段 `registry.register(...)`。**槽必须先于任何注册动作存在**（G18(b)）：二选一——①在 `plugins::attach` 的 `Builder` 阶段 `.manage(Arc::new(ProbeRegistry::new()))`（插件 setup 早于 app setup，槽在插件之前就绪）；②把注册动作从插件 `setup` 下沉到 app `setup` 的 `feature_mounts::on_setup` 循环，并在该循环之前 `manage` 槽。两种都自洽，但**建槽与注册必须同层**，不得「插件里注册、app 里建槽」。**禁止**把实现放进 `cmd/storage/` 或 `cmd/vault/`——前者会引入 feature 依赖，后者会在 vaultless 构建里消失却留下悬空的注入点；
-5. **取用**：`cmd/storage/mod.rs` 只 `app.try_state::<Arc<ProbeRegistry>>()`（取不到槽属装配异常，按「可选能力未装配」处理，不 panic）；随后**遍历 `MANAGED_ROOTS` 中 `mount == Feature(capability)` 的行，`registry.find(capability)` 取 provider，再逐行 `probe.stats(row.key)`**，登记表是路由的唯一来源（能力名决定「用哪个 provider」，`key` 决定「取哪条数据」）；`stats` 返回 `None` 表示该 key 不在本 provider 的职责内，该行按「provider 未实现该维度」降级。**禁止**在管理器里另建一份「下标 → provider 方法」映射（如 `match index { SECURITY_DB => … , _ => audit_stats() }`）：`_` 兜底会在登记表增删条目时静默把别的条目数据填进来，且这份映射与登记表之间没有断言（G17、X15）；**禁止**「遍历全部 provider 取第一个返回 `Some` 的」（G18(d)）。`find(capability)` 返回 `None`（vaultless 构建 / 插件未装配 / 该能力槽无 provider）→ 该 `Feature` 行 `availability = notImplemented` + `availabilityReason` 点名「可选能力未装配」，`bytes` / `count = null`，`eligibility` 按**禁止回收**语义填（不因装配缺失而变成可执行）。**降级只影响没有 provider 应答的那几行**，其余条目照常（V23⑤）：
-   - `E7` → `notEligible` + `reason = businessData`；`E9` → `notEligible` + `reason = userData`（两条本来就禁止回收，与是否装配无关）；
-   - `E8` → `notImplemented` + `reason = noReclaimApi`（无 owner 方法，V17）；
-   - `E10` / `E11` → `ownerManaged`（调度权在 owner；构建里没有该 owner 时自然不发生，不降级为 `notImplemented`）；
-6. **禁止** `cmd/storage/` 直接 `use assistant_vault::*` 或出现 `#[cfg(feature = ...)]`（G1 / 装配契约）。trait 本身也**不得**被 `#[cfg]` 门控——它必须在两种构建里都存在，否则 vaultless 构建的降级分支没有类型可写；
-7. **声明但未挂载**（`RootMount::Feature` 且 provider 未注入）不是「未登记」：`security/` 段在 vaultless 构建里可能仍在盘上（升级前用过 vault、或用户手工复制），对账必须把它归 `optionalNotMounted` 而不是 `unregistered`（§3.11.3），否则每个 vaultless 用户都会看到一个永远消不掉的「未登记目录」告警。
+1. **契约定义位置**：`src-tauri/src/cmd/storage/section.rs`（由 `storage/mod.rs` 内 `mod section;` 引入）——**无条件编译**，只承载通用契约，不出现任何 feature 名、功能 crate 类型名或条目 id。契约由四部分组成：
+   - `trait StorageSection: Send + Sync`：`fn id(&self) -> &'static str`（分区标识，只用于诊断日志）、`fn entries(&self) -> &'static [SectionEntry]`（**条目清单由分区自述**）、`fn stats(&self, key: &'static str) -> Option<Result<SectionStats, SectionError>>`（`None` = 该 key 不归本分区）、`fn eligibility(&self, key, sample) -> Option<(StorageEligibilityDto, StorageReclaimReasonDto)>`（随观测态变化的资格判据）、`fn policy(&self, key) -> Option<ReclaimPolicyDto>`（策略自述）、`fn reclaim_actions(&self) -> &'static [StorageReclaimActionDto]`（本分区可执行的动作集合）、`fn reclaim(&self, key, action, policy) -> Option<Result<SectionReclaimReport, SectionError>>`（回收入口，`None` = 不支持该动作）；
+   - `struct SectionEntry { entry, key, segments, scope, coverage, owner, inventory, decl }`：一条分区条目的完整声明；`decl`（`EntryDecl`）承载静态 `action` / 静态 `eligibility` / `reason` / 策略 / `autoActive` / `countsSelfLogs` / `note`，语义与 §3.2 的 core 条目字段一一对应；
+   - `type StorageSectionHandle = Arc<dyn StorageSection>`；
+   - `struct SectionRegistry { sections: Mutex<Vec<StorageSectionHandle>> }`：**通用接收槽**，`register(section)` 只做结构校验——分区标识非空且唯一、条目清单非空、每条 `key == segments.join("/")`、首段必须命中 core 的 `OPTIONAL_SEGMENTS` 磁盘事实、条目 id 与 key 不得与 core 条目或其它已注册分区重名；校验不过返回 `Err` 且不覆盖已有分区。
+2. **方法必须同步阻塞**（`async fn` 在 trait 里不对象安全，需额外 box）；管理器在 `spawn_blocking` 里调用，trait 只需 `Send + Sync`。**参数与返回值只用普通数据**（`protocol::dto::storage` 的 DTO 或纯 `u64/i64`），不得出现 `assistant_vault` 等任何功能 crate 类型（G1）。
+3. **注册类型必须是 `Arc<dyn StorageSection>`，且注册进唯一通用槽**：`dyn` 不满足 `Sized`，不能直接 `manage` / `try_state`；`Arc` 同时满足 `Send + Sync + 'static` 与「克隆后释放锁」。**禁止**把分区实现直接 `app.manage` 成独立 state（`TypeId` 只容一个，第二个分区要么覆盖要么静默取不到）；**禁止**每个分区自建别名（`VaultSectionHandle`）再让管理器逐个 `try_state`（清单回到 core 手里，且漏取不报错）。
+4. **实现位置与注册时序**：**条目声明与取数实现在功能 crate**（`assistant-vault/src/storage_section.rs`）；`StorageSection` 适配器与注册入口在功能装配缝（`vault_plugin.rs` 的 `#[cfg(feature = "vault")] mod mounted`）——适配器必须实现 core 侧 trait，功能 crate 不依赖 app crate（§3.1.1 依赖方向）。注册动作**下沉到 app `setup` 的 `feature_mounts::on_setup` 循环**（调用装配缝导出的注册入口），`SectionRegistry` 槽在 `plugins::attach` 的 `Builder` 阶段 `.manage(Arc::new(SectionRegistry::new()))`，先于 `on_setup`。**建槽与注册必须同层**，不得「插件里注册、app 里建槽」。**禁止**把声明或取数实现放进 `cmd/storage/` 或 `cmd/vault/`——前者会引入 feature 依赖，后者会在 vaultless 构建里消失却留下悬空的注入点。
+5. **取用**：`cmd/storage/` 只 `app.try_state::<Arc<SectionRegistry>>()`（取不到槽按「无任何分区挂载」处理，不 panic）；随后按分区快照 `entries()` 装配条目清单、按 `stats(key)` 取数、按 `eligibility` / `policy` / `reclaim_actions` / `reclaim` 取资格与回收能力。**core 不得按 `key` 或条目 id 硬编码分派到某个分区**（G17）；**禁止**「遍历全部分区取第一个返回 `Some` 的」（G18(d)）；**禁止**在管理器里另建一份「下标 → 条目」映射：条目清单只有分区自述这一份，两份声明之间没有断言（X15）。
+6. **未挂载语义**：分区未挂载时其条目**整体不存在**——`entries` 里没有这些行，不以 `notImplemented` 占位；core 的 `OPTIONAL_SEGMENTS` 首段事实保证对账仍把该段归 `optionalNotMounted`（§3.11.3），否则每个 vaultless 用户都会看到一个永远消不掉的「未登记目录」告警。
+7. **磁盘格式事实保留在 core**：`registry.rs` 的 `OPTIONAL_SEGMENTS` 只写「该首段可能出现在盘上、属于某个可选分区」，**不写条目、不写策略、不写实现**；这是 core 允许保留的唯一可选功能知识（G19(c)）。条目、观测、资格、策略、回收全部由分区自述，core 只做通用接收与路由。
+8. **禁止** `cmd/storage/` 直接 `use assistant_vault::*` 或出现 `#[cfg(feature = ...)]`（G1 / 装配契约）。契约本身也**不得**被 `#[cfg]` 门控——它必须在两种构建里都存在，否则 vaultless 构建的降级分支没有类型可写。
 
 **并行、超时与同源（解决 N16）**：
 
 1. `E1` 与顶层字段**同源**：一次 `list_all()` + 一次 `attachment_refs` 查询，同时填 `totalBytes` / `totalCount` / `orphans` / `conversations` / `E1` 的 `bytes` / `count`；**禁止**为条目再遍历一次目录；
-2. `E2`–`E13` 与 `E1` **并行**采样（`spawn_blocking` / `join`），单条超时 **500 ms** → `availability = unavailable` + `availabilityReason = timeout`，不阻塞整页。**超时只是放弃等待，不是取消**：`spawn_blocking` 的任务无法 abort，超时后该线程会跑完才退出；因此 owner stats 必须①只读、②幂等、③不在持锁状态下做长遍历（否则超时条目会在后台继续占着 owner 锁，影响后续回收）。`E1` 与顶层字段同源，**不参与**这个超时（它失败即整命令 `Err`，见 §7.1 特例 1）；
+2. core 其余 7 条与已挂载分区条目全部与 `E1` **并行**采样（`spawn_blocking` / `join`；分区条目先由 `entries()` 快照汇总成清单，再逐条问所属分区），单条超时 **500 ms** → `availability = unavailable` + `availabilityReason = timeout`，不阻塞整页。**超时只是放弃等待，不是取消**：`spawn_blocking` 的任务无法 abort，超时后该线程会跑完才退出；因此 owner stats 必须①只读、②幂等、③不在持锁状态下做长遍历（否则超时条目会在后台继续占着 owner 锁，影响后续回收）。`E1` 与顶层字段同源，**不参与**这个超时（它失败即整命令 `Err`，见 §7.1 特例 1）；
 3. 会话标题 / 更新时间改为一次 `JOIN`（或直接复用 `conversations` 表行），消除 N16 的每会话 2 次 `query_row`；
 4. 全部条目共用一个 `sampledAt`（采样开始时刻，秒）；**禁止**每条各取一次时间。
 
-**T1 实现顺序**（按「无依赖 → 有依赖」）：`E1`（已有）→ `E6` / `E13`（纯 `metadata`）→ `E3` / `E4`（owner 目录遍历）→ `E2` / `E5` → `E7`–`E11`（provider）→ `E12`（常量降级）。
+**T1 实现顺序**（按「无依赖 → 有依赖」）：`E1`（已有）→ `E6` / `E13`（纯 `metadata`）→ `E3` / `E4`（owner 目录遍历）→ `E2` / `E5` → `E7`–`E11`（vault 分区自注册）→ `E12`（常量降级）。
 
 ---
 
 ### 3.11 对账余量（声明 + 扫描，非条目）
 
-**本节回答的问题只有一个**：「基根上有没有东西没被 13 条认领？」它不回答「是什么」「该不该删」，也不产出任何条目、不参与任何合计、不可回收（G10）。
+**本节回答的问题只有一个**：「基根上有没有东西没被条目认领（core 自有 8 条 + 已挂载分区自述条目）？」它不回答「是什么」「该不该删」，也不产出任何条目、不参与任何合计、不可回收（G10）。
 
 **设计理念（六条，实现时按此自检）**：
 
 1. **双覆盖**：声明层答「这块多大、属于谁、能否回收」（owner 实测，同步）；扫描层答「盘上还有什么没被认领」（基根枚举 + 减法，异步）。两层职责正交，永不互相替代。
 2. **观测与扫描物理分离**：观测走同步有界路径（单条 500 ms，§3.10），扫描走后台任务；`get_storage_breakdown` **绝不等待扫描**，因此页面永远不会因扫描而卡住。
    - **为什么观测必须同步**（三条，按强度）：①G9 要求「回收后重新采样、账本恒等式仍成立」，而 `total = once + shared + orphan` 与 `E1` 同源（§3.7、§3.10 第 1 条）只在**同一时刻的同一份数据**下成立；异步快照会把账本闭合从「同步不变量」退化为「最终一致」，等于放弃对 I54 的核心承诺。②§5.5 的「执行时重判 + 跳过晚于 `sampledAt` 的条目」以 `sampledAt` 新鲜为前提；5 分钟 TTL 的快照会让「计划 200 个、执行删 30 个」常态化，重判从主力防线退化为兜底。③观测成本**结构性地有上界**（G2 禁止管理器遍历受管目录，stats 只来自 owner 的已知形状方法），扫描成本**无上界**（整棵基根树、未知子树、第三方写入）——能同步是因为门禁保证了上界，不是因为乐观。
-   - 「同步」= 语义上同一次调用内出一致快照，**不是**阻塞运行时：实现是 `spawn_blocking` + 13 条并行 + 单条超时降级（`unavailable + timeout`，不写 `0`、不拖整页）。
+   - 「同步」= 语义上同一次调用内出一致快照，**不是**阻塞运行时：实现是 `spawn_blocking` + 条目并行 + 单条超时降级（`unavailable + timeout`，不写 `0`、不拖整页）。
 3. **只用减法，不做第二套统计**：`余量 = 扫描值 − Σ 该节点覆盖范围内的登记条目字节`。禁止为算余量再写一遍「遍历 + 累加」——那正是 X2 拒绝的漂移源。
-4. **减法成立的前提是「登记 ⊆ 扫描」**：每个节点的 `declaredBytes` 必须是 `scanBytes` 的子集。靠三条已有约定维持——13 条 `includesDerived` 全 `false`（§3.2）、伴生文件不计入任何条目（§3.9）、符号链接 / 非常规文件不跟随不计数（§3.9）。**注意后两条方向相反**：符号链接/非常规文件**两边都不计**（不产生余量）；伴生文件**扫描计、登记不计**（产生一个已知来源的小余量，属预期噪声，见 §3.11.2 第 4 条）。改这三条中的任何一条都必须复查本节。
+4. **减法成立的前提是「登记 ⊆ 扫描」**：每个节点的 `declaredBytes` 必须是 `scanBytes` 的子集。靠三条已有约定维持——全部条目 `includesDerived` 全 `false`（§3.2）、伴生文件不计入任何条目（§3.9）、符号链接 / 非常规文件不跟随不计数（§3.9）。**注意后两条方向相反**：符号链接/非常规文件**两边都不计**（不产生余量）；伴生文件**扫描计、登记不计**（产生一个已知来源的小余量，属预期噪声，见 §3.11.2 第 4 条）。改这三条中的任何一条都必须复查本节。
 5. **余量是「发现」，不是「动作」**：不进白名单、不进合计、不进 `complete`，用户点不动。
 6. **负数即报警**：`Σ登记字节 > 扫描子树字节` → `overRegistered`。这是**唯一**能自动暴露「某条目重复计入 / 扫描漏扫 / owner 口径与 §3.9 不一致」的信号，必须显式上报（`partial = true` + 该节点标记），**禁止**静默取 `0`。
 
@@ -474,38 +477,37 @@
 ```rust
 pub enum RootScope { Data, Local }
 pub enum RootCoverage { SingleFile, SelfFilesOnly, RecursiveTree }
-pub enum RootMount {
-    Always,
-    Feature(&'static str),                    // 可选能力；载荷是 **能力槽位标识**（如 "security-observability"），不是实现类型名
-}
 
 pub struct ManagedRoot {
-    pub entry: &'static str,                  // "E1".."E13"
+    pub entry: &'static str,                  // "E1".."E6" / "E12".."E13"（core 自有条目）
     pub key: &'static str,                    // "attachments" / "attachments/derived" / ...
     pub scope: RootScope,
     pub segments: &'static [&'static str],    // 段序列；首段即对账单位
     pub coverage: RootCoverage,               // 该条目覆盖「哪些文件」
     pub owner: &'static str,                  // 数据所有者：展示用，进 DTO / golden，**不承载路由**
-    pub mount: RootMount,                     // E7–E11 为 Feature(SECURITY_OBSERVABILITY)
     pub inventory: bool,                      // 该 scope 是否参与余量对账（见 OQ11）
 }
 
-/// 能力槽位标识：core 声明「这个位置需要哪种观测能力」，实现侧引用同一个常量。
-/// 只定义一次，登记表与 `StorageOwnerProbe::capability()` 都引用它（G17(b) / G18(g)）。
-pub const SECURITY_OBSERVABILITY: &str = "security-observability";
+/// core 自有条目：8 条，无条件编译、不随任何特性增减。
+pub const MANAGED_ROOTS: &[ManagedRoot] = &[ /* 8 条，顺序 E1→E6、E12、E13 */ ];
 
-pub const MANAGED_ROOTS: &[ManagedRoot] = &[ /* 13 条，顺序 E1→E13 */ ];
+/// 可选分区首段（磁盘格式事实）：只陈述「该首段可能出现在盘上、属于某个可选分区」，
+/// **不含**条目、策略或实现；分区挂载后其条目由分区自述（§3.1.1、§3.10）。
+pub const OPTIONAL_SEGMENTS: &[&str] = &["security"];
+
 pub const IGNORED_NAMES: &[&str] = &[".DS_Store", "Thumbs.db", "desktop.ini"];
 ```
 
-**`owner` 与 `provider` 是两个不同的问题，各只声明一处**：
+**`owner` 与分区归属是两个不同的问题，各只声明一处**：
 
 | 字段 | 回答的问题 | 用途 | 谁消费 |
 |---|---|---|---|
 | `owner` | 「这份数据归谁」 | 展示、DTO、golden 快照 | 前端、审计 |
-| `mount: Feature(capability)` | 「需要哪种观测能力」 | 路由 | 管理器按能力名取 provider，再按 `key` 取数 |
+| 分区自述的 `entries()` | 「有哪些条目、归哪个分区」 | 装配与路由 | 管理器按分区取条目清单，再按 `key` 取数 |
 
-两者**不要求相同**：`E7` / `E8` / `E11` 的数据所有者是 `SecurityDb`，`E9` 是仓库（`SecurityRepo`）、`E10` 是恢复副本目录（`SecurityRecovery`）——三个所有者；但这五条全由**同一个** provider（当前实现是 `VaultProbe`）提供观测。`owner` 必须**构建无关**：写 `SecurityDbState` 这类可选 crate 的类型名，在 vaultless 构建下指向一个不存在的类型，且按 G19(b) 删掉实现后该值不再成立。把路由塞进 `owner`（历史写法 `E9 = "vault"` / `E10 = "cmd::vault"`）会让「谁的数据」与「谁提供观测」两个问题混成一个字段，两种写法必然漂移（G17(a)）。同理，`Feature` 载荷写的是**能力名**（`SECURITY_OBSERVABILITY`）而不是 provider 的类型名：`VaultProbe` 是当前唯一实现，换实现 / 改类型名 / 特性退役时登记表不动（G18(g)）。
+两者**不要求相同**：`E7` / `E8` / `E11` 的数据所有者是 `SecurityDb`，`E9` 是仓库（`SecurityRepo`）、`E10` 是恢复副本目录（`SecurityRecovery`）——三个所有者；但这五条全由**同一个** vault 分区自述并观测。`owner` 必须**构建无关**：写 `SecurityDbState` 这类可选 crate 的类型名，在 vaultless 构建下指向一个不存在的类型，且按 G19(b) 删掉实现后该值不再成立。把路由塞进 `owner`（历史写法 `E9 = "vault"` / `E10 = "cmd::vault"`）会让「谁的数据」与「谁提供观测」两个问题混成一个字段，两种写法必然漂移（G17(a)）。分区归属写在分区的 `entries()` 里（由分区自己声明），core 既不保存条目清单、也不保存分区标识（G17(c)）。
+
+下表是全量 13 条的事实基线（core 自有 8 条 + vault 分区自述 5 条）；`E7`–`E11` 的 key / segments 由分区自述，core 不保存这些声明，此处只作对照。
 
 | entry | `segments` | `coverage` | 说明 |
 |---|---|---|---|
@@ -515,27 +517,27 @@ pub const IGNORED_NAMES: &[&str] = &[".DS_Store", "Thumbs.db", "desktop.ini"];
 | `E4` | `["tool-index"]` | `SelfFilesOnly` | 单层 `*.idx` |
 | `E5` | `["mascot-assets"]` | `RecursiveTree` | |
 | `E6` | `["assistant.db"]` | `SingleFile` | 伴生 `-journal` / `-wal` / `-shm` 归 `companion` |
-| `E7` | `["security", "security.db"]` | `SingleFile` | `Feature(SECURITY_OBSERVABILITY)`，`owner = SecurityDb` |
-| `E8` | `["security", "backups"]` | `RecursiveTree` | `Feature(SECURITY_OBSERVABILITY)`，`owner = SecurityDb` |
-| `E9` | `["security", "vault"]` | `RecursiveTree` | `Feature(SECURITY_OBSERVABILITY)`，`owner = SecurityRepo` |
-| `E10` | `["security", "recovery"]` | `RecursiveTree` | `Feature(SECURITY_OBSERVABILITY)`，`owner = SecurityRecovery` |
-| `E11` | `["security", "audit"]` | `RecursiveTree` | `Feature(SECURITY_OBSERVABILITY)`，`owner = SecurityDb` |
+| `E7` | `["security", "security.db"]` | `SingleFile` | vault 分区自述，`owner = SecurityDb`；不在 `MANAGED_ROOTS` |
+| `E8` | `["security", "backups"]` | `RecursiveTree` | vault 分区自述，`owner = SecurityDb`；不在 `MANAGED_ROOTS` |
+| `E9` | `["security", "vault"]` | `RecursiveTree` | vault 分区自述，`owner = SecurityRepo`；不在 `MANAGED_ROOTS` |
+| `E10` | `["security", "recovery"]` | `RecursiveTree` | vault 分区自述，`owner = SecurityRecovery`；不在 `MANAGED_ROOTS` |
+| `E11` | `["security", "audit"]` | `RecursiveTree` | vault 分区自述，`owner = SecurityDb`；不在 `MANAGED_ROOTS` |
 | `E12` | `["logs"]` | `RecursiveTree` | `scope = Local` |
 | `E13` | `["crashes"]` | `RecursiveTree` | `scope = Local` |
 
 **登记纪律（强制）**：
 
 1. `dir_name` 的常量降为 `pub(crate)`，**只允许** `roots.rs` 与 `registry.rs` 引用；`roots.rs` 的 getter 改为从登记表派生（路径拼接仍留在 `app_dirs`，管理器不碰）；
-2. 新增受管目录 = 加一个 `dir_name` 常量 **且** 加一条 `MANAGED_ROOTS`；只做前者，V19 直接红。这是「指导登记」的机制本体，比文档提醒可靠；
-3. `MANAGED_ROOTS` 与 13 条 key、`dir_name` 常量三者双向一致，多一个少一个都失败（V19）；`E2` 是 `attachments` 的子项、不占独立 `dir_name` 常量，`E7`–`E11` 走 `Feature` 挂载，断言里必须分别处理这两类例外。
-4. **`Feature` 的载荷必须是「能力槽位标识」，且单点定义**：`Feature(SECURITY_OBSERVABILITY)` 与实现侧 `StorageOwnerProbe::capability()` 返回的是**同一个常量**（`pub const SECURITY_OBSERVABILITY: &str = "security-observability";`，定义在 `registry.rs`），由 V22 断言（登记表里出现的能力名 ⊆ `ProbeRegistry::capabilities()`）。**禁止**写字面量两遍、**禁止**写实现类型名（`"VaultProbe"`）、**禁止**写 feature flag 名（`"vault"`）、**禁止**写模块路径（G18(g)）——写实现名会让登记表随实现漂移（换实现必改登记表、特性退役留下死行），写 feature 名会把「装配状态」与「编译开关」耦成一个词。新增第二个可选能力时，加一条 `Feature(NEW_CAPABILITY_CONST)` 并在该能力侧 `register` 同常量即可，**不需要**改管理器分派逻辑、**不需要**新增槽位（G18）；这也是本条从「无载荷 `Feature`」改为「携带能力名」的理由——无载荷版本只能靠「全仓至多一个 provider」的隐含假设工作，第二个能力进来时必然要再改一次契约。若登记表出现一个没有任何 provider 注册的能力名，对账把它归 `optionalNotMounted`（不是 `unregistered`），观测按「未装配」降级（§3.10 取用第 5 条）。
-5. **登记表只陈述事实，不承载策略**（G19）：`MANAGED_ROOTS` 是静态数据——不得包含条件分支、默认值、`Option` 兜底逻辑或「如果没装配就当作 X」的语义。它是「磁盘上有什么、归谁、需要哪种观测能力」的陈述；「没装配时显示什么」由读取方（管理器）做**缺失处理**（`null` + `notImplemented`），不是登记表的职责。**事实检验法**：把某个 provider 从实现中删掉，该行仍应成立（`security/` 仍是已知位置、仍归 `SecurityDb`、仍是 `E7`）；若某行只在「恰好有这个实现」时才成立，那它描述的是实现而不是格式，必须删除或改写。**兜底**（拿默认值填坑，如 `bytes = 0`、`_ =>` 分派）在任何一方都禁止；**缺失处理**（把缺失标出来）只由管理器做一次；**分类**（对账归 `declared` / `optionalNotMounted` / `unregistered`）只由 §3.11.3 做一次。三者不得互相替代。
-6. **登记表描述磁盘格式，与构建无关**（G19）：`security/` 在 vaultless 构建里可能仍在盘上（升级前用过 vault、或用户手工复制），因此 `E7`–`E11` 的行必须**恒在**；若行随特性裁剪，`security/` 只能落进 `unregistered`（未知目录告警），每个 vaultless 用户都会看到一个永远消不掉的错误信号。反过来，**死行必须删除**：某个能力从所有构建里彻底退役时，对应行必须随之删除（V19 的 `dir_name` 双向断言 + 代码审查兜底），不得留下「任何构建都不装配」的行。
+2. 新增 core 受管目录 = 加一个 `dir_name` 常量 **且** 加一条 `MANAGED_ROOTS`；新增可选功能分区 = 在 `OPTIONAL_SEGMENTS` 登记首段 + 分区自述条目清单 + 分区注册。只做前者，V19 / V22 直接红。这是「指导登记」的机制本体，比文档提醒可靠；
+3. `MANAGED_ROOTS` 与 8 条 core key、`dir_name` 常量三者双向一致，多一个少一个都失败（V19）；`E2` 是 `attachments` 的子项、不占独立 `dir_name` 常量，断言里必须单独处理；`E7`–`E11` **不在** `MANAGED_ROOTS`，其声明由 vault 分区自述，V22 校验「分区条目首段 ⊆ `OPTIONAL_SEGMENTS`」。
+4. **`OPTIONAL_SEGMENTS` 是 core 唯一允许保留的可选功能知识**：每条只写首段字符串（`"security"`），**不写**条目 id、key、策略或实现，且必须与已注册分区条目的首段一致（V22）。**禁止**写实现类型名（`"VaultProbe"`）、**禁止**写 feature flag 名（`"vault"`）、**禁止**写模块路径（G19(c) / G17）——写实现名会让 core 随实现漂移（换实现必改 core、特性退役留下死行），写 feature 名会把「磁盘格式」与「编译开关」耦成一个词。新增第二个可选分区时，加一条首段 + 该分区自述条目并在 `on_setup` 注册即可，**不需要**改管理器分派逻辑、**不需要**在 core 新增任何登记。分区未挂载时该首段仍归 `optionalNotMounted`（不是 `unregistered`），观测侧这些条目整体不存在（§3.10 第 6 条）。
+5. **登记表只陈述事实，不承载策略**（G19）：`MANAGED_ROOTS` / `OPTIONAL_SEGMENTS` 是静态数据——不得包含条件分支、默认值、`Option` 兜底逻辑或「如果没装配就当作 X」的语义。它是「磁盘上有什么、归谁」的陈述；「没装配时显示什么」由读取方（管理器）做**缺失处理**（条目不存在，而非占位行），不是登记表的职责。**事实检验法**：把某个分区从实现中删掉，core 侧的 `OPTIONAL_SEGMENTS` 首段仍应成立（`security/` 仍是已知位置）；而该分区的条目随实现一起消失（它们是分区自述，不是 core 声明）。若某个 core 行只在「恰好有这个实现」时才成立，那它描述的是实现而不是格式，必须删除或改写。**兜底**（拿默认值填坑，如 `bytes = 0`、`_ =>` 分派）在任何一方都禁止；**缺失处理**（把缺失标出来）只由管理器做一次；**分类**（对账归 `declared` / `optionalNotMounted` / `unregistered`）只由 §3.11.3 做一次。三者不得互相替代。
+6. **core 只保留首段事实，与构建无关**（G19）：`security/` 在 vaultless 构建里可能仍在盘上（升级前用过 vault、或用户手工复制），因此 `OPTIONAL_SEGMENTS` 的 `"security"` 必须**恒在**；它只保证对账把该段归 `optionalNotMounted`，不保证盘上有条目。分区条目本身随挂载存在 / 消失——这是分区自述的正常语义，不产生「未登记」误报，也不留 `notImplemented` 占位行。反过来，**死事实必须删除**：某个可选分区从所有构建里彻底退役时，其首段必须随之删除（V19 的双向断言 + V22 的首段 ⊆ 断言 + 代码审查兜底），不得留下「任何构建都不存在」的首段。
 
 #### 3.11.2 扫描（`cmd/storage/inventory.rs`，唯一 `read_dir` 例外）
 
 1. **范围**：对**整棵基根树**（`AppDirs::data()` 与 `AppDirs::local()`）做只读递归，**包含**受管目录内部——这是 G2 的显式例外，理由只有一个：余量需要「扫描总量」作为被减数，而只有拿到受管目录的真实子树字节，减法才成立（否则 `unregistered` 恒等于扫描值、减法形同虚设，X13 的「不减去登记值」也就无从区分）。例外的边界由三条硬约束守住：①**只读**（不删、不移、不写、不写日志）；②产出**绝不回流** `entries`（G10 / V20）；③有界（第 5 条）；
-2. **首层分类**：首层条目名 → 匹配 `MANAGED_ROOTS` 的**首段**（`SingleFile` 条目的首段即文件名）；命中 `Always` → `declared`；命中 `Feature(capability)` 但该能力名的 provider 未注册 → `optionalNotMounted`；命中 `IGNORED_NAMES` → `ignored`；命中伴生后缀 → `companion`；其余 → `unregistered`（§3.11.3）。「是否挂载」只查登记表能力名在 `ProbeRegistry::capabilities()` 里是否存在，**不**按特性名判断（core 不知道特性名，G1）；
+2. **首层分类**：首层条目名 → 先匹配 `MANAGED_ROOTS` 的**首段**（`SingleFile` 条目的首段即文件名）→ `declared`；再匹配 `OPTIONAL_SEGMENTS` 的首段——已有分区声明该首段 → `declared`（该节点归其条目），无任何分区声明 → `optionalNotMounted`；命中 `IGNORED_NAMES` → `ignored`；命中伴生后缀 → `companion`；其余 → `unregistered`（§3.11.3）。「是否挂载」只查 `SectionRegistry` 里已注册分区 `entries()` 的首段集合，**不**按特性名判断（core 不知道特性名，G1）；
 3. **子树字节与条数**：对每个首段递归累加**常规文件**长度并同时计数（同一次遍历产出 `scanBytes` 与 `scanCount`，**不分两次遍历**，否则两份数字会在扫描期间漂移）；口径与 §3.9 完全一致（不跟随符号链接、跳过非常规文件、目录自身不计），并且**必须与 owner stats 用同一套遍历规则**（§3.10 接口形状 2）——口径一旦分叉，减法就会常年出现假余量；
 4. **伴生文件**：无论在哪一层，`-journal` / `-wal` / `-shm` / `.tmp` / `.lock` 都计入 `scanBytes` / `scanCount`（它们确实占盘），但不计入任何 `declaredBytes` / `declaredCount`（§3.9），因此会表现为该节点的 `residualBytes > 0`。这是**预期噪声**，不是报警（报警只看 `overRegistered`，见理念 6）；
 5. **有界**：深度 ≤ 8、条目 ≤ 50 000、耗时 ≤ 5 s（软上限）；触界时该节点 `scanBytes` / `scanCount` = `null` + `partial = true` + 记入 `truncatedNodes`（宁可「知道有、不知多大」也不做无界扫描）；
@@ -553,8 +555,8 @@ pub const IGNORED_NAMES: &[&str] = &[".DS_Store", "Thumbs.db", "desktop.ini"];
 
 | 类别 | 判据 | 是否进余量 |
 |---|---|---|
-| `declared` | 首段命中某 `Always` 登记根 | 否（归该条目） |
-| `optionalNotMounted` | 首段命中 `Feature` 登记根，但该 provider 未注入 | 是（**单列**，不报「未登记」） |
+| `declared` | 首段命中某 `MANAGED_ROOTS` 条目首段，或命中某已注册分区条目的首段 | 否（归该条目） |
+| `optionalNotMounted` | 首段命中 `OPTIONAL_SEGMENTS`，但没有任何已注册分区声明该首段的条目（该分区未挂载） | 是（**单列**，不报「未登记」） |
 | `companion` | 命中伴生后缀（`-journal` / `-wal` / `-shm` / `.tmp` / `.lock`） | 是（单列；若归入 `unregistered`，SQLite 的 `-wal` / `-shm` 会让余量天天非零，告警很快失效） |
 | `ignored` | 命中 `IGNORED_NAMES` | 是（单列） |
 | `unregistered` | 其余 | 是（**主信号**） |
@@ -589,13 +591,13 @@ neverRun ──trigger──▶ running ──done──▶ fresh ──(TTL 过
 | single-flight | `running` 期间重复触发直接复用，不排队、不叠加（读一次刷一次不会把扫描堆成队列） |
 | stale 触发 | 读到 `stale` 时**返回旧值并触发后台一次**，下次读拿新值 |
 | TTL | 5 分钟（扫描比观测贵得多，余量变化频率低） |
-| 失败保留 | `failed` 时 `inventory.status = failed` + `failedAt`，**13 条不受影响** |
+| 失败保留 | `failed` 时 `inventory.status = failed` + `failedAt`，**条目不受影响** |
 | 通知 | 复用 `protocol::events::emit_broadcast` 发 `storage:inventory-updated`，前端据此重拉；**不新增轮询** |
 | 命令边界 | **不新增**「查余量」命令（§1.2 对外唯一性）；可选 `refresh_storage_inventory`（无参、幂等、返回当前 `status`）仅作为前端「重新扫描」按钮的交互入口，不构成第二套观测 |
 
 #### 3.11.5 四条不变量（实现期间随时自检）
 
-1. 任一时刻 `entries` 恒 13 条、顺序 `E1→E13`，不因扫描状态改变；
+1. 任一时刻 `entries` = core 8 条（顺序固定）+ 已挂载分区自述条目，**不因扫描状态改变**；分区挂载与否是构建事实，与扫描无关；
 2. `inventory` 的任何数字**从不**写入 `entries` 的 `bytes` / `count`；
 3. `get_storage_breakdown` 的耗时**与扫描无关**（扫描永远在后台）；
 4. `reclaim_storage` 不认识 `inventory` 的任何 key（白名单不变）。
@@ -719,7 +721,7 @@ snapshot（只读）
 
 | 命令 | 性质 | 请求 | 返回 | 备注 |
 |---|---|---|---|---|
-| `get_storage_breakdown` | 只读快照 | 无 | `StorageBreakdownDto`（扩展） | 保留旧字段；13 条在 `entries`；**余量在 `inventory`，只读快照、零等待**（§3.11.4）；采样装配、并行与超时见 §3.10 |
+| `get_storage_breakdown` | 只读快照 | 无 | `StorageBreakdownDto`（扩展） | 保留旧字段；条目在 `entries`（core 8 条 + 已挂载分区条目）；**余量在 `inventory`，只读快照、零等待**（§3.11.4）；采样装配、并行与超时见 §3.10 |
 | `refresh_storage_inventory` | 只读快照（可选） | 无 | `StorageInventoryStatusDto` | **不新增查询通道**：只触发后台扫描并返回当前 `status`，数字仍由 `get_storage_breakdown` 的 `inventory` 提供；幂等，`running` 期间重复调用直接返回 |
 | `get_storage_reclaim_plan` | 只读计划 | `StorageReclaimPlanRequestDto` | `StorageReclaimPlanDto` | 无副作用；10 分钟有效 |
 | `reclaim_storage` | 有副作用 | `StorageReclaimRequestDto` | `StorageReclaimResultDto` | 必须 `planId` + `confirmed = true` |
@@ -765,9 +767,9 @@ snapshot（只读）
 | `byteBasis` | 封闭枚举 | 本期恒 `fileLength`；口径进 DTO，不只进文档 |
 | `sharedBytes` | `u64` | 被 ≥2 个会话引用的附件字节之和（同一附件只计一次），§3.7 |
 | `referencedOnceBytes` | `u64` | 仅被 1 个会话引用的附件字节之和，§3.7 |
-| `entries` | `Vec<StorageEntryDto>` | 13 条，顺序固定（`E1`→`E13`）；不可用条目也必须出现，不因 `unavailable` 缺失；前端不据此拼路径 |
+| `entries` | `Vec<StorageEntryDto>` | core 8 条恒在且顺序固定，其后是已挂载分区自述条目（顺序由各分区 `entries()` 决定）；不可用条目也必须出现，不因 `unavailable` 缺失；**未挂载分区的条目不存在**，不得补占位行；前端不据此拼路径 |
 | `inventory` | `StorageInventoryDto` | §3.11 的对账余量快照；**恒存在**（未扫过时 `status = neverRun`、数字字段全 `null`，不用外层 `null` 表达两种「没有」）。**任何 `inventory` 数字都不得进入 `entries`、`totalBytes` 或任何合计**（G10） |
-| `complete` | `bool` | 除 `E12` 外的 12 条全部 `availability ∈ {available, missing}` 时为 `true`；否则前端不得展示跨条目合计。`E12` **恒不参与合计**（插件不暴露 stats，永久 `notImplemented`），因此它的不可用不阻止 `complete`；`missing` 计 `0` 属可得，不阻止 `complete` |
+| `complete` | `bool` | 除 `E12` 外，`entries` 中所有条目均 `availability ∈ {available, missing}` 时为 `true`；否则前端不得展示跨条目合计。`E12` **恒不参与合计**（组件不暴露 stats，永久 `notImplemented`），因此它的不可用不阻止 `complete`；`missing` 计 `0` 属可得，不阻止 `complete`；未挂载分区条目不在 `entries` 中，自然不参与判定 |
 
 `StorageBreakdownDto` 的**新增字段一律带 `#[serde(default)]`**：旧前端 / 旧 mock / 旧快照反序列化不炸；既有 4 字段的键名、类型、含义**不得**改动（G13）。
 
@@ -791,7 +793,7 @@ snapshot（只读）
 
 | 字段 | 类型 | 约束 |
 |---|---|---|
-| `entryKeys` | `Vec<String>` | 必填；空 = 全部 13 条；未知 key 整体拒绝 |
+| `entryKeys` | `Vec<String>` | 必填；空 = 当前 `entries` 的全部条目（core 8 条 + 已挂载分区条目）；未知 key 整体拒绝 |
 
 **`StorageReclaimPlanDto`**（输出）：
 
@@ -807,7 +809,7 @@ snapshot（只读）
 
 | 字段 | 类型 | 约束 |
 |---|---|---|
-| `key` | `String` | 13 条之一 |
+| `key` | `String` | 已声明条目之一（core 8 条 + 已挂载分区条目） |
 | `action` | `StorageReclaimAction` | 与矩阵一致 |
 | `eligibility` | `StorageEligibility` | 规划时刻判定 |
 | `reason` | `StorageReclaimReason \| null` | 同上 |
@@ -838,7 +840,7 @@ snapshot（只读）
 
 | 字段 | 类型 | 约束 |
 |---|---|---|
-| `key` | `String` | 13 条之一 |
+| `key` | `String` | 已声明条目之一（core 8 条 + 已挂载分区条目） |
 | `action` | `StorageReclaimAction` | 回显 |
 | `status` | `StorageReclaimStatus` | 必填 |
 | `removedCount` | `u64` | 实际删除数 |
@@ -869,7 +871,7 @@ snapshot（只读）
 | `name` | `String` | 单段名；后端强制校验不含 `/`、`\`、`..`（§3.11.3） |
 | `class` | `StorageInventoryClass` | 互斥且穷尽（§3.11.3） |
 | `scope` | `StorageLayer` | 该首段所在基根 |
-| `entry` | `String \| null` | `declared` / `optionalNotMounted` 时给出对应 `E` 编号；其余 `null` |
+| `entry` | `String \| null` | `declared` 时给出对应 `E` 编号（core 条目来自登记表，分区条目来自该分区 `entries()`）；`optionalNotMounted` 恒 `null`（分区未挂载，core 不知道条目 id）；其余 `null` |
 | `scanBytes` | `u64 \| null` | 该子树扫描字节；触界为 `null` |
 | `scanCount` | `u64 \| null` | 该子树扫描到的**常规文件条数**（与 `scanBytes` 同一次遍历、同一口径）；触界为 `null` |
 | `declaredBytes` | `u64 \| null` | `declared` 节点：该首段下 `declared` 条目 `bytes` 之和（任一为 `null` 则 `null`）；其余类节点恒 `0`（该节点**没有**登记，是已知事实，不是「不知道」） |
@@ -896,29 +898,33 @@ snapshot（只读）
 1. 输出 `Option` 不加 `skip_serializing_if`，键恒在、值 `null`；输入 `Option` 加 `#[ts(optional = nullable)]`；
 2. 输入 DTO 全部 `deny_unknown_fields` + `rename_all = "camelCase"`；输出同理；
 3. 新增 / 改动 DTO 后跑 `npm run contract:gen`，提交 `src/types/protocol.contract.ts`；禁止手改生成类型；
-4. 13 条 key 作为 `String` 承载（前端渲染顺序固定、后端未知 key 拒绝），不建封闭枚举，避免条目增删时前端硬崩；
+4. 条目 `key` 作为 `String` 承载（前端渲染顺序由后端 `entries` 顺序决定、后端未知 key 拒绝），不建封闭枚举，避免条目增删时前端硬崩；
 5. `bytes` / `count` 用 `u64`，前端按既有 DTO 约定转数字展示；不得在 DTO 里转 `f64`。
 
-### 6.3 前端
+### 6.3 前端（已划出）
 
-1. **不新建 store、不新建 service**：数据由 `get_storage_breakdown` 一次拉全，回收动作在组件内串行调用；I54 §3 三 tab 页里的 `storage` tab 只做展示与确认（页面壳与另两个 tab 归 I54）；
-2. **同页两段，均保留**（G14）：上半段是**既有附件明细区**（会话分组 / 孤儿分组 / 折叠 / 组全选 / 勾选删除，服务 `A2`），下半段是**13 行条目表**（服务观测与 `A1`/`A3`/`A4`/`A5`）。改造只允许「追加」与「调整布局」，**不得**删除附件明细区的任何既有能力（分组、折叠、全选、单选删除）；
-3. 每个条目行渲染：名称、字节、条数、`availability`、`reclaim.eligibility` 徽标、`reclaim.action` 按钮、策略摘要；
-4. 不可回收条目按钮禁用并显示 `reason` 文案；`notImplemented` 额外显示 `note`（「缺少 owner 方法」）；
-5. 点击回收 → 先 `get_storage_reclaim_plan` → 弹确认（`strongConfirm` 需二次输入条目名，或长按 / 勾选）→ `reclaim_storage` → 结果 toast + 重新拉 `get_storage_breakdown`；
-6. **禁止**前端自行计算「可回收字节」或「是否安全」；只显示后端给的值；也**禁止**前端按 `expectedBytes` 自行降档确认强度（档位由后端 `confirmation` 给定）；
-7. `A2` 继续由附件明细区的既有勾选删除执行（走 `delete_attachments`）；13 行条目表**不**提供「删指定附件」的第二套入口，也**不得**把附件明细区的删除按钮搬进条目表；
-8. 请求失败 / `planExpired` 时提示重试，不自动重放（避免「用户没看到就删了」）；
-9. **对账余量区（第三段，只读）**：在 13 行条目表下方追加一栏「未登记余量」，渲染 `inventory`：
-   - `status` 为 `neverRun` → 显示「尚未扫描」+ 「扫描」按钮（调 `refresh_storage_inventory`）；
-   - `running` → 显示「扫描中」+ 禁用按钮；`failed` → 显示「扫描失败」+ `failedAt`，**同时照常显示上次成功的数字**（不因失败清空）；
-   - `stale` → 显示旧数字 + 「数据可能过期」提示；收到 `storage:inventory-updated` 广播后重拉 `get_storage_breakdown`；
-   - 默认列出 `class ∈ {unregistered, optionalNotMounted, companion, ignored}` 的节点；`declared` 节点**只在 `residualBytes > 0` 时**以折叠行出现（它的总量已在条目表里，出现是为了暴露「已登记目录里未被 owner 统计的部分」）；
-   - `partial = true` 时按 `truncatedNodes` 提示「有界扫描未覆盖完，以下数字是下界」；
-   - `overRegistered` 为 `true` 的节点**必须**显著标红并给固定文案（「登记值大于盘上实际值，可能是统计口径不一致」），不得静默；
-10. **禁止**给余量区任何删除 / 清理按钮（§3.11 理念 5）：`unregistered` 不是「可回收」，它连 `reclaim` 字段都没有；也**禁止**把余量数字加进页面任何「总计」。
+> **本节自 2026-11-21 起整体作废，仅作历史记录保留。** 前端实现口径（页面结构、列与分组、清理流程、余量段展示、文案键树、样式类与测试矩阵）统一由 [I61 存储管理器前端设计](./I61-storage-manager-frontend.md) 承载，该文档是**前端唯一实现基线**。本节不再作为任何验收判据；与前端设计冲突时以前端设计为准。仍然有效的上位约束只剩后端侧：§3（条目与观测）、§5（回收语义）、§6.1 / §6.2（命令与 DTO）、§7（失败降级）、§10（验收判据，其中仅 V16 的「附件明细区能力逐项仍可用」与前端相关，由前端设计 §4.1 承接）。
 
-> 本节只约束**契约与判据**（能显示什么、不能显示什么、值从哪来）。组件拆分、视图模型、列定义、文案键树、样式类与测试矩阵等**实现细节**统一由 [I61 存储管理器前端设计](./I61-storage-manager-frontend.md) 承载，两处不重复定义；若实现文档与本节冲突，以本节为准并回改实现文档。
+以下为作废原文（划掉保留，仅供追溯）：
+
+~~1. **不新建 store、不新建 service**：数据由 `get_storage_breakdown` 一次拉全，回收动作在组件内串行调用；I54 §3 三 tab 页里的 `storage` tab 只做展示与确认（页面壳与另两个 tab 归 I54）；~~
+~~2. **同页两段，均保留**（G14）：上半段是**既有附件明细区**（会话分组 / 孤儿分组 / 折叠 / 组全选 / 勾选删除，服务 `A2`），下半段是**13 行条目表**（服务观测与 `A1`/`A3`/`A4`/`A5`）。改造只允许「追加」与「调整布局」，**不得**删除附件明细区的任何既有能力（分组、折叠、全选、单选删除）；~~
+~~3. 每个条目行渲染：名称、字节、条数、`availability`、`reclaim.eligibility` 徽标、`reclaim.action` 按钮、策略摘要；~~
+~~4. 不可回收条目按钮禁用并显示 `reason` 文案；`notImplemented` 额外显示 `note`（「缺少 owner 方法」）；~~
+~~5. 点击回收 → 先 `get_storage_reclaim_plan` → 弹确认（`strongConfirm` 需二次输入条目名，或长按 / 勾选）→ `reclaim_storage` → 结果 toast + 重新拉 `get_storage_breakdown`；~~
+~~6. **禁止**前端自行计算「可回收字节」或「是否安全」；只显示后端给的值；也**禁止**前端按 `expectedBytes` 自行降档确认强度（档位由后端 `confirmation` 给定）；~~
+~~7. `A2` 继续由附件明细区的既有勾选删除执行（走 `delete_attachments`）；13 行条目表**不**提供「删指定附件」的第二套入口，也**不得**把附件明细区的删除按钮搬进条目表；~~
+~~8. 请求失败 / `planExpired` 时提示重试，不自动重放（避免「用户没看到就删了」）；~~
+~~9. **对账余量区（第三段，只读）**：在 13 行条目表下方追加一栏「未登记余量」，渲染 `inventory`：~~
+   ~~- `status` 为 `neverRun` → 显示「尚未扫描」+ 「扫描」按钮（调 `refresh_storage_inventory`）；~~
+   ~~- `running` → 显示「扫描中」+ 禁用按钮；`failed` → 显示「扫描失败」+ `failedAt`，**同时照常显示上次成功的数字**（不因失败清空）；~~
+   ~~- `stale` → 显示旧数字 + 「数据可能过期」提示；收到 `storage:inventory-updated` 广播后重拉 `get_storage_breakdown`；~~
+   ~~- 默认列出 `class ∈ {unregistered, optionalNotMounted, companion, ignored}` 的节点；`declared` 节点**只在 `residualBytes > 0` 时**以折叠行出现（它的总量已在条目表里，出现是为了暴露「已登记目录里未被 owner 统计的部分」）；~~
+   ~~- `partial = true` 时按 `truncatedNodes` 提示「有界扫描未覆盖完，以下数字是下界」；~~
+   ~~- `overRegistered` 为 `true` 的节点**必须**显著标红并给固定文案（「登记值大于盘上实际值，可能是统计口径不一致」），不得静默；~~
+~~10. **禁止**给余量区任何删除 / 清理按钮（§3.11 理念 5）：`unregistered` 不是「可回收」，它连 `reclaim` 字段都没有；也**禁止**把余量数字加进页面任何「总计」。~~
+
+~~> 本节只约束**契约与判据**（能显示什么、不能显示什么、值从哪来）。组件拆分、视图模型、列定义、文案键树、样式类与测试矩阵等**实现细节**统一由 [I61 存储管理器前端设计](./I61-storage-manager-frontend.md) 承载，两处不重复定义；若实现文档与本节冲突，以本节为准并回改实现文档。~~
 
 ---
 
@@ -932,10 +938,10 @@ snapshot（只读）
 | 权限不足 | `bytes / count = null`、`availability = unreadable` | 用 0 冒充空；回退到缓存旧值 |
 | 遍历中断（IO 错误） | 同上 + `availabilityReason` 记错误类别 | 把已遍历部分当完整值上报 |
 | 文件正被替换 / 迁移（`metadata` 失败） | `E6` / `E7` 的 `availability = unavailable` + `availabilityReason` 写「文件正在替换 / 迁移」 | 强行打开 DB；复制 DB 文件统计；用 `locked` 冒充（`locked` 只表达受保护读不到，见特例 2） |
-| vault 锁定 | `E9`：`availability = locked`（词表 Q3 语义「存在但受保护读不到」）+ `availabilityReason` 写「vault 未解锁」+ `eligibility = locked`；`E6` / `E7` / `E10` **不受影响**（只读 `metadata` / 目录） | 为取长度而 unlock vault；把 `locked` 写成 `unavailable`（前者提示「去解锁」，后者提示「重试」，用户下一步不同） |
-| 可选能力未装配（vaultless 构建） | `E7`–`E11` 五条 `availability = notImplemented` + `availabilityReason` 写「可选能力未装配」，`bytes` / `count = null`；`eligibility` 仍按禁止回收填（见 §3.10 第 3 条） | 因构建裁剪条目（`entries` 恒 13 条）；把 `notImplemented` 写成 `locked`；把 `E9` 因「没有这个 owner」而变成可回收 |
+| vault 锁定 | `E9`：`availability = locked`（词表 Q3 语义「存在但受保护读不到」）+ `availabilityReason` 写「尚未解锁」+ `eligibility = locked`；`E6` / `E7` / `E10` **不受影响**（只读 `metadata` / 目录） | 为取长度而 unlock vault；把 `locked` 写成 `unavailable`（前者提示「去解锁」，后者提示「重试」，用户下一步不同） |
+| 可选功能未挂载（vaultless 构建） | `E7`–`E11` 五条**整体不存在**（`entries` 里没有这些行）；`security/` 若在盘上，`inventory` 把它归 `optionalNotMounted`；core 8 条照常出数 | 因构建给可选条目补 `notImplemented` 占位行；把 `notImplemented` 写成 `locked`；把 `E9` 因「没有这个 owner」而变成可回收；把 `security/` 误报为 `unregistered` |
 | 超时 | `bytes / count = null`、`availability = unavailable` | 无限等待阻塞 UI |
-| 扫描失败（`inventory`） | `inventory.status = failed` + `failedAt`，保留上次 `fresh` 的数字；13 条**完全不受影响** | 让扫描失败连累条目；清空上次数字；把扫描失败写成条目 `unavailable` |
+| 扫描失败（`inventory`） | `inventory.status = failed` + `failedAt`，保留上次 `fresh` 的数字；条目**完全不受影响** | 让扫描失败连累条目；清空上次数字；把扫描失败写成条目 `unavailable` |
 | 扫描触界（深度 / 条目数 / 耗时） | 该节点 `scanBytes = null` + `partial = true` + 记入 `truncatedNodes` | 无界继续扫（阻塞后台线程）；用已扫部分冒充完整值（那会让余量偏低，等于谎报「没东西」） |
 | 扫描发现登记值大于扫描值 | 该节点 `overRegistered = true` + `partial = true` | 静默取 `0`（会把「口径不一致」永久隐藏，这是本节唯一的自检信号） |
 
@@ -945,15 +951,15 @@ snapshot（只读）
 
 1. **`E1` 是唯一例外**：`totalBytes` / `totalCount` / `orphans` / `conversations` 是既有非 `Option` 字段（G13 不得改），所以 `E1` 采样失败时**整个命令返回 `Err`**，前端按既有逻辑整页报错。**禁止**为了让 `E1` 也降级而把旧字段改成 `Option` 或加 `default` 伪装成 0。
 2. **`E6` / `E7` 只读 `metadata`（文件长度 / mtime），不需要解锁任何 DB**：SQLite 的锁只影响读写连接，`fs::metadata` 不受影响。因此 vault 锁定态下 `E7` 仍为 `availability = available`；`metadata` 本身失败（文件正在被替换 / 迁移）按 `availability = unavailable` 处理，**不**用 `locked`——`locked` 只表达「存在但受保护读不到」（`E9` 的 vault 锁定态）。**禁止**在采样前为了拿文件长度去 unlock vault。
-3. **`E9` / `E10` 才是 vault 锁定态的对象**：`E9` 需要读 repo 结构 → 锁定态 `availability = locked`（`availabilityReason` 写「vault 未解锁」）、`eligibility = locked`；`E10` 只是清残留目录 → 锁定态也可读，失败按 `unreadable` 处理。
-4. **vaultless 构建（provider 未注入）不是「锁定」，是「没有这个 owner」**：`E7`–`E11` 一律 `availability = notImplemented` + `availabilityReason` 写「可选能力未装配」；**禁止**用 `locked` 冒充（那会让用户以为「解锁就能看」，而实际构建里根本没有该 owner）。`E9` 的 `eligibility` 仍是 `notEligible`（`userData`）、`E8` 是 `notImplemented`（`noReclaimApi`）、`E10` / `E11` 是 `ownerManaged`；**禁止**因为 owner 不存在就把条目从 13 行里删掉（`entries` 恒 13 条，§6.2）。
+3. **`E9` / `E10` 才是 vault 锁定态的对象**：`E9` 需要读 repo 结构 → 锁定态 `availability = locked`（`availabilityReason` 写「尚未解锁」）、`eligibility = locked`；`E10` 只是清残留目录 → 锁定态也可读，失败按 `unreadable` 处理。
+4. **vaultless 构建（分区未挂载）不是「锁定」，也不是「未启用占位」**：`E7`–`E11` **不在 `entries` 里**——它们由 vault 分区自述，分区没挂载就没有这些声明（§3.1.1 / §3.10 第 6 条）。**禁止**用 `notImplemented` 补占位行（那会让用户看到一个永远点不动的条目），**禁止**用 `locked` 冒充（那会让用户以为「解锁就能看」），**禁止**把 `security/` 误报为 `unregistered`（core 的 `OPTIONAL_SEGMENTS` 保证它归 `optionalNotMounted`）。core 8 条不受影响。
 
 ### 7.2 回收失败
 
 | 情况 | 表现 | 不允许 |
 |---|---|---|
 | owner 方法返回错误 | 该条目 `status = failed` 或 `partial`，其余条目继续 | 整批回滚（已删的无法还原） |
-| owner 方法不存在 | `eligibility = notImplemented`，`note` 指出缺哪个方法 | 管理器自己 `fs::remove_dir_all` |
+| owner 方法不存在 | `eligibility = notImplemented`，`note` 说明缺的能力（用户可读） | 管理器自己 `fs::remove_dir_all` |
 | 执行中判据变化（文件被引用） | 计入 `skippedCount`，不算失败 | 强删 |
 | 权限不足 | `errors` 记 `permissionDenied` | 提权重试；静默忽略 |
 | 执行超时 | 停止后续条目，已完成条目如实上报 | 假装全部成功 |
@@ -991,10 +997,10 @@ snapshot（只读）
 | X12 | 让 `get_storage_breakdown` 等扫描完成（同步扫） | 扫描成本无上界（未知子树），必然拖慢页面；且余量变化频率低（TTL 5 分钟足够），没有实时性需求 |
 | X13 | 扫描时直接 `du` 累加全部子树，不减去登记值 | 等于同时维护两套口径（owner stats 与自扫），任何一侧口径变化都产生静默漂移；减法只需一份扫描 + 已登记的减数 |
 | X14 | 让口径规则随 owner 各自实现：各写一份伴生后缀表、各自定义「目录自身算不算」 | 口径是**跨 owner 的共同约定**，不是各 owner 的私有知识。各写一份必然漂移，出现「`E5` 算 100 MiB、`E8` 算 0 字节」这类同一问题两个答案。**注意**被否决的是「口径规则多份」，**不是**「遍历代码多份」——后者是所有者边界，正当（G15）；判据落在行为一致性（V21），而非代码计数 |
-| X15 | provider trait 为每条登记各写一个具名方法，管理器再用下标 `match` + `_` 兜底分派 | 同一条归属被声明两次（trait 方法名一次、分派表一次），只能靠人工同步；`_` 兜底在登记表增删条目时静默把别的条目数据填进来（`E11` 的数据可能出现在 `E10` 行）且不报错。改为「登记表 `Feature(capability)` + `capability()` + `stats(key)`」后，声明与接收是同一个 token，路由只剩登记表一处（G17） |
+| X15 | 每条条目的声明由「core 登记表 + 功能侧具名方法」两处各写一份，管理器再用下标 `match` + `_` 兜底分派 | 同一条归属被声明两次（core 登记一次、功能方法名一次），只能靠人工同步；`_` 兜底在条目增删时静默把别的条目数据填进来（`E11` 的数据可能出现在 `E10` 行）且不报错。改为「分区 `entries()` 声明清单 + 分区 `stats(key)` 应答」后，声明与应答是同一个声明方的同一套 token，core 只按声明路由（G17 / G18） |
 | X16 | 管理器用「数字下标」接收登记表条目（`const SECURITY_DB: usize = 6` + 一句「与登记表同序」的注释） | 声明侧说身份（`key`），接收侧说位置（下标），两者唯一的连接是一行注释、没有任何断言。在 `MANAGED_ROOTS` 中间插入一条登记，全部下标静默错位一格，**编译通过、测试通过**，`E7` 会显示 `E6` 的字节数。字符串 `key` 写错则立刻查不到、立刻红；位置耦合连「红」的机会都没有（G17(c)） |
-| X17 | 每个可选能力各定义一个自己的 state 类型 / 句柄别名（`VaultProbeHandle` / `XxxProbeHandle`），管理器逐个 `try_state` 取 | `manage` / `try_state` 以 `TypeId` 为键，同类型只有一个槽位：第二个能力要么另起别名（管理器漏加对应 `try_state` → 静默取不到，表现为永远降级，不报编译错误），要么复用别名（覆盖先注册者 → 先注册的数据永远看不见，也不报错）。两者都无红。更根本的问题是「有哪些可选能力」这份清单被迫回到 core 手里：新增能力必须改 core 才能被观测到，而 core 又不允许知道特性名（G1）。改为能力名为键的通用槽 `ProbeRegistry` 后，清单留在运行时、留在 provider 自己手里，core 只做「能力名 → 实例」查找，零 `cfg`（G18） |
-| X18 | 槽位名直接取实现类型名（`Feature("VaultProbe")`）或 feature flag 名（`Feature("vault")`），省掉「能力名」这一层 | 通用槽名存实亡：①换实现 / 改类型名（`VaultProbe` → 重构后的另一类型）必须改登记表，登记表随**实现**漂移，而不是随**磁盘格式**；②特性彻底退役后留下「任何构建都不装配」的死行，用户永远看到「未装配」，而动态分类掩盖了「这行已死」；③与 feature flag 同名会把「装配状态」和「编译开关」耦成一个词，导致「core 不知道特性名」（G1）被误读成「core 不许提这个领域」，进而诱导把行也裁掉——那会让 `security/` 落进 `unregistered`（未知目录告警），把可表达的缺失降级成不可表达的未知（G19）。改为**能力名**（`SECURITY_OBSERVABILITY = "security-observability"`，单点 `const` 定义）后，槽位名属于格式层，实现层改名 / 换实现 / 增删特性都不动登记表（G18(g) / V24） |
+| X17 | 每个可选功能各定义一个自己的 state 类型 / 句柄别名（`VaultSectionHandle` / `XxxSectionHandle`），管理器逐个 `try_state` 取 | `manage` / `try_state` 以 `TypeId` 为键，同类型只有一个槽位：第二个功能要么另起别名（管理器漏加对应 `try_state` → 静默取不到，表现为永远降级，不报编译错误），要么复用别名（覆盖先注册者 → 先注册的数据永远看不见，也不报错）。两者都无红。更根本的问题是「有哪些可选功能」这份清单被迫回到 core 手里：新增功能必须改 core 才能被观测到，而 core 又不允许知道特性名（G1）。改为唯一通用分区表 `SectionRegistry`（`id → Arc<dyn StorageSection>`）后，清单留在运行时、留在分区自己手里，core 只做「按声明路由」，零 `cfg`（G18） |
+| X18 | 用「功能标识 / 实现名」代替「磁盘首段事实」，或干脆把可选功能的条目写回 core 登记表 | 两种写法都让 core 随**实现**漂移：①登记表写实现名（`VaultProbe`）或 feature 名（`vault`）时，换实现 / 改类型名必须改 core，特性退役后留下「任何构建都不会装配」的死行；②把条目写回 core 时，功能未挂载也会出现 `notImplemented` 占位行，用户看到永远点不动、也永远不会消失的条目。正确形态是**两层分开**：core 只保留与实现无关的**磁盘首段事实**（`OPTIONAL_SEGMENTS = ["security"]`，单点 `const` 定义），条目清单由分区 `entries()` 自述（G19(c) / V24） |
 
 ---
 
@@ -1012,7 +1018,7 @@ snapshot（只读）
 | `OQ8` | `E13` 崩溃报告是否上报后删除 | **本期只观测**：`action = none`、`eligibility = notImplemented`、`reason = noReclaimApi`、`note` 点名缺裁剪入口（`assistant_crash` 现只导出 `install`）；上报流程未定，删除会丢诊断信息。`A4` 的 `pruneToLimit` 留待上报流程定案后再开（同时解除 §3.3 白名单限制） |
 | `OQ9` | 附件 `A3` 是否暴露给用户 | 本期不暴露；孤儿回收由 `A1` 覆盖，单独入口易误用 |
 | `OQ10` | 计划有效期 10 分钟是否合适 | 先按 10 分钟；若用户操作慢导致频繁过期，再调至 30 分钟 |
-| `OQ11` | `MANAGED_ROOTS` 的 `inventory` 标志（哪些 scope 参与余量对账）本期取值 | 已定：**13 条全 `true`**。理由：余量按**首段**分组，同一首段下的多条登记（`E1`+`E2` 同属 `attachments`、`E7`–`E11` 同属 `security`）在减法里天然合并为「该节点登记字节之和」，无需按条目开关。保留该字段只为将来「某 scope 明确不参与对账」留位；本期禁止用 `false` 关掉任何 scope，否则该首段的 `declared` 节点会凭空变成 `unregistered`（把正常目录报成未登记） |
+| `OQ11` | `MANAGED_ROOTS` / `SectionEntry` 的 `inventory` 标志（哪些 scope 参与余量对账）本期取值 | 已定：**core 8 条与 vault 分区 5 条全 `true`**。理由：余量按**首段**分组，同一首段下的多条登记（`E1`+`E2` 同属 `attachments`、`E7`–`E11` 同属 `security`）在减法里天然合并为「该节点登记字节之和」，无需按条目开关。保留该字段只为将来「某 scope 明确不参与对账」留位；本期禁止用 `false` 关掉任何 scope，否则该首段的 `declared` 节点会凭空变成 `unregistered`（把正常目录报成未登记） |
 
 ---
 
@@ -1020,10 +1026,10 @@ snapshot（只读）
 
 | ID | 判据 | 验证方式 |
 |---|---|---|
-| V1 | `get_storage_breakdown` 返回 13 条，`key` 与 §3.1 完全一致，顺序稳定 | golden 投影对比 `entries[*].key` |
+| V1 | `get_storage_breakdown` 返回 core 自有 8 条 + 已挂载分区自述条目（合计 13 条，vaultless 构建为 8 条），`key` 与 §3.1 完全一致，顺序稳定 | golden 投影对比 `entries[*].key`（`vault` / `vaultless` 两种构建各一份） |
 | V2 | 取不到数的条目 `bytes` / `count` 为 `null`，且 `availability ∈ {locked, unreadable, unavailable, notImplemented}`；`missing` 例外（计 `0`）。不存在用 `0` 冒充未知 | 单测：伪造 `read_dir` / `metadata` 失败 |
 | V3 | 每个条目 `reclaim` 必填；`action = none` 的条目 `eligibility ∈ {notEligible, ownerManaged, notImplemented}` | 快照断言 |
-| V4 | `notEligible` / `notImplemented` / `locked` / `ownerManaged` 的 `reason` 非空；`notImplemented` 的 `note` 点名缺失方法 | 快照断言 + 人工检查 |
+| V4 | `notEligible` / `notImplemented` / `locked` / `ownerManaged` 的 `reason` 非空；`notImplemented` 的 `note` 说明缺失的能力，且不含策略数值（上限 / 份数 / 天数） | 快照断言 + 人工检查 |
 | V5 | 账本恒等式成立：`totalBytes = referencedOnceBytes + sharedBytes + orphanBytes`（`orphanBytes` = `orphans[*].bytes` 求和；按条目口径分列时不重复计数） | 单测：构造跨会话共享附件 |
 | V6 | `get_storage_reclaim_plan` 无副作用：调用前后目录字节与 mtime 不变 | 临时目录单测 |
 | V7 | 计划 `expectedBytes` 与执行 `removedBytes` 的偏差可解释；不可回收条目 `expectedCount/Bytes = null` | 单测 + 结果对比 |
@@ -1032,18 +1038,18 @@ snapshot（只读）
 | V10 | 管理器源码中不存在 `fs::remove_*`、受管目录名字面量、`AppConf::load()`；`read_dir` 只允许出现在 `cmd/storage/inventory.rs`（§3.11.2 的唯一例外），且该文件内不得出现 `fs::remove_*` | 静态检查 / grep 门禁（按文件白名单断言） |
 | V11 | `E1` 的 `A1` 执行与 `delete_attachments` 并发时不出现「删了仍被引用」；同一 ID 串行 | 并发单测 |
 | V12 | `E3` 配置读失败时回退 `0`（禁用），不会按 30 天删；`E11` 无游标时 `eligibility ≠ eligible` | 单测：配置缺失 / 游标缺失 |
-| V13 | `E6` / `E7` / `E9` 永远 `action = none` 且 `eligibility ≠ eligible`；`E9` 锁定态 `availability = eligibility = locked`、vaultless 构建 `availability = notImplemented` 且 `eligibility = notEligible`；`E5` 无自动删除入口 | 快照断言（`vault` / `vaultless` 两种构建各跑一遍） |
+| V13 | `E6` / `E7` / `E9` 永远 `action = none` 且 `eligibility ≠ eligible`；`E9` 锁定态 `availability = eligibility = locked`；vaultless 构建下 `E7`–`E11` **整体不存在**（不是 `notImplemented` 占位行）；`E5` 无自动删除入口 | 快照断言（`vault` / `vaultless` 两种构建各跑一遍） |
 | V14 | DTO 契约生成后 `protocol.contract.ts` 与 Rust 一致；输入 DTO `deny_unknown_fields`，输出 `Option` 键恒在 | `npm run contract:gen` + 类型检查 |
 | V15 | 回收留痕只含 `planId` / key / 动作 / 计数 / `sampledAt`，不含路径与文件名；`logs` 条目不被管理器删除 | 日志断言 + 代码审查 |
 | V16 | **超集不窄化**：`StorageBreakdownDto` 既有 4 字段键名 / 类型 / 含义不变；`delete_attachments` / `open_attachment` / `import_attachment` / `get_asset_dirs` / `get_attachment_limits` 签名与语义不变；前端附件明细区（会话分组 / 孤儿分组 / 折叠 / 组全选 / 勾选删除）逐项仍可用 | 既有测试全绿 + 手动回归清单逐项打勾（G13 / G14） |
 | V17 | **资格与可执行一致**：任意切片下，`eligibility = eligible` ⇔ 该 `key + action` 在 §3.3 白名单且 owner 方法存在（`reclaim_storage` 会接受）；不存在「显示可回收、执行被拒」的条目；`confirmation` 在非 `eligible` 时恒 `none` | golden 断言逐切片（§11 切片期资格表）+ 白名单负例 |
 | V18 | **余量守恒与互斥**：`inventory.nodes` 的 `class` 互斥且穷尽；`declared + optionalNotMounted + companion + ignored + unregistered` 的首层条目数等于基根首层实际条目数；`declared` 节点 `residualBytes = scanBytes − Σ declaredBytes`、`residualCount = scanCount − Σ declaredCount`（且两项均 `≥ 0`，负值走 `overRegistered`）；非 `declared` 节点 `declaredBytes = declaredCount = 0`、`residualBytes = scanBytes`、`residualCount = scanCount`；`unregisteredBytes = Σ unregistered 节点 residualBytes`、`unregisteredCount = Σ residualCount`（`null` 传染，不填 0） | 单测：构造 `attachments/`（含 `derived/` 与一个未统计的额外子目录）+ `security/` + 未知目录 + `-wal` + `.DS_Store` 的临时基根，逐类与逐节点断言 |
-| V19 | **登记表双向一致**：`MANAGED_ROOTS` 的 `entry` 集合 == 13 条 key 集合 == `entries[*].key`；`dir_name` 每新增常量若无对应登记则测试失败（`E2` 子项与 `E7`–`E11` `Feature` 挂载按例外处理）；`segments` 首段与 `roots.rs` getter 解析出的路径段一致 | 单测：集合比对 + 临时新增一条 `dir_name` 常量的负例（构造 `&[ManagedRoot]` 缺项） |
+| V19 | **登记表双向一致**：`MANAGED_ROOTS` 的 `entry` 集合 == 8 条 core key 集合 == `entries` 中 core 条目的 `key` 集合；`dir_name` 每新增常量若无对应登记则测试失败（`E2` 子项按例外处理）；`OPTIONAL_SEGMENTS` 的首段集合 == 已注册分区条目首段集合（`vault` 构建），且每个首段都不出现在 `MANAGED_ROOTS`；`segments` 首段与 `roots.rs` getter 解析出的路径段一致 | 单测：集合比对 + 临时新增一条 `dir_name` 常量的负例（构造 `&[ManagedRoot]` 缺项）+ 注册一个首段不在 `OPTIONAL_SEGMENTS` 的假分区，断言 `register` 返回 `Err` |
 | V20 | **余量不影响条目**：`inventory` 任何数字变化（含 `failed` / `partial` / `overRegistered`）都不改变 `entries` 的 `bytes` / `count` / `eligibility`，也不改变 `totalBytes`；`get_storage_breakdown` 耗时与扫描状态无关（`running` 下仍立即返回）；`reclaim_storage` 拒绝任何 `inventory` 节点名作为 `key` | 单测：`running` / `failed` 两态各拉一次 breakdown，逐字段比对；负例请求 `key = "unregistered-name"` |
-| V21 | **口径行为一致**（G15）：同一棵 fixture 目录（含 `-wal` / `-journal` / `.tmp` / `.lock` 伴生文件、符号链接、非常规文件、空目录、嵌套子目录）喂给**每一个** owner 的 stats 入口，得到的 `{ bytes, count, oldestAt, newestAt }` 逐字一致；core 侧把 owner 返回值搬进 `ProbeStats` 的适配函数不得漏字段 | 单测：一棵 fixture + 各 owner stats 入口逐一比对四元组；负例 ①某 owner 把 `-wal` 算进 `bytes`，断言失败；②适配函数故意漏搬 `newestAt`，断言失败。**不**以「`struct DirStats` 定义计数 == 1」为判据——结构份数由依赖方向决定，一致性由行为决定 |
-| V22 | **声明与接收同词汇**（G17 / G18(g)）：①`#[cfg(feature = "vault")]` 下遍历 `MANAGED_ROOTS`，每条 `Feature(capability)` 行 `stats(key)` 返回 `Some`、任意非本 provider 的 `key` 返回 `None`；②登记表里出现的每个能力名都等于某个已注册 provider 的 `capability()` 返回值（能力名 ⊆ `ProbeRegistry::capabilities()`），且两侧引用**同一个常量**（`SECURITY_OBSERVABILITY`）而非各自写字面量；③`owner` 标签全部来自统一命名域（构建无关的归属域标识：不含 `::`、不等于任何 feature 名、不是可选能力 crate 的类型名，且按 G19(b) 删掉实现后仍成立）；④管理器侧不存在「数字下标 → 条目」的接收方式（`sample.rs` 的下标常量与 `entries.rs` 的 `LOGS_INDEX` 已删除，改为按 `key` 分派） | 单测：遍历登记表逐行调 provider（覆盖 `Some` / `None` 两侧）；负例：①把某条 `Feature` 行改成 provider 不认识的 `key`，断言失败；②把 `Feature(SECURITY_OBSERVABILITY)` 改成 `Feature("VaultProbe")` / `Feature("vault")` / 另一个未注册常量，断言失败；③`owner` 含 `::` / 等于 feature 名 / 是可选能力 crate 的类型名时断言失败；静态断言：`cmd/storage/` 下不得再出现「下标常量 + `MANAGED_ROOTS[index]`」组合 |
-| V23 | **通用槽路由**（G18）：①**零槽**（没有任何 provider 注册）→ 13 条恒在，`Feature` 行全部 `notImplemented` + 「可选能力未装配」，非 `Feature` 行（`E1`–`E6` / `E12` / `E13`）出数不受影响；②**单槽单 provider** → 与改造前逐字段等价（golden 不变，这是「重构不改行为」的证据）；③**双能力名双 provider** → 各答自己的 `key`，A 的 `key` 在 B 上返回 `None`，互不串台；④**同能力名重复注册** → `register` 返回 `Err`、先注册实例仍可用、`capabilities()` 无重复；⑤**某能力名无 provider** → 只有该能力名的行降级，其余行 `availability` 不变；⑥`snapshot()` 之后新增注册不影响已取快照 | 单测：两个假 provider + 空槽共三态各拉一次 breakdown，逐字段比对；负例：①冲突注册后断言 `find(capability)` 仍返回**先注册**的实例；②把某行 `Feature("A")` 改成 `Feature("B")`（B 未注册），断言该行 `notImplemented` 且其余行逐字段不变 |
-| V24 | **能力名层级正确**（G18(g)）：①登记表与实现侧的能力名**均**来自 `registry.rs` 的同一个 `const`，全仓不存在第二处该字面量；②能力名**不是**实现类型名、**不是** feature flag 名、**不含** `::`；③改实现类型名 / 换实现 / 特性退役时，`MANAGED_ROOTS` 的该行不需要改动（用「临时改名实现类型」验证：编译仍过、V22 仍绿） | 静态断言：全仓搜索能力名字面量，命中处必须只在 `const` 定义与引用；负例：①把 `const SECURITY_OBSERVABILITY` 的值改成 `"VaultProbe"`，断言失败；②改成 `"vault"`，断言失败 |
+| V21 | **口径行为一致**（G15）：同一棵 fixture 目录（含 `-wal` / `-journal` / `.tmp` / `.lock` 伴生文件、符号链接、非常规文件、空目录、嵌套子目录）喂给**每一个** owner 的 stats 入口，得到的 `{ bytes, count, oldestAt, newestAt }` 逐字一致；core 侧把 owner 返回值搬进 `SectionStats` 的适配函数不得漏字段 | 单测：一棵 fixture + 各 owner stats 入口逐一比对四元组；负例 ①某 owner 把 `-wal` 算进 `bytes`，断言失败；②适配函数故意漏搬 `newestAt`，断言失败。**不**以「`struct DirStats` 定义计数 == 1」为判据——结构份数由依赖方向决定，一致性由行为决定 |
+| V22 | **分区自述与 core 事实一致**（G17）：①`#[cfg(feature = "vault")]` 下，vault 分区 `entries()` 的每条 `key` 在自己的 `stats(key)` 返回 `Some`、任意非本分区 `key` 返回 `None`；②每个已注册分区条目的首段都命中 `OPTIONAL_SEGMENTS`，且 `OPTIONAL_SEGMENTS` 的每个首段在 `vault` 构建下都有分区声明；③`owner` 标签全部来自统一命名域（构建无关的归属域标识：不含 `::`、不等于任何 feature 名、不是可选能力 crate 的类型名，且按 G19(b) 删掉实现后仍成立）；④core 侧不存在「数字下标 → 条目」的接收方式（`sample.rs` 的下标常量与 `entries.rs` 的 `LOGS_INDEX` 已删除，改为按 `key` 分派） | 单测：遍历分区 `entries()` 逐条调 `stats(key)`（覆盖 `Some` / `None` 两侧）；负例：①把某条分区条目的 `key` 改成 `stats` 不认识的值，断言失败；②注册一个首段为 `"VaultProbe"` / `"vault"` / 不在 `OPTIONAL_SEGMENTS` 的假分区，断言 `register` 返回 `Err`；③`owner` 含 `::` / 等于 feature 名 / 是可选能力 crate 的类型名时断言失败；静态断言：`cmd/storage/` 下不得再出现「下标常量 + `MANAGED_ROOTS[index]`」组合 |
+| V23 | **通用槽路由**（G18）：①**零分区**（槽为空或未注册任何分区）→ `entries` 只有 core 8 条、`security/` 在 `inventory` 归 `optionalNotMounted`，core 条目出数不受影响，**不出现任何 `notImplemented` 占位行**；②**单分区** → 13 条与改造前逐字段等价（golden 不变，这是「重构不改行为」的证据）；③**双分区** → 各答自己的 `entries()` / `stats(key)`，A 的 `key` 在 B 上返回 `None`，互不串台，条目清单 = core 8 + 两分区条目之和；④**重名注册**（分区标识 / 条目 id / key 冲突）→ `register` 返回 `Err`、先注册分区仍可用；⑤**分区未挂载** → 只有该分区条目消失，其余条目 `availability` 不变；⑥`entries()` 快照之后新增注册不影响已取快照 | 单测：两个假分区 + 空槽共三态各拉一次 breakdown，逐字段比对；负例：①冲突注册后断言已注册集合仍为**先注册**的分区；②让某分区 `entries()` 声明一条首段不在 `OPTIONAL_SEGMENTS` 的条目，断言 `register` 拒绝且 breakdown 不出现该行 |
+| V24 | **core 不感知具体功能**（G19(c)）：①`registry.rs` 只保留首段字符串（`OPTIONAL_SEGMENTS = ["security"]`），全仓不存在第二处 `security` 被当作分区路由键 / 条目 key 使用（`cmd/storage/` 与 `app_dirs/` 内零命中）；②该首段**不是**实现类型名、**不是** feature flag 名、**不含** `::`；③改实现类型名 / 换实现 / 特性退役时，`OPTIONAL_SEGMENTS` 与 `MANAGED_ROOTS` 都不需要改动（用「临时改名实现类型」验证：编译仍过、V22 仍绿） | 静态断言：`cmd/storage/` 与 `app_dirs/` 内搜索 `VaultProbe` / `"vault"` 的出现次数为 0，且 `"security"` 只出现在 `OPTIONAL_SEGMENTS` 定义处；负例：①把 `OPTIONAL_SEGMENTS` 的值改成 `"VaultProbe"`，断言失败；②改成 `"vault"`，断言失败 |
 
 **整体验收**：V1–V24 全部通过，且 §3.8 的 G1–G19 在代码审查中逐条签字，方可视为「实现完成」；本文的设计状态已是定稿，实现期间若需改判据，必须先改本文再改代码。
 
@@ -1053,10 +1059,10 @@ snapshot（只读）
 
 | 切片 | 范围 | 交付 | 退出条件 |
 |---|---|---|---|
-| T1 | **观测补全**：13 条 stats 入口（`E7`–`E11` 走 `StorageOwnerProbe` 注入，vaultless 构建降级）、`get_storage_breakdown` 扩展（`sampledAt` / `byteBasis` / `complete` / 账本字段 / `reclaim` 视图）、`availability` 降级、§3.10 的并行 + 500 ms 超时；**对账余量**（§3.11）：`app_dirs::registry` 登记表 + `dir_name` 常量收敛、`storage/inventory.rs` 有界扫描、`StorageInventoryDto` + 异步快照状态机、`storage:inventory-updated` 广播、可选 `refresh_storage_inventory` | 只读，无回收；`reclaim.action` 一律按 §3.1 矩阵填**终态动作**，尚未具备 owner 方法的条目体现为 `eligibility = notImplemented` + `reason = noReclaimApi`（禁止把 `action` 也降级成 `none`）；`inventory` 只读、不进任何合计 | V1–V5、V10、V13、**V18–V20** 通过；golden 快照可断言 13 行（前端表格归 T4）；`inventory` 在 `neverRun` / `running` / `failed` 三态下均不影响 `entries` |
+| T1 | **观测补全**：core 8 条 stats 入口 + vault 分区自述 5 条（`E7`–`E11` 由分区自注册，vaultless 构建下整体不存在）、`get_storage_breakdown` 扩展（`sampledAt` / `byteBasis` / `complete` / 账本字段 / `reclaim` 视图）、`availability` 降级、§3.10 的并行 + 500 ms 超时；**对账余量**（§3.11）：`app_dirs::registry` 登记表 + `OPTIONAL_SEGMENTS` + `dir_name` 常量收敛、`storage/inventory.rs` 有界扫描、`StorageInventoryDto` + 异步快照状态机、`storage:inventory-updated` 广播、可选 `refresh_storage_inventory` | 只读，无回收；`reclaim.action` 一律按 §3.1 矩阵填**终态动作**，尚未具备 owner 方法的条目体现为 `eligibility = notImplemented` + `reason = noReclaimApi`（禁止把 `action` 也降级成 `none`）；`inventory` 只读、不进任何合计 | V1–V5、V10、V13、**V18–V20** 通过；golden 快照在 `vault` 构建断言 13 行、`vaultless` 构建断言 8 行（前端表格归 T4）；`inventory` 在 `neverRun` / `running` / `failed` 三态下均不影响 `entries` |
 | T2 | **骨架 + 低风险回收**：`reclaim_storage` 计划缓存 / `planId` / 确认 / 结果 DTO 全套骨架；`E2` / `E4` 的 owner stats + 回收方法（`A5`）；`E13` 仍只观测（OQ8）；`E1` 仍 `notImplemented`（执行方法留到 T3） | `reclaim_storage` 可执行 `A5`（`E2` / `E4`），其余请求按白名单拒绝 | V6–V10 通过；单条失败隔离；白名单外请求被拒 |
-| T3 | **中风险回收**：`E3` 手动 `A3`（含 fail-closed 修正；owner 需新增「带字节的候选收集 + 删除」方法，见 §3.10 接口形状 1）、`E8` 对外 `pruneToLimit`（需把 `prune_backups` / `MAX_BACKUPS` 从 `pub(super)` / 私有提升为 provider 可达的公开入口）、`E1` 孤儿 `A1`（owner 按 ID 锁 + 执行时重算引用） | 用户可在 UI 触发三类回收；`E11` 仍只由 owner 调度 | V7、V9、V11、V12 通过；并发用例通过 |
-| T4 | **前端与收尾**：`StorageSettings.tsx` 在**保留附件明细区**（会话分组 / 孤儿分组 / 勾选删除，G14）的前提下追加 13 行条目表、徽标、计划确认、结果 toast、**只读余量区**（§6.3 第 9–10 条）；i18n 两份；golden fixtures；留痕日志；文档定稿 | 完整存储管理器 tab（同页三段：附件明细 / 条目表 / 余量） | V14、V15 通过；全量 `contract:gen` + lint + 相关测试通过；附件明细区能力逐项回归 |
+| T3 | **中风险回收**：`E3` 手动 `A3`（含 fail-closed 修正；owner 需新增「带字节的候选收集 + 删除」方法，见 §3.10 接口形状 1）、`E8` 对外 `pruneToLimit`（需把 `prune_backups` / `MAX_BACKUPS` 从 `pub(super)` / 私有提升为分区可达的公开入口）、`E1` 孤儿 `A1`（owner 按 ID 锁 + 执行时重算引用） | 用户可在 UI 触发三类回收；`E11` 仍只由 owner 调度 | V7、V9、V11、V12 通过；并发用例通过 |
+| T4 | **前端与收尾**：`StorageSettings.tsx` 在**保留附件明细区**（会话分组 / 孤儿分组 / 勾选删除，G14）的前提下追加条目清理表、计划确认、结果 toast、**只读余量段**（前端设计 §3 / §7，原 §6.3 已划出）；i18n 两份；golden fixtures；留痕日志；文档定稿 | 完整存储管理器 tab（同页一段两区块 + 只读余量段，见前端设计 §3） | V14、V15 通过；全量 `contract:gen` + lint + 相关测试通过；附件明细区能力逐项回归 |
 
 **切片依赖**：
 
@@ -1088,7 +1094,7 @@ snapshot（只读）
 
 | I54 内容 | 迁移后 |
 |---|---|
-| 原 I54 §4 存储 tab 的 12 行（该节现为指针） | 本文 §3.1 的 13 行（新增 `E4 tool-index`） |
+| 原 I54 §4 存储 tab 的 12 行（该节现为指针） | 本文 §3.1 的条目表：12 行 + 新增 `E4 tool-index`，其中 5 条可选功能条目改为分区自述（§3.1.1） |
 | 原 I54 §4.3 的字节 / 时间 / 包含范围三个口径 | 本文 §3.9（唯一出处） |
 | 原 I54 §8.1 的 `get_storage_breakdown`（该节现只登记进程侧命令） | 本文 §6.1 / §6.2 扩展，旧字段语义不变 |
 | 原 I54 §8.2 的 `StorageEntryDto`（该节现只定义能力声明与进程快照 DTO） | 本文 §3.2 定义条目字段（含 `reclaim`），不删旧字段 |
@@ -1105,4 +1111,4 @@ snapshot（只读）
 1. I54 删除存储 tab 时，**不得**同时删除 `StorageEntryDto` 等共享 DTO 的旧字段；只把「由谁维护」改为本文；
 2. 两文档不得各自定义一套 `StorageEntryDto` / `get_storage_breakdown`；本文是唯一维护方；
 3. I54 的「存储 tab 不可用」概念不得迁移到本文：存储侧按条目降级，不按 tab 降级；
-4. 前端页面归属**已定**为并入 I54 §3 的三 tab 页（R0 建容器并留三个挂载位）；本文只提供存储 tab 的数据与交互契约（§6.3），不重复页面决策。
+4. 前端页面归属**已定**为并入 I54 §3 的三 tab 页（R0 建容器并留三个挂载位）；本文只提供存储 tab 的数据契约（§3 / §5 / §6.1 / §6.2），页面结构与前端实现口径见 [I61 存储管理器前端设计](./I61-storage-manager-frontend.md)（原 §6.3 已划出），不重复页面决策。
