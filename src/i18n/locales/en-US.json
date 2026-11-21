@@ -1173,7 +1173,7 @@
         "session_allow": "Allow in this conversation",
         "always": "Always allow",
         "always_confirm": "This permanently allows this kind of operation across all conversations. You can revoke it under Settings → Authorized actions. Continue?",
-        "always_hint": "Same kind of operation will no longer prompt; revoke under Settings → Authorized actions",
+        "always_hint": "\"Always allow\" permanently permits this kind of operation across all conversations",
         "tier": {
           "sandbox": "Sandbox",
           "os": "OS",
@@ -2237,7 +2237,7 @@
       "budget_none": "No budget reported for this turn",
       "budget_iterations": "Iterations left",
       "budget_tools": "Tool calls left",
-      "budget_wall_clock": "Wall clock left"
+      "budget_wall_time": "Wall clock left"
     }
   }
 }

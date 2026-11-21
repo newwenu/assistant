@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Input, Typography, Button, Select, message } from "antd";
+import { Input, Typography, Button, Select, App } from "antd";
 import { CopyOutlined } from "@ant-design/icons";
 import {
   ALGO_NAMES,
@@ -12,6 +12,7 @@ import styles from "./hash-text.module.css";
 const { TextArea } = Input;
 
 export default function HashText() {
+  const { message } = App.useApp();
   const [text, setText] = useState("");
   const [encoding, setEncoding] = useState<Encoding>("Hex");
   const [results, setResults] = useState<Record<string, string>>({});

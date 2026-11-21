@@ -5,7 +5,7 @@ import {
   Switch,
   InputNumber,
   Typography,
-  message,
+  App,
   Space,
 } from "antd";
 import { CopyOutlined, CompressOutlined } from "@ant-design/icons";
@@ -15,6 +15,7 @@ import styles from "./json-viewer.module.css";
 const { TextArea } = Input;
 
 export default function JsonViewer() {
+  const { message } = App.useApp();
   const [rawJson, setRawJson] = useState('{"hello": "world", "foo": "bar"}');
   const [indentSize, setIndentSize] = useState(2);
   const [sortKeys, setSortKeys] = useState(true);

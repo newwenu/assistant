@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import { Input, Typography, Button, Slider, message } from "antd";
+import { Input, Typography, Button, Slider, App } from "antd";
 import { CopyOutlined } from "@ant-design/icons";
 import {
   colord,
@@ -10,6 +10,7 @@ import {
 import styles from "./color-converter.module.css";
 
 export default function ColorConverter() {
+  const { message } = App.useApp();
   const [hex, setHex] = useState("#1ea54c");
   const [alpha, setAlpha] = useState(1);
   const [values, setValues] = useState<Record<string, string>>(() => {

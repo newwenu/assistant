@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import { Input, Button, Typography, message } from "antd";
+import { Input, Button, Typography, App } from "antd";
 import { CopyOutlined, DeleteOutlined } from "@ant-design/icons";
 import { safeEvaluate } from "./calculator.service";
 import styles from "./calculator.module.css";
@@ -10,6 +10,7 @@ interface HistoryEntry {
 }
 
 export default function Calculator() {
+  const { message } = App.useApp();
   const [expression, setExpression] = useState("");
   const [history, setHistory] = useState<HistoryEntry[]>([]);
 

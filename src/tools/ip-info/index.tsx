@@ -4,7 +4,7 @@ import {
   Descriptions,
   Button,
   Typography,
-  message,
+  App,
   Spin,
   Alert,
   InputNumber,
@@ -33,6 +33,7 @@ interface IpGeoInfo {
 }
 
 export default function IpInfo() {
+  const { message } = App.useApp();
   const [ipInput, setIpInput] = useState("192.168.1.1");
   const [cidr, setCidr] = useState(24);
   const [loading, setLoading] = useState(false);

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Input, Select, Button, Typography, ColorPicker, message } from "antd";
+import { Input, Select, Button, Typography, ColorPicker, App } from "antd";
 import { DownloadOutlined } from "@ant-design/icons";
 import type { QRCodeErrorCorrectionLevel } from "qrcode";
 import { ERROR_LEVELS, generateQrDataUrl } from "./qrcode-generator.service";
@@ -8,6 +8,7 @@ import styles from "./qrcode-generator.module.css";
 const { TextArea } = Input;
 
 export default function QRCodeGenerator() {
+  const { message } = App.useApp();
   const [text, setText] = useState("https://example.com");
   const [foreground, setForeground] = useState("#000000");
   const [background, setBackground] = useState("#ffffff");
@@ -31,7 +32,7 @@ export default function QRCodeGenerator() {
     link.href = dataUrl;
     link.click();
     message.success("已下载");
-  }, [dataUrl]);
+  }, [dataUrl, message]);
 
   const copyImage = useCallback(async () => {
     if (!dataUrl) return;
@@ -45,7 +46,7 @@ export default function QRCodeGenerator() {
     } catch {
       message.error("复制失败，请尝试下载");
     }
-  }, [dataUrl]);
+  }, [dataUrl, message]);
 
   return (
     <div className={styles.root}>

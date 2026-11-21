@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { Input, Typography, Button, Select, message } from "antd";
+import { Input, Typography, Button, Select, App } from "antd";
 import { CopyOutlined } from "@ant-design/icons";
 import {
   FORMATS,
@@ -10,6 +10,7 @@ import {
 import styles from "./date-time-converter.module.css";
 
 export default function DateTimeConverter() {
+  const { message } = App.useApp();
   const [inputDate, setInputDate] = useState("");
   const [formatIndex, setFormatIndex] = useState(4);
 

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Input, Button, Typography, message } from "antd";
+import { Input, Button, Typography, App } from "antd";
 import { CopyOutlined, SwapOutlined } from "@ant-design/icons";
 import { encodeUrl, decodeUrl, parseUrl } from "./url-encoder.service";
 import styles from "./url-encoder.module.css";
@@ -7,6 +7,7 @@ import styles from "./url-encoder.module.css";
 const { TextArea } = Input;
 
 export default function UrlEncoder() {
+  const { message } = App.useApp();
   const [input, setInput] = useState("");
   const [output, setOutput] = useState("");
   const [mode, setMode] = useState<"encode" | "decode">("encode");

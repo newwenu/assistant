@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Input, Button, Switch, Typography, message } from "antd";
+import { Input, Button, Switch, Typography, App } from "antd";
 import { CopyOutlined, SwapOutlined } from "@ant-design/icons";
 import {
   textToBase64,
@@ -11,6 +11,7 @@ import styles from "./base64-string-converter.module.css";
 const { TextArea } = Input;
 
 export default function Base64StringConverter() {
+  const { message } = App.useApp();
   const [input, setInput] = useState("");
   const [output, setOutput] = useState("");
   const [mode, setMode] = useState<"encode" | "decode">("encode");

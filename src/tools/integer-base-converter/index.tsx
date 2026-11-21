@@ -1,10 +1,11 @@
 import { useState, useMemo } from "react";
-import { Input, InputNumber, Typography, Button, message } from "antd";
+import { Input, InputNumber, Typography, Button, App } from "antd";
 import { CopyOutlined } from "@ant-design/icons";
 import { convertBase, PRESET_BASES } from "./integer-base-converter.service";
 import styles from "./integer-base-converter.module.css";
 
 export default function IntegerBaseConverter() {
+  const { message } = App.useApp();
   const [inputValue, setInputValue] = useState("42");
   const [inputBase, setInputBase] = useState(10);
   const [customBase, setCustomBase] = useState(36);

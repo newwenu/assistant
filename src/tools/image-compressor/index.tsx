@@ -7,7 +7,7 @@ import {
   Upload,
   Space,
   Select,
-  message,
+  App,
 } from "antd";
 import { UploadOutlined, DownloadOutlined } from "@ant-design/icons";
 import {
@@ -20,6 +20,7 @@ import { useFileDropCapability } from "../framework/capabilities";
 import styles from "./image-compressor.module.css";
 
 export default function ImageCompressor() {
+  const { message } = App.useApp();
   const [file, setFile] = useState<File | null>(null);
   const [originalUrl, setOriginalUrl] = useState("");
   const [originalSize, setOriginalSize] = useState(0);
@@ -37,19 +38,22 @@ export default function ImageCompressor() {
     };
   }, []);
 
-  const handleFile = useCallback((f: File) => {
-    if (!f.type.startsWith("image/")) {
-      message.error("请选择图片文件");
-      return;
-    }
-    if (prevUrlRef.current) URL.revokeObjectURL(prevUrlRef.current);
-    const url = URL.createObjectURL(f);
-    prevUrlRef.current = url;
-    setFile(f);
-    setOriginalUrl(url);
-    setOriginalSize(f.size);
-    setResult(null);
-  }, []);
+  const handleFile = useCallback(
+    (f: File) => {
+      if (!f.type.startsWith("image/")) {
+        message.error("请选择图片文件");
+        return;
+      }
+      if (prevUrlRef.current) URL.revokeObjectURL(prevUrlRef.current);
+      const url = URL.createObjectURL(f);
+      prevUrlRef.current = url;
+      setFile(f);
+      setOriginalUrl(url);
+      setOriginalSize(f.size);
+      setResult(null);
+    },
+    [message],
+  );
 
   const handleCompress = useCallback(async () => {
     if (!file) return;
@@ -68,7 +72,7 @@ export default function ImageCompressor() {
     } finally {
       setCompressing(false);
     }
-  }, [file, quality, maxWidth, maxHeight, format]);
+  }, [file, quality, maxWidth, maxHeight, format, message]);
 
   const download = useCallback(() => {
     if (!result) return;
@@ -79,7 +83,7 @@ export default function ImageCompressor() {
     link.href = result.dataUrl;
     link.click();
     message.success("已下载");
-  }, [result, file, format]);
+  }, [result, file, format, message]);
 
   const savings =
     result && originalSize > 0

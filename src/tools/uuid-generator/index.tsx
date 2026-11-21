@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Input, InputNumber, Button, Typography, Select, message } from "antd";
+import { Input, InputNumber, Button, Typography, Select, App } from "antd";
 import { CopyOutlined, ReloadOutlined } from "@ant-design/icons";
 import {
   NAMESPACE_OPTIONS,
@@ -11,6 +11,7 @@ import styles from "./uuid-generator.module.css";
 const { TextArea } = Input;
 
 export default function UUIDGenerator() {
+  const { message } = App.useApp();
   const [version, setVersion] = useState("v4");
   const [count, setCount] = useState(1);
   const [uuids, setUuids] = useState<string[]>(() =>

@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback, useEffect } from "react";
-import { Input, Button, Typography, Space, message } from "antd";
+import { Input, Button, Typography, Space, App } from "antd";
 import { CopyOutlined, DownloadOutlined } from "@ant-design/icons";
 import {
   DEFAULT_SVG,
@@ -18,6 +18,7 @@ interface SavingsInfo {
 }
 
 export default function SvgPreview() {
+  const { message } = App.useApp();
   const [svgCode, setSvgCode] = useState(DEFAULT_SVG);
   const [lastSavings, setLastSavings] = useState<SavingsInfo | null>(null);
 
@@ -36,10 +37,13 @@ export default function SvgPreview() {
     return optimizeSvg(svgCode);
   }, [svgCode, isValid]);
 
-  const copy = useCallback((text: string) => {
-    void navigator.clipboard.writeText(text);
-    message.success("已复制");
-  }, []);
+  const copy = useCallback(
+    (text: string) => {
+      void navigator.clipboard.writeText(text);
+      message.success("已复制");
+    },
+    [message],
+  );
 
   const downloadSvg = useCallback(() => {
     if (!svgCode.trim()) return;
@@ -50,7 +54,7 @@ export default function SvgPreview() {
     link.click();
     URL.revokeObjectURL(link.href);
     message.success("已下载 SVG");
-  }, [svgCode]);
+  }, [svgCode, message]);
 
   const downloadPng = useCallback(() => {
     if (!svgDataUrl) return;
@@ -73,7 +77,7 @@ export default function SvgPreview() {
       });
     };
     img.src = svgDataUrl;
-  }, [svgDataUrl]);
+  }, [svgDataUrl, message]);
 
   const useOptimized = useCallback(() => {
     if (optimized && optimized !== svgCode) {
@@ -81,7 +85,7 @@ export default function SvgPreview() {
       setSvgCode(optimized);
       message.success("已应用优化");
     }
-  }, [optimized, svgCode]);
+  }, [optimized, svgCode, message]);
 
   const { droppedFiles } = useFileDropCapability();
 
@@ -93,7 +97,7 @@ export default function SvgPreview() {
         message.success("已加载 SVG 文件");
       });
     }
-  }, [droppedFiles]);
+  }, [droppedFiles, message]);
 
   return (
     <div className={styles.root}>

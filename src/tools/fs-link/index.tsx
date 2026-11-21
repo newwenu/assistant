@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Input, Button, Select, Typography, Alert, Space, message } from "antd";
+import { Input, Button, Select, Typography, Alert, Space, App } from "antd";
 import { LinkOutlined, SearchOutlined } from "@ant-design/icons";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import type { DragDropEvent } from "@tauri-apps/api/webview";
@@ -21,6 +21,7 @@ const isAbsolutePath = (p: string) =>
   /^[A-Za-z]:[\\/]/.test(p) || p.startsWith("/") || p.startsWith("\\\\");
 
 export default function FsLink() {
+  const { message } = App.useApp();
   const [source, setSource] = useState("");
   const [target, setTarget] = useState("");
   const [kind, setKind] = useState<LinkKind>("symlink");

@@ -19,7 +19,7 @@ const ORDER_BADGES = [
 
 interface NodeCellProps {
   node: GraphNodeView;
-  /** 已观测到的最大 `atMs`：V1 只算 `atMs` 差，不引入时钟（I55 §5.3）。 */
+  /** 已观测到的最大 `atMs`：V1 只算 `atMs` 差，不引入时间源（I55 §5.3）。 */
   nowMs: number;
   activeSource: boolean;
   activeTarget: boolean;

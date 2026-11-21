@@ -7,7 +7,7 @@ import {
   Typography,
   Slider,
   Progress,
-  message,
+  App,
 } from "antd";
 import { CopyOutlined, ReloadOutlined } from "@ant-design/icons";
 import styles from "./password-generator.module.css";
@@ -19,6 +19,7 @@ import {
 } from "./password-generator.service";
 
 export default function PasswordGenerator() {
+  const { message } = App.useApp();
   const [length, setLength] = useState(16);
   const [useLower, setUseLower] = useState(true);
   const [useUpper, setUseUpper] = useState(true);

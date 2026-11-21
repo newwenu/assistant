@@ -87,7 +87,7 @@
   "settings": {
     "not_found": {
       "title": "页面不存在",
-      "description": "找不到设置页面「{{pageId}}」，它可能属于未启用的特性。",
+      "description": "找不到设置页面【{{pageId}}】，它可能属于未启用的特性。",
       "back": "返回设置总览"
     },
     "overview": {
@@ -364,9 +364,9 @@
       },
       "entries": {
         "title": "按存储项清理",
-        "hint": "每一项占用都由负责它的系统模块统计；「清理」只删除这一项里可以安全移除的文件。要删除具体附件，请在上方「附件明细」中勾选",
+        "hint": "每一项占用都由负责它的系统模块统计；【清理】只删除这一项里可以安全移除的文件。要删除具体附件，请在上方【附件明细】中勾选",
         "provided_by": "统计来源：{{owner}}",
-        "attachment_orphans": "无关联对话 {{count}} 项 · {{size}}；要逐个删除，请在上方「附件明细」勾选",
+        "attachment_orphans": "无关联对话 {{count}} 项 · {{size}}；要逐个删除，请在上方【附件明细】勾选",
         "cleanup_button": "清理",
         "columns": {
           "name": "存储项",
@@ -472,14 +472,14 @@
         "ok": "执行清理",
         "cancel": "取消",
         "dialog": {
-          "title": "清理「{{entry}}」？",
+          "title": "清理【{{entry}}】？",
           "body": "将执行：{{action}}；预计处理 {{count}} 项，{{size}}。",
           "key_hint": "识别码：{{key}}",
           "irreversible": "此操作无法撤销。"
         },
         "strong": {
-          "title": "清理高风险存储项「{{entry}}」？",
-          "body": "将执行：{{action}}；预计处理 {{count}} 项，{{size}}。请输入「{{key}}」以确认。",
+          "title": "清理高风险存储项【{{entry}}】？",
+          "body": "将执行：{{action}}；预计处理 {{count}} 项，{{size}}。请输入【{{key}}】以确认。",
           "placeholder": "输入 {{key}}",
           "mismatch": "输入不一致，无法继续"
         },
@@ -626,13 +626,13 @@
       },
       "grants": {
         "title": "已授权操作",
-        "description": "这些操作被设为「始终允许」，调用时不再询问。撤销后同类操作会重新确认。",
+        "description": "这些操作被设为【始终允许】，调用时不再询问。撤销后同类操作会重新确认。",
         "empty": "暂无授权",
         "revoke": "撤销",
         "revoked": "已撤销该授权",
         "revoke_failed": "撤销失败: {{error}}",
         "clear": "全部清除",
-        "clear_confirm": "清除全部授权？清除后所有「始终允许」的操作会重新询问。",
+        "clear_confirm": "清除全部授权？清除后所有【始终允许】的操作会重新询问。",
         "cleared": "已清除全部授权",
         "clear_failed": "清除失败: {{error}}",
         "load_failed": "加载授权列表失败: {{error}}",
@@ -742,7 +742,7 @@
         "ready": "就绪",
         "error": "错误"
       },
-      "isolation_notice": "隔离边界: MCP server 以当前用户权限在本机运行, 这里只按「工具名 + 审批键」做准入控制, 不是操作系统沙箱。",
+      "isolation_notice": "隔离边界: MCP server 以当前用户权限在本机运行, 这里只按【工具名 + 审批键】做准入控制, 不是操作系统沙箱。",
       "env_masked_notice": "该服务已有 {{count}} 个环境变量, 其值不回显; 修改启动配置时需重新填写完整值。",
       "env_refill_required": "该服务已有 {{count}} 个环境变量, 修改启动配置需重新填写它们的值 (值不回显)。",
       "env_invalid": "以下行不符合 KEY=VALUE 格式: {{lines}}",
@@ -762,7 +762,7 @@
         "env_extra": "每行 KEY=VALUE; 值不回显, 编辑时需重新填写"
       },
       "confirm_delete": {
-        "title": "删除 MCP 服务「{{name}}」？",
+        "title": "删除 MCP 服务【{{name}}】？",
         "content": "删除后其工具会从工具清单移除, 正在进行的调用会被终止。"
       }
     },
@@ -872,7 +872,7 @@
       },
       "ssh": {
         "title": "SSH Agent 偏好",
-        "agent_location_hint": "密钥列表与运行时状态在保险库内「管理 → SSH Agent」查看。"
+        "agent_location_hint": "密钥列表与运行时状态在保险库内【管理 → SSH Agent】查看。"
       },
       "auto_lock_minutes": { "label": "自动锁定时间（分钟）" },
       "lock_on_screen_lock": { "label": "屏幕锁定时锁定保险库" },
@@ -1145,8 +1145,8 @@
         "deny": "拒绝",
         "session_allow": "本会话允许",
         "always": "始终允许",
-        "always_confirm": "将对该类操作永久放行（所有会话），可在设置页「已授权操作」撤销。确认继续？",
-        "always_hint": "同类操作以后不再询问，可在设置页「已授权操作」撤销",
+        "always_confirm": "将对该类操作永久放行（所有会话），可在设置页【已授权操作】撤销。确认继续？",
+        "always_hint": "【始终允许】会对该类操作永久放行（所有会话）",
         "tier": {
           "sandbox": "沙箱",
           "os": "系统",
@@ -1551,7 +1551,7 @@
   },
   "screenshot": {
     "select_hint": "拖动框选（只截光标所在屏幕），Enter 确认，Esc 取消",
-    "permission_guide": "前往「系统设置 → 隐私与安全性 → 屏幕录制」授权后重试",
+    "permission_guide": "前往【系统设置 → 隐私与安全性 → 屏幕录制】授权后重试",
     "err": {
       "no_session": "截图会话已过期，请重新截图",
       "token_invalid": "截图会话已过期，请重新截图",
@@ -1561,7 +1561,7 @@
       "encode_failed": "截图处理失败",
       "too_large": "截图过大，请缩小选区",
       "archive_failed": "截图保存失败",
-      "permission_denied": "需要「屏幕录制」权限",
+      "permission_denied": "需要【屏幕录制】权限",
       "cancel_failed": "取消截图失败"
     }
   },
@@ -1701,7 +1701,7 @@
       "filter_leaked": "仅泄露（{{count}}）",
       "show_leaked_only": "只看泄露条目",
       "clear_filters": "清除筛选",
-      "import_or_clone": "从「管理」导入或克隆保险库",
+      "import_or_clone": "从【管理】导入或克隆保险库",
       "delete_failed": "删除失败",
       "leaked": "个泄露",
       "sort_recent": "最近更新",
@@ -1855,7 +1855,7 @@
       "remote_check_failed_generic": "远程检查失败",
       "remote_check_no_remote": "尚未绑定远程仓库",
       "remote_check_no_upstream": "未配置上游分支",
-      "remote_check_hint": "点击「检查远程」与远程比对",
+      "remote_check_hint": "点击【检查远程】与远程比对",
       "remote_not_bound_tip": "当前仓库仅存在于本机，无法拉取或推送。绑定远程仓库后即可多设备同步。",
       "remote_not_bound_cta": "绑定远程仓库",
       "pull": "拉取",
@@ -1879,7 +1879,7 @@
       "unreadable_overwrite": "用本机数据覆盖对端",
       "err_not_init": "Git 仓库未初始化",
       "err_no_remote": "未配置远程仓库地址",
-      "err_no_upstream": "未配置上游分支，请先执行一次「同步」。若已配置多个远程仓库，请在设置中确认上游。",
+      "err_no_upstream": "未配置上游分支，请先执行一次【同步】。若已配置多个远程仓库，请在设置中确认上游。",
       "test_connection": "测试连接",
       "test_ok": "连接成功：远程有 {{count}} 个分支",
       "test_failed": "连接失败",
@@ -2010,8 +2010,8 @@
       "desc": "以下操作具有破坏性且不可撤销，请谨慎执行。",
       "type_confirm": "请输入 {{code}} 以确认操作",
       "tab_desc": "这里是所有破坏性操作的集中入口。每一项都需要输入确认码才会执行。",
-      "sync_hint": "强制推送、放弃本地改动、解绑远程仓库等破坏性操作已移至「危险操作」页签。",
-      "unreadable_overwrite_hint": "如需用本机数据覆盖对端，请前往「危险操作」页签执行强制推送。",
+      "sync_hint": "强制推送、放弃本地改动、解绑远程仓库等破坏性操作已移至【危险操作】页签。",
+      "unreadable_overwrite_hint": "如需用本机数据覆盖对端，请前往【危险操作】页签执行强制推送。",
       "open": "前往危险操作",
       "discard": {
         "title": "放弃本地改动",
@@ -2044,7 +2044,7 @@
       "preview_loading": "正在解密对比…",
       "preview_unavailable": "无法解密版本内容",
       "preview_empty": "该版本没有此条目",
-      "preview_masked": "密码与受保护字段已隐藏，点击「显示」查看明文，30 秒后自动隐藏",
+      "preview_masked": "密码与受保护字段已隐藏，点击【显示】查看明文，30 秒后自动隐藏",
       "commit_author": "提交作者",
       "commit_time": "提交时间",
       "field": "字段",
@@ -2210,7 +2210,7 @@
       "budget_none": "本轮未给出预算余量",
       "budget_iterations": "剩余迭代",
       "budget_tools": "剩余工具调用",
-      "budget_wall_clock": "剩余时长"
+      "budget_wall_time": "剩余时长"
     }
   }
 }

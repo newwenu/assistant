@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { Input, Select, Switch, Button, Typography, message } from "antd";
+import { Input, Select, Switch, Button, Typography, App } from "antd";
 import { CopyOutlined } from "@ant-design/icons";
 import {
   DIALECT_OPTIONS,
@@ -16,6 +16,7 @@ import styles from "./sql-formatter.module.css";
 const { TextArea } = Input;
 
 export default function SqlFormatter() {
+  const { message } = App.useApp();
   const [rawSQL, setRawSQL] = useState(
     "select field1,field2,field3 from my_table where my_condition;",
   );

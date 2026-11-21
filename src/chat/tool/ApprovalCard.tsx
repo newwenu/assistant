@@ -274,9 +274,9 @@ export const ApprovalCard: React.FC<ApprovalCardProps> = ({
             {t("chat.tool.approval.always")}
           </Button>
         </Popconfirm>
-        <span className={css.alwaysHint}>
-          {t("chat.tool.approval.always_hint")}
-        </span>
+      </div>
+      <div className={css.alwaysHint}>
+        {t("chat.tool.approval.always_hint")}
       </div>
     </div>
   );

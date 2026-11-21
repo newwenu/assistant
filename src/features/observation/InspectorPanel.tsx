@@ -62,7 +62,7 @@ export function InspectorPanel({ summary, timeline }: InspectorPanelProps) {
                 value={optionText(budget.remainingToolCalls)}
               />
               <SummaryRow
-                label={t("observation.inspector.budget_wall_clock")}
+                label={t("observation.inspector.budget_wall_time")}
                 value={optionText(budget.remainingWallClockMs)}
               />
             </>
