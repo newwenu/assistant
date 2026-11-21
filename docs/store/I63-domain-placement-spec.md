@@ -4,6 +4,7 @@
 |---|---|
 | 状态 | 定稿（判定已复核，待按 §9 切片实施） |
 | 日期 | 2026-11-20 |
+| 任务清单 | `I63-domain-placement-tasklist.md`（T1–T9 逐项改动与验收落点） |
 | 关联 | `CODE-INDEX.md`（逐文件事实源；本文行数为源码非空行口径，与索引的物理行口径不同，见 §2 表头）；`CODE-STRUCTURE.md` §8（改动路由，需按 §13 同步）；`CODE-SPLIT-PRINCIPLE.md`（拆分判据，唯一来源，本文只引用不复述）；I62（协议 crate 抽取，与 §4.2 的 dto 拆分交叠）；I38c §7（工具箱注册门禁，约束 §4.3-P2-1）；`crate-architecture.md` |
 | 影响范围 | 前端：1 个顶层域删除（`src/audit/`）、1 个目录重组（`vault/detail` → `vault/entry`）、1 个文件三向拆分（`paths.ts`）；后端：2 个文件拆分（`cmd/vault/audit.rs`、`protocol/dto/settings.rs`）、2 个目录重组（`cmd/vault/`、`os/tools/meta/`）、5 处文件搬迁、1 个垫片删除（`assistant-security/src/vault_crypto`）、1 个索引脚本口径修正 |
 | wire 影响 | **零**。不新增、删除、改名任何 DTO 类型或字段，只改变类型所在文件；`src/types/protocol.contract.ts` 与 `src/vault/core/contract/vault.contract.ts` 内容不变 |

@@ -77,11 +77,10 @@
 | `src/chat/` | 对话展示与纯逻辑 | `core/`（消息树 / 内容块 / 流合并 / 错误恢复）· `message/`（气泡 / 列表 / 输入 / 附件预览）· `blocks/` · `selectors/` · `tool/` · `attachment/`（intake / admit / factory / paths / sources）· `layouts/`（单骨架 + 工具区域挂点）。总装入口不 import 工具 / 工作区组件、不构造布局 JSX |
 | `src/history/` | 会话列表 / 搜索 / 详情 / 分支树 / 虚拟列表 | `core/` 与列表、详情两侧视图分离 |
 | `src/tools/` | 工具箱框架 + 内置工具 | 框架（注册、分类、UI 外壳）+ 每个工具一套「视图入口 + 纯逻辑服务 + 组件样式」 |
-| `src/vault/` | 保险库（可选功能）全部 UI 与状态 | `core/`（store + 切片 + 服务 + 契约 + 展示 + hooks）· `detail/` · `forms/` · `settings/` · `unlock/` · 顶层页面 |
-| `src/settings/` | 声明式设置系统 | 四层：声明（字段 / Provider / Agent 模式）→ 注册表（页注册、内置注册、副作用注册）→ 运行时（配置运行时、快照、分发、乐观更新）→ 视图（各设置页与共享渲染器） |
+| `src/vault/` | 保险库（可选功能）全部 UI 与状态 | `core/`（store + 切片 + 服务 + 契约 + 展示 + hooks + `audit/`）· `entry/`（详情 / 历史 / 揭示 / Drawer + `forms/` 字段编辑器）· `settings/` · `unlock/` · 顶层页面 |
+| `src/settings/` | 声明式设置系统 | 四层：声明（字段 / Provider / Agent 模式）→ 注册表（页注册、内置注册、副作用注册）→ 运行时（配置运行时、快照、分发、乐观更新）→ 视图（各设置页与共享渲染器；权限审计结果词表在 `shared/sections/PermissionAuditSection/permissionOutcomes.ts`） |
 | `src/services/` | 与后端交互的唯一边界 | 按领域分 `stream/` `chat/` `tool/` `desktop/` `system/`；无 UI 组件 |
 | `src/stores/` | Zustand 状态 | `chat/`（聚合 + 切片 + ports + 独立流式 store）· `agent/`（分段、模式、观测投影）· `system/`（语言 / 通知 / 主题 / 窗口模式）· 根级（历史 / 工具 / Provider / 设置 / MCP / 附件 / 悬浮球 / 截屏）。聚合与编排解耦，高频流式独立存放 |
-| `src/audit/` | 审计记录解析与事件词表 | 纯前端，无后端调用 |
 | `src/mascot/` | 形象与表情 | 策略表 + 多渲染器 + 与对话状态同步 |
 | `src/orb/` | 悬浮球 | 拖拽 / 吸附 / 展开 / 指针手势 / 配置同步 / 运行态标记 |
 | `src/screenshot/` | 截屏提问 | 选区层 + 截屏会话 |
@@ -247,14 +246,15 @@ config/features.json (vault)
 | 新增设置项 | 核心 group 在 `assistant-config` 的配置组 struct；特性 group 在特性 crate 的 `conf.rs` + 特性契约域 DTO + 设置字段声明 → `npm run contract:gen` |
 | 新增设置页 | `src/settings/pages/` + 内置页注册表登记 |
 | 新增工具箱工具 | `src/tools/<tool>/`（三件套）+ 工具注册表登记 |
-| 新增 Agent 工具 | `assistant-tools` 的 OS 工具目录 + 网关注册 + `src-tauri/src/tool_setup.rs` |
+| 新增 Agent 工具 | `assistant-tools` 的 `os/tools/`（文件系统工具）或 `os/tools/meta/`（元工具）+ 网关注册 + `src-tauri/src/tool_setup.rs` |
 | 新增 / 调整 MCP server | `assistant-tools` 的 MCP 模块（协议 / 管理 / 工具桥）+ `src-tauri/src/mcp/`（宿主传输与配置加密）+ 对应命令与 DTO |
 | 调整沙箱探测 / 后端 | `assistant-tools` 的沙箱模块 + `src-tauri/src/tool_setup.rs`（当前仅契约与类型，平台后端与 shell 工具尚未接入） |
 | 调整对话链路 | `src/services/stream/` + `assistant-agent` 的 kernel |
 | 调整 Agent 循环 | `assistant-agent` 的循环执行与阶梯模块 |
 | 新增 Provider | `assistant-providers` 新增厂商目录 + 设置侧 Provider 定义 |
-| 新增窗口 | `src-tauri/src/window.rs` + `src/App.tsx` 分流 + `src/layouts/` |
-| 调整 Mascot 表情 | `src/mascot/` 的策略表与状态同步 |
+| 新增窗口 | `src-tauri/src/window.rs` + `src-tauri/src/protocol/dto/window.rs` + `src/App.tsx` 分流 + `src/layouts/` |
+| 调整 Mascot 表情 | `src/mascot/` 的策略表与状态同步；素材 URL 拼接在 `src/mascot/core/assetUrl.ts` |
+| 新增审计事件类型 | vault 侧：`assistant-vault` 审计事件枚举 + `src/vault/core/audit/vaultEvents.ts`（事件串 / i18n 键）；permission 侧：`src-tauri/src/adapters/permission_store.rs` + `src/settings/shared/sections/PermissionAuditSection/permissionOutcomes.ts` |
 | 调整悬浮球行为 | `src/orb/` + `src-tauri/src/cmd/orb.rs` + `assistant-orb` |
 | 调整截屏 | `src/screenshot/` + `src-tauri/src/screenshot/` + 截屏命令 |
 | 新增可选功能 | `config/features.json` + 前端功能注册表 + `src-tauri/src/feature_mounts.rs` + `Cargo.toml` feature |

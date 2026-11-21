@@ -86,6 +86,7 @@ function isGenerated(rel, text) {
 }
 
 const TS_ROLE_RULES = [
+  [/\.d\.ts$/, "类型声明"],
   [/(^|\/)index\.tsx$/, "视图入口"],
   [/(^|\/)index\.ts$/, "桶出口"],
   [/\.service\.ts$/, "纯逻辑服务"],
@@ -94,8 +95,6 @@ const TS_ROLE_RULES = [
   [/Ports\.ts$/, "端口适配"],
   [/(^|\/)use[A-Z]\w*\.(ts|tsx)$/, "Hook"],
   [/(^|\/)hooks\/\w+\.ts$/, "Hook"],
-  [/(^|\/)types?\.ts$/, "类型"],
-  [/Types\.ts$/, "类型"],
   [/\.contract\.ts$/, "生成契约"],
   [/\.generated\.ts$/, "生成物"],
   [/(^|\/)constants?\.ts$/, "常量"],
@@ -103,25 +102,82 @@ const TS_ROLE_RULES = [
   [/\.css$/, "样式"],
 ];
 
-function tsRole(rel) {
+const TS_RUNTIME_EXPORT_RE =
+  /^\s*export\s+(?:async\s+)?(?:const|let|function|class)\s+/m;
+const TS_DEFAULT_RUNTIME_RE = /^\s*export\s+default\s+(?:function|class)\s+/m;
+
+function tsRole(rel, text) {
   for (const [re, role] of TS_ROLE_RULES) {
     if (re.test(rel)) return role;
+  }
+  if (/(^|\/)types?\.ts$/.test(rel) || /Types\.ts$/.test(rel)) {
+    const hasRuntime =
+      TS_RUNTIME_EXPORT_RE.test(text) || TS_DEFAULT_RUNTIME_RE.test(text);
+    return hasRuntime ? "类型与常量" : "类型";
   }
   return rel.endsWith(".tsx") ? "组件" : "逻辑";
 }
 
 const RS_ROLE_RULES = [
   [/(^|\/)lib\.rs$/, "crate 入口"],
-  [/(^|\/)mod\.rs$/, "模块聚合"],
   [/build\.rs$/, "构建脚本"],
   [/\/tests\/|\/tests\.rs$/, "集成测试"],
+  [/\/dto\/convert\//, "转换实现"],
   [/\bdto\.rs$|\/dto\//, "契约 DTO"],
   [/conf\.rs$/, "配置组"],
   [/_ops\.rs$/, "库操作"],
   [/_store\.rs$/, "持久化"],
 ];
 
-function rsRole(rel) {
+function isAggregationOnly(text) {
+  const lines = text
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .split("\n")
+    .map((line) => line.replace(/\/\/.*$/, "").trim())
+    .filter((line) => line !== "" && !line.startsWith("#["));
+  if (!lines.length) return true;
+  return lines.every(
+    (line) =>
+      /^(pub(\([^)]*\))?\s+)?mod\s+[A-Za-z_]\w*\s*;/.test(line) ||
+      /^(pub(\([^)]*\))?\s+)?use\s/.test(line),
+  );
+}
+
+function parentModuleFile(file) {
+  const dir = path.dirname(file);
+  if (path.basename(file, ".rs") === "mod") return null;
+  const modRs = path.join(dir, "mod.rs");
+  if (fs.existsSync(modRs)) return modRs;
+  const sibling = `${dir}.rs`;
+  if (fs.existsSync(sibling)) return sibling;
+  return null;
+}
+
+const TEST_DOUBLE_GATE_RE = /^#\[cfg\s*\(.*"test-doubles".*\)\]$/;
+
+function isTestDoubleModule(parentText, stem) {
+  const lines = parentText.split("\n");
+  const modRe = new RegExp(`^(?:pub(?:\\([^)]*\\))?\\s+)?mod\\s+${stem}\\s*;`);
+  for (let i = 0; i < lines.length; i += 1) {
+    if (!TEST_DOUBLE_GATE_RE.test(lines[i].trim())) continue;
+    let j = i + 1;
+    while (j < lines.length) {
+      const next = lines[j].trim();
+      if (next === "" || next.startsWith("//") || next.startsWith("#[")) {
+        j += 1;
+        continue;
+      }
+      if (modRe.test(next)) return true;
+      break;
+    }
+  }
+  return false;
+}
+
+function rsRole(rel, text) {
+  if (/(^|\/)mod\.rs$/.test(rel)) {
+    return isAggregationOnly(text) ? "模块聚合" : "实现（含聚合）";
+  }
   for (const [re, role] of RS_ROLE_RULES) {
     if (re.test(rel)) return role;
   }
@@ -195,7 +251,7 @@ function frontendItems(opts) {
     items.push({
       rel,
       domain: frontendDomain(rel),
-      role: tsRole(rel),
+      role: tsRole(rel, text),
       keywords:
         path.extname(rel) === ".css"
           ? "-"
@@ -235,6 +291,7 @@ function rustItems(opts, scope) {
   );
   const items = [];
   let skipped = 0;
+  const parentCache = new Map();
   for (const file of files) {
     const rel = relPosix(file);
     if (isTest(rel)) {
@@ -242,10 +299,22 @@ function rustItems(opts, scope) {
       continue;
     }
     const text = fs.readFileSync(file, "utf8");
+    const parent = parentModuleFile(file);
+    let testOnly = false;
+    if (parent) {
+      if (!parentCache.has(parent)) {
+        parentCache.set(parent, fs.readFileSync(parent, "utf8"));
+      }
+      testOnly = isTestDoubleModule(
+        parentCache.get(parent),
+        path.basename(rel, ".rs"),
+      );
+    }
     items.push({
       rel,
       domain: rustDomain(rel, scope),
-      role: rsRole(rel),
+      role: testOnly ? "测试替身" : rsRole(rel, text),
+      testOnly,
       keywords: fmtKeywords(rsExports(text, opts.maxExports)),
       lines: countLines(text),
     });
@@ -285,8 +354,10 @@ function splitDomain(domain, kind) {
 }
 
 function domainOverview(items, kind) {
+  const prod = items.filter((i) => !i.testOnly);
+  const testOnly = items.filter((i) => i.testOnly);
   const groups = new Map();
-  for (const i of items) {
+  for (const i of prod) {
     const [top, sub] = splitDomain(i.domain, kind);
     const g = groups.get(top) ?? { files: 0, lines: 0, subs: new Map() };
     g.files += 1;
@@ -311,14 +382,22 @@ function domainOverview(items, kind) {
       .join(" · ");
     tokens.push(`${head}（${subs}）`);
   }
-  const totalLines = items.reduce((n, i) => n + i.lines, 0);
-  return [
+  const totalLines = prod.reduce((n, i) => n + i.lines, 0);
+  const lines = [
     "**领域规模**（文件数 / 行数，括号内为子域）：",
     "",
     tokens.join(" · "),
     "",
-    `**合计** ${items.length} 个文件 / ${totalLines} 行。`,
-  ].join("\n");
+    `**合计** ${prod.length} 个文件 / ${totalLines} 行。`,
+  ];
+  if (testOnly.length) {
+    const testLines = testOnly.reduce((n, i) => n + i.lines, 0);
+    lines.push(
+      "",
+      `**测试替身** ${testOnly.length} 个文件 / ${testLines} 行（不计入生产合计）。`,
+    );
+  }
+  return lines.join("\n");
 }
 
 function section(title, intro, items, kind) {
@@ -348,7 +427,7 @@ function main() {
     "",
     "> 全文由 `node scripts/structure-index.mjs` 生成，**请勿手改**；代码变动后重跑即刷新。",
     `> 生成时间：${new Date().toISOString()}｜范围：${opts.scope}｜单文件导出名上限：${opts.maxExports}`,
-    "> 口径：只做机械提取（路径 → 领域 / 角色 / 关键导出 / 行数）；跳过测试、生成物与 `*.module.css`。",
+    "> 口径：只做机械提取（路径 → 领域 / 角色 / 关键导出 / 行数）；跳过测试、生成物与 `*.module.css`；测试替身单列，不计入生产合计。",
     "> 语义（分层、边界、依赖方向、改动路由）见 `docs/CODE-STRUCTURE.md`。",
     "",
   ].join("\n");
