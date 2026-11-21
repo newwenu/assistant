@@ -26,12 +26,14 @@ export const HistoryManager: React.FC = () => {
   const { t } = useTranslation();
   const { message, modal } = App.useApp();
   const conversations = useChatStore((s) => s.conversations);
+  const conversationsError = useChatStore((s) => s.conversationsError);
   const isLoadingConversations = useChatStore((s) => s.isLoadingConversations);
 
   const selectedId = useHistoryStore((s) => s.selectedId);
   const messages = useHistoryStore((s) => s.messages);
   const totalCount = useHistoryStore((s) => s.totalCount);
   const loadingMessages = useHistoryStore((s) => s.loadingMessages);
+  const messagesError = useHistoryStore((s) => s.messagesError);
   const collapsedGroups = useHistoryStore((s) => s.collapsedGroups);
   const multiSelectMode = useHistoryStore((s) => s.multiSelectMode);
   const selectedConversationIds = useHistoryStore(
@@ -331,6 +333,7 @@ export const HistoryManager: React.FC = () => {
       {!sidebarCollapsed && (
         <HistorySidebar
           conversations={conversations}
+          conversationsError={conversationsError}
           isLoadingConversations={isLoadingConversations}
           selectedId={selectedId}
           searchQuery={searchQuery}
@@ -365,9 +368,11 @@ export const HistoryManager: React.FC = () => {
         messages={messages}
         totalCount={totalCount}
         loadingMessages={loadingMessages}
+        messagesError={messagesError}
         sidebarCollapsed={sidebarCollapsed}
         sidebarToggleDisabled={multiSelectMode}
         onToggleSidebar={toggleSidebarCollapsed}
+        onRefreshMessages={() => void refreshMessages()}
         onExport={(id, format) => void exportConversation(id, format)}
         onDeleteConversation={(id) => void deleteConversation(id)}
         onDeleteMessage={(id) => void deleteMessage(id)}

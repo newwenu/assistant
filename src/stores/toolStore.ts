@@ -68,7 +68,7 @@ export const useToolStore = create<ToolState>((set) => ({
       const ids = await toolService.getFavoriteTools();
       set({ favoriteToolIds: normalizeFavoriteIds(ids) });
     } catch (e) {
-      log.debug("loadFavorites failed, trying localStorage fallback", e);
+      log.warn("loadFavorites failed, trying localStorage fallback", e);
       const stored = localStorage.getItem("favoriteToolIds");
       if (stored) {
         try {
@@ -91,7 +91,7 @@ export const useToolStore = create<ToolState>((set) => ({
           : s.favoriteToolIds.filter((id) => id !== toolId),
       }));
     } catch (e) {
-      log.debug("toggleFavorite failed, using localStorage fallback", e);
+      log.warn("toggleFavorite failed, using localStorage fallback", e);
       set((s) => {
         const isFav = s.favoriteToolIds.includes(toolId);
         const next = isFav
@@ -109,7 +109,7 @@ export const useToolStore = create<ToolState>((set) => ({
     try {
       await toolService.reorderFavorites(ids);
     } catch (e) {
-      log.debug("reorderFavorites failed, saving to localStorage", e);
+      log.warn("reorderFavorites failed, saving to localStorage", e);
       localStorage.setItem("favoriteToolIds", JSON.stringify(ids));
     }
   },
@@ -119,7 +119,7 @@ export const useToolStore = create<ToolState>((set) => ({
       const ids = await toolService.getRecentTools(limit ?? RECENT_TOOLS_LIMIT);
       set({ recentTools: ids });
     } catch (e) {
-      log.debug("loadRecentTools failed", e);
+      log.warn("loadRecentTools failed", e);
     }
   },
 
@@ -130,7 +130,7 @@ export const useToolStore = create<ToolState>((set) => ({
     try {
       await toolService.recordUsage(toolId);
     } catch (e) {
-      log.debug("recordUsage failed", e);
+      log.warn("recordUsage failed", { toolId, error: e });
     }
   },
 

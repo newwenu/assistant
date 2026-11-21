@@ -107,10 +107,14 @@ pub fn create_tray(app: &AppHandle) -> TrayIcon {
                 emit_broadcast(app, event_name::ORB_NEW_CONVERSATION, ());
             }
             "show_main" => {
-                let _ = window::show_or_create(app, WINDOW_MAIN);
+                if let Err(e) = window::show_or_create(app, WINDOW_MAIN) {
+                    log::warn!("tray show_main: show window {} failed: {e}", WINDOW_MAIN);
+                }
             }
             "show_orb" => {
-                let _ = window::show_or_create(app, WINDOW_ORB);
+                if let Err(e) = window::show_or_create(app, WINDOW_ORB) {
+                    log::warn!("tray show_orb: show window {} failed: {e}", WINDOW_ORB);
+                }
             }
             "screenshot" => {
                 // 与 Orb 右键菜单同一时序问题：点中菜单项后系统会播放关闭淡出，
@@ -124,15 +128,30 @@ pub fn create_tray(app: &AppHandle) -> TrayIcon {
                 });
             }
             "settings_general" => {
-                let _ = window::show_or_create(app, WINDOW_MAIN);
+                if let Err(e) = window::show_or_create(app, WINDOW_MAIN) {
+                    log::warn!(
+                        "tray settings_general: show window {} failed: {e}",
+                        WINDOW_MAIN
+                    );
+                }
                 emit_broadcast(app, event_name::NAVIGATE, "/settings/general");
             }
             "settings_appearance" => {
-                let _ = window::show_or_create(app, WINDOW_MAIN);
+                if let Err(e) = window::show_or_create(app, WINDOW_MAIN) {
+                    log::warn!(
+                        "tray settings_appearance: show window {} failed: {e}",
+                        WINDOW_MAIN
+                    );
+                }
                 emit_broadcast(app, event_name::NAVIGATE, "/settings/appearance");
             }
             "settings_shortcuts" => {
-                let _ = window::show_or_create(app, WINDOW_MAIN);
+                if let Err(e) = window::show_or_create(app, WINDOW_MAIN) {
+                    log::warn!(
+                        "tray settings_shortcuts: show window {} failed: {e}",
+                        WINDOW_MAIN
+                    );
+                }
                 emit_broadcast(app, event_name::NAVIGATE, "/settings/shortcuts");
             }
             "quit" => {
@@ -147,7 +166,9 @@ pub fn create_tray(app: &AppHandle) -> TrayIcon {
                 ..
             } = event
             {
-                let _ = window::show_or_create(tray.app_handle(), WINDOW_MAIN);
+                if let Err(e) = window::show_or_create(tray.app_handle(), WINDOW_MAIN) {
+                    log::warn!("tray icon click: show window {} failed: {e}", WINDOW_MAIN);
+                }
             }
         })
         .build(app)

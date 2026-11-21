@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { providerService } from "../services/providerService";
 import { createLogger } from "@/services/system/logger";
+import { translateKey } from "@/i18n";
 import {
   dispatchProviderSaved,
   dispatchProviderDeleted,
@@ -22,6 +23,7 @@ import type {
 interface ProviderState {
   providers: Provider[];
   loading: boolean;
+  providersError: string | null;
 
   loadProviders: () => Promise<void>;
   saveProvider: (provider: ProviderInput) => Promise<void>;
@@ -34,15 +36,23 @@ const log = createLogger("providerStore");
 export const useProviderStore = create<ProviderState>((set) => ({
   providers: [],
   loading: false,
+  providersError: null,
 
   loadProviders: async () => {
-    set({ loading: true });
+    set({ loading: true, providersError: null });
     try {
       const providers = await providerService.listProviders();
-      set({ providers: providers || [], loading: false });
+      set({
+        providers: providers || [],
+        loading: false,
+        providersError: null,
+      });
     } catch (e) {
       log.error("Failed to load providers", e);
-      set({ loading: false });
+      set({
+        loading: false,
+        providersError: translateKey("settings.provider.load_failed"),
+      });
     }
   },
 

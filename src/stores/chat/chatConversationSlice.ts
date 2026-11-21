@@ -15,6 +15,7 @@ import {
 import { chatService } from "../../services/chat/chatService";
 import { providerService } from "../../services/providerService";
 import { createLogger } from "@/services/system/logger";
+import { translateKey } from "@/i18n";
 import { notifyError } from "../system/notifyStore";
 import { MESSAGES_PAGE_SIZE } from "../../config/constants";
 import type { PersistQueue } from "../../utils/persistQueue";
@@ -50,6 +51,7 @@ type FullState = ChatConversationSlice & {
 
 export interface ChatConversationSlice {
   conversations: Conversation[];
+  conversationsError: string | null;
   currentConversationId: string | null;
   /** 当前会话的工作区根；空串 = 未配置（I38h §8.1，永不出现 `null`）。 */
   workspaceRoot: string;
@@ -58,6 +60,7 @@ export interface ChatConversationSlice {
   branchOperationSeq: number;
 
   loadConversations: (silent?: boolean) => Promise<void>;
+  setConversationsError: (msg: string | null) => void;
   createConversation: (
     providerId: string,
     modelId: string,
@@ -107,6 +110,7 @@ export function createConversationSlice(
 
   return {
     conversations: [],
+    conversationsError: null,
     currentConversationId: null,
     workspaceRoot: "",
     isLoadingConversations: false,
@@ -114,16 +118,24 @@ export function createConversationSlice(
     branchOperationSeq: 0,
 
     loadConversations: async (silent?: boolean) => {
-      if (!silent) set({ isLoadingConversations: true });
+      if (!silent)
+        set({ isLoadingConversations: true, conversationsError: null });
       try {
         const convs = await chatService.listConversations();
-        set({ conversations: convs });
+        set({ conversations: convs, conversationsError: null });
         await get().ensureCurrentConversation();
       } catch (e) {
         log.error("Failed to load conversations", e);
+        set({
+          conversationsError: translateKey("history.load_conversations_failed"),
+        });
       } finally {
         if (!silent) set({ isLoadingConversations: false });
       }
+    },
+
+    setConversationsError: (msg: string | null) => {
+      set({ conversationsError: msg });
     },
 
     ensureCurrentConversation: async () => {
@@ -473,7 +485,7 @@ export function createConversationSlice(
     },
 
     updateConversations: (convs: Conversation[]) => {
-      set({ conversations: convs });
+      set({ conversations: convs, conversationsError: null });
       get().syncSelectionFromConversation();
     },
   };

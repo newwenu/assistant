@@ -137,7 +137,9 @@ fn install_panic_hook(dir: Option<PathBuf>) {
 
         if let Some(dir) = dir.as_ref() {
             let log_path = dir.join(format!("panic_{}.log", ts));
-            let _ = fs::write(&log_path, &msg);
+            if let Err(e) = fs::write(&log_path, &msg) {
+                eprintln!("panic log write failed: {e}");
+            }
         }
         eprintln!("{}", msg);
     }));
@@ -151,7 +153,9 @@ fn install_crash_handler(crash_dir: &Path) {
             let dump_path = dir.join(format!("crash_{}.dmp", ts));
             let log_path = dir.join(format!("crash_{}.log", ts));
 
-            let _ = fs::write(&log_path, crash_report(context, &ts, &dump_path));
+            if let Err(e) = fs::write(&log_path, crash_report(context, &ts, &dump_path)) {
+                eprintln!("crash log write failed: {e}");
+            }
 
             match fs::File::create(&dump_path) {
                 Ok(mut file) => write_dump(context, &mut file, &dump_path),

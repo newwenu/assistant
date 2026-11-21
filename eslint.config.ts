@@ -24,6 +24,22 @@ const EXPLICIT_INDEX_MESSAGE =
 const selfBarrelMessage = (domain: string) =>
   `域内文件禁止经自身 barrel 引用（${domain}/index）：直连具体模块，避免 barrel 回环。`;
 
+const SWALLOW_MESSAGE =
+  "禁止静默吞没：至少 `log.warn`，或写明 `// best-effort:` 理由";
+
+const SWALLOW_SELECTORS: { selector: string; message: string }[] = [
+  {
+    selector:
+      "CallExpression[callee.property.name='catch'] > ArrowFunctionExpression[body.type='BlockStatement'][body.body.length=0]",
+    message: SWALLOW_MESSAGE,
+  },
+  {
+    selector:
+      "CallExpression[callee.property.name='catch'] > ArrowFunctionExpression[body.type='Literal'][body.raw='null']",
+    message: SWALLOW_MESSAGE,
+  },
+];
+
 const INDEX_FILE_GUARD: Linter.Config = {
   files: ["src/**/index.ts", "src/**/index.tsx"],
   rules: {
@@ -34,6 +50,7 @@ const INDEX_FILE_GUARD: Linter.Config = {
         selector: "ExportAllDeclaration",
         message: "barrel 禁止 export *：逐项列出导出面，避免隐式扩大公开 API。",
       },
+      ...SWALLOW_SELECTORS,
     ],
   },
 };
@@ -105,6 +122,7 @@ export default defineConfig(
       "no-restricted-syntax": [
         "error",
         { selector: EXPLICIT_INDEX_SELECTOR, message: EXPLICIT_INDEX_MESSAGE },
+        ...SWALLOW_SELECTORS,
       ],
     },
   },
@@ -118,8 +136,21 @@ export default defineConfig(
           selector: selfBarrelSelector(domain),
           message: selfBarrelMessage(domain),
         },
+        ...SWALLOW_SELECTORS,
       ],
     },
   })),
   INDEX_FILE_GUARD,
+  {
+    files: ["src/**/*.ts", "src/**/*.tsx"],
+    rules: {
+      "no-console": "error",
+    },
+  },
+  {
+    files: ["src/services/system/logger.ts"],
+    rules: {
+      "no-console": "off",
+    },
+  },
 );

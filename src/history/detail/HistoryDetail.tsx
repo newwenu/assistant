@@ -27,9 +27,11 @@ interface HistoryDetailProps {
   messages: Message[];
   totalCount: number;
   loadingMessages: boolean;
+  messagesError?: string | null;
   sidebarCollapsed: boolean;
   sidebarToggleDisabled: boolean;
   onToggleSidebar: () => void;
+  onRefreshMessages: () => void;
   onExport: (id: string, format: string) => void;
   onDeleteConversation: (id: string) => void;
   onDeleteMessage: (id: string) => void;
@@ -42,9 +44,11 @@ export const HistoryDetail: React.FC<HistoryDetailProps> = React.memo(
     messages,
     totalCount,
     loadingMessages,
+    messagesError,
     sidebarCollapsed,
     sidebarToggleDisabled,
     onToggleSidebar,
+    onRefreshMessages,
     onExport,
     onDeleteConversation,
     onDeleteMessage,
@@ -280,6 +284,13 @@ export const HistoryDetail: React.FC<HistoryDetailProps> = React.memo(
           {loadingMessages ? (
             <div className={css.loadingWrap}>
               <Spin />
+            </div>
+          ) : messagesError ? (
+            <div className={css.loadingWrap}>
+              <Typography.Text type="danger">{messagesError}</Typography.Text>
+              <Button size="small" onClick={onRefreshMessages}>
+                {t("common.actions.retry")}
+              </Button>
             </div>
           ) : messages.length === 0 ? (
             <Empty description={t("history.no_messages")} />

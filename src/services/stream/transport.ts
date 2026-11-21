@@ -172,8 +172,8 @@ export function subscribeStreamTransport(
     (event) => {
       if (!event.delta) return;
       if (import.meta.env.DEV) {
-        console.debug(
-          `[coalescer-deliver] seq=${event.seq} iteration=${event.iteration} len=${event.delta.length} snippet=${JSON.stringify(event.delta.slice(0, 40))}`,
+        log.debug(
+          `coalescer-deliver seq=${event.seq} iteration=${event.iteration} len=${event.delta.length} snippet=${JSON.stringify(event.delta.slice(0, 40))}`,
         );
       }
       handlers.onTextDelta({

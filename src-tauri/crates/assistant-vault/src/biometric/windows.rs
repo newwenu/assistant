@@ -1,7 +1,7 @@
 use crate::biometric::BiometricKeyStore;
 use assistant_crypto::error::VaultError;
 
-use log::{debug, info, warn};
+use log::{debug, info, trace, warn};
 
 use base64::Engine;
 use sha2::{Digest, Sha256};
@@ -131,7 +131,7 @@ impl BiometricKeyStore for WindowsHelloKeyStore {
             );
             map_win_error(e)
         })?;
-        debug!("Windows Hello available: {}", result);
+        trace!("Windows Hello available: {}", result);
         Ok(result)
     }
 

@@ -15,7 +15,7 @@ pub async fn vault_is_biometric_available() -> Result<bool, VaultErrorDto> {
         let key_store = get_key_store();
         match key_store.is_available() {
             Ok(available) => {
-                log::info!("Biometric availability check: {}", available);
+                log::debug!("Biometric availability check: {}", available);
                 Ok(available)
             }
             Err(e) => {

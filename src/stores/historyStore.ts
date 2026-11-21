@@ -4,6 +4,7 @@ import { chatService } from "../services/chat/chatService";
 import { useChatStore } from "./chat/chatStore";
 import type { Message } from "../chat/core/chatTypes";
 import { createLogger } from "@/services/system/logger";
+import { translateKey } from "@/i18n";
 
 const log = createLogger("historyStore");
 
@@ -12,6 +13,7 @@ interface HistoryState {
   messages: Message[];
   totalCount: number;
   loadingMessages: boolean;
+  messagesError: string | null;
   collapsedGroups: Set<string>;
   multiSelectMode: boolean;
   selectedConversationIds: Set<string>;
@@ -37,6 +39,7 @@ export const useHistoryStore = create<HistoryState>()((set, get) => ({
   messages: [],
   totalCount: 0,
   loadingMessages: false,
+  messagesError: null,
   collapsedGroups: new Set(),
   multiSelectMode: false,
   selectedConversationIds: new Set(),
@@ -44,7 +47,12 @@ export const useHistoryStore = create<HistoryState>()((set, get) => ({
   sidebarCollapsed: false,
 
   selectConversation: async (id: string) => {
-    set({ selectedId: id, loadingMessages: true, messages: [] });
+    set({
+      selectedId: id,
+      loadingMessages: true,
+      messages: [],
+      messagesError: null,
+    });
     try {
       const detail = await historyService.getConversationAllMessages(id);
       if (detail) {
@@ -55,18 +63,25 @@ export const useHistoryStore = create<HistoryState>()((set, get) => ({
       }
     } catch (e) {
       log.error("Failed to load messages", e);
+      set({ messagesError: translateKey("history.load_messages_failed") });
     } finally {
       set({ loadingMessages: false });
     }
   },
 
   clearSelection: () => {
-    set({ selectedId: null, messages: [], totalCount: 0 });
+    set({
+      selectedId: null,
+      messages: [],
+      totalCount: 0,
+      messagesError: null,
+    });
   },
 
   refreshMessages: async () => {
     const { selectedId } = get();
     if (!selectedId) return;
+    set({ messagesError: null });
     try {
       const detail =
         await historyService.getConversationAllMessages(selectedId);
@@ -78,6 +93,7 @@ export const useHistoryStore = create<HistoryState>()((set, get) => ({
       }
     } catch (e) {
       log.error("Failed to refresh messages", e);
+      set({ messagesError: translateKey("history.load_messages_failed") });
     }
   },
 
@@ -96,6 +112,11 @@ export const useHistoryStore = create<HistoryState>()((set, get) => ({
       useChatStore.getState().updateConversations(convs);
     } catch (e) {
       log.error("Failed to load conversations", e);
+      useChatStore
+        .getState()
+        .setConversationsError(
+          translateKey("history.load_conversations_failed"),
+        );
     }
   },
 

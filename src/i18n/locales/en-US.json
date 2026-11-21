@@ -90,6 +90,7 @@
       "description": "Settings page \"{{pageId}}\" was not found; it may belong to a disabled feature.",
       "back": "Back to Settings Overview"
     },
+    "load_conf_failed": "Failed to load settings; try again",
     "overview": {
       "title": "Settings Overview",
       "subtitle": "View current configuration, click to open detailed settings",
@@ -479,7 +480,6 @@
           "mutable": "Can be changed",
           "includes_derived": "Includes cache that can be regenerated",
           "counts_self_logs": "Includes logs from this app",
-          "availability_reason": "Status detail",
           "note": "Additional note"
         },
         "layer": {
@@ -791,10 +791,11 @@
       }
     },
     "provider": {
-      "title": "AI Provider Settings",
-      "add": "Add Provider",
-      "add_title": "Add Provider",
+      "title": "AI Provider settings",
+      "add": "Add provider",
+      "add_title": "Add provider",
       "empty": "No providers configured",
+      "load_failed": "Failed to load providers; try again",
       "connect": "Connect",
       "edit_title": "Edit {{name}}",
       "connect_title": "Connect {{name}}",
@@ -1314,6 +1315,8 @@
     "rename_failed": "Rename failed",
     "export_success": "Saved to file",
     "export_failed": "Export failed",
+    "load_messages_failed": "Failed to load messages; try again",
+    "load_conversations_failed": "Failed to load conversations; try again",
     "operation_failed": "Operation failed",
     "duplicated": "Duplicated",
     "duplicate_failed": "Duplicate failed",
@@ -1597,7 +1600,7 @@
     "description": "Securely store and manage passwords, credentials and keys",
     "error": {
       "locked": "The vault is locked; unlock it first",
-      "invalidPassword": "Incorrect master password",
+      "invalidPassword": "Incorrect password, or the vault data is corrupted",
       "notInitialized": "The vault is not initialized",
       "alreadyExists": "The vault already exists",
       "rateLimited": "Too many attempts; try again later",
@@ -1632,6 +1635,10 @@
       "vaultDekVersionBehind": "The local data key version is newer than the remote; push first",
       "repositoryContainsForbiddenFile": "The repository contains files that are not allowed; please check its contents",
       "historyDekUnavailable": "The data key for this revision is unavailable; it cannot be decrypted",
+      "database": "Local database access failed",
+      "io": "File read/write failed",
+      "clipboard": "Clipboard operation failed",
+      "alreadyUnlocked": "The vault is already unlocked",
       "internal": "Internal error"
     },
     "versionTooNew": {

@@ -1,4 +1,4 @@
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 
 use super::branch::find_branch_leaf;
 use super::msg_ops::get_message_by_id;
@@ -110,22 +110,26 @@ pub fn delete_subtree(conn: &Connection, id: &str) -> Result<(), String> {
                 params![conv_id],
                 |row| row.get(0),
             )
-            .ok()
+            .optional()
+            .map_err(|e| e.to_string())?
             .flatten();
 
-        let needs_fix = current_ab.as_ref().is_none_or(|ab| {
-            let still_exists: bool = tx
-                .query_row(
-                    "SELECT EXISTS(SELECT 1 FROM messages WHERE id = ?1 AND conversation_id = ?2)",
-                    params![ab, conv_id],
-                    |row| row.get(0),
-                )
-                .unwrap_or(false);
-            !still_exists
-        });
+        let needs_fix = match current_ab.as_ref() {
+            None => true,
+            Some(ab) => {
+                let still_exists: bool = tx
+                    .query_row(
+                        "SELECT EXISTS(SELECT 1 FROM messages WHERE id = ?1 AND conversation_id = ?2)",
+                        params![ab, conv_id],
+                        |row| row.get(0),
+                    )
+                    .map_err(|e| e.to_string())?;
+                !still_exists
+            }
+        };
 
         if needs_fix {
-            let new_leaf = find_new_active_leaf(&tx, conv_id, parent_id.as_deref());
+            let new_leaf = find_new_active_leaf(&tx, conv_id, parent_id.as_deref())?;
 
             let now = chrono::Utc::now().timestamp_millis();
             tx.execute(
@@ -151,7 +155,7 @@ fn find_new_active_leaf(
     conn: &Connection,
     conv_id: &str,
     deleted_parent_id: Option<&str>,
-) -> Option<String> {
+) -> Result<Option<String>, String> {
     if let Some(pid) = deleted_parent_id {
         let sibling_exists: bool = conn
             .query_row(
@@ -159,7 +163,7 @@ fn find_new_active_leaf(
                 params![conv_id, pid],
                 |row| row.get(0),
             )
-            .unwrap_or(false);
+            .map_err(|e| e.to_string())?;
 
         if sibling_exists {
             let sibling_id: Option<String> = conn
@@ -168,11 +172,10 @@ fn find_new_active_leaf(
                     params![conv_id, pid],
                     |row| row.get(0),
                 )
-                .ok()
-                .flatten();
+                .map_err(|e| e.to_string())?;
 
             if let Some(sid) = sibling_id {
-                return find_branch_leaf(conn, &sid).ok();
+                return find_branch_leaf(conn, &sid).map(Some);
             }
         }
     }
@@ -183,11 +186,10 @@ fn find_new_active_leaf(
             params![conv_id],
             |row| row.get(0),
         )
-        .ok()
-        .flatten();
+        .map_err(|e| e.to_string())?;
 
     match any_msg {
-        Some(mid) => find_branch_leaf(conn, &mid).ok(),
-        None => None,
+        Some(mid) => find_branch_leaf(conn, &mid).map(Some),
+        None => Ok(None),
     }
 }

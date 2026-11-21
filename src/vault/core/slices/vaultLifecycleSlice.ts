@@ -269,7 +269,7 @@ export function createLifecycleSlice(
         autoLockTimer = null;
         void get()
           .lock("autoLock")
-          .catch(() => {});
+          .catch((e: unknown) => log.warn("autoLock failed", e));
       }, deadline - now);
       set({ autoLockDeadline: deadline });
     },

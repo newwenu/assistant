@@ -21,6 +21,7 @@ import {
 } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import { useVaultShallow } from "../core/vaultStore";
+import { createLogger } from "@/services/system/logger";
 import type { SshKeyMeta, VaultErrorCode } from "../core/vault.types";
 import { vaultCategoryIcon } from "../core/display/vaultCategory";
 import { VAULT_TONES } from "../core/display/vaultColors";
@@ -28,6 +29,8 @@ import TotpDisplay from "./TotpDisplay";
 import RevealFieldButton from "./RevealFieldButton";
 import VaultEntryHistory from "./VaultEntryHistory";
 import styles from "../vault.module.css";
+
+const log = createLogger("vaultEntry");
 
 interface VaultEntryDetailProps {
   entryId: string;
@@ -117,9 +120,13 @@ export default function VaultEntryDetail({
       return;
     }
     let cancelled = false;
-    void sshKeyMeta(entryId).then((meta) => {
-      if (!cancelled) setSshMeta(meta);
-    });
+    void sshKeyMeta(entryId)
+      .then((meta) => {
+        if (!cancelled) setSshMeta(meta);
+      })
+      .catch((e: unknown) => {
+        log.warn("sshKeyMeta failed", { entryId, error: e });
+      });
     void sshListAgent();
     return () => {
       cancelled = true;

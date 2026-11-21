@@ -92,12 +92,17 @@ export const ConversationView: React.FC<ConversationViewProps> = ({
   const { handlePaste, handleFileSelect } = useAttachmentIntake();
 
   useEffect(() => {
-    void prefetchAttachmentLimits().catch(() => {});
+    void prefetchAttachmentLimits().catch((e: unknown) =>
+      log.debug("prefetchAttachmentLimits failed", e),
+    );
     void useProviderStore
       .getState()
       .loadProviders()
       .then(() => useChatStore.getState().loadConversations())
-      .catch(() => useChatStore.getState().loadConversations());
+      .catch((e: unknown) => {
+        log.warn("loadProviders failed, fallback to conversations", e);
+        void useChatStore.getState().loadConversations();
+      });
   }, []);
 
   useEffect(() => {

@@ -184,11 +184,15 @@ fn capture_screenshot_action(app: &tauri::AppHandle) {
 }
 
 fn toggle_orb_action(app: &tauri::AppHandle) {
-    let _ = crate::window::toggle(app, WINDOW_ORB);
+    if let Err(e) = crate::window::toggle(app, WINDOW_ORB) {
+        log::warn!("toggle orb window failed: {e}");
+    }
 }
 
 fn toggle_main_action(app: &tauri::AppHandle) {
-    let _ = crate::window::toggle(app, WINDOW_MAIN);
+    if let Err(e) = crate::window::toggle(app, WINDOW_MAIN) {
+        log::warn!("toggle main window failed: {e}");
+    }
 }
 
 fn new_chat_action(app: &tauri::AppHandle) {
@@ -227,7 +231,9 @@ pub fn register_global_shortcuts(handle: &tauri::AppHandle) {
     }
 
     let gs = handle.global_shortcut();
-    let _ = gs.unregister_all();
+    if let Err(e) = gs.unregister_all() {
+        log::warn!("unregister global shortcuts failed: {e}");
+    }
 
     for item in resolved {
         let action = item.action;
@@ -271,9 +277,15 @@ fn position_orb_window(handle: &tauri::AppHandle) {
                 ORB_CHROME_INSET,
                 ORB_HITBOX_SIZE,
             ) {
-                let _ = window.set_position(tauri::PhysicalPosition::new(snapped.x, snapped.y));
+                if let Err(e) =
+                    window.set_position(tauri::PhysicalPosition::new(snapped.x, snapped.y))
+                {
+                    log::warn!("position orb window (saved) failed: {e}");
+                }
             } else {
-                let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
+                if let Err(e) = window.set_position(tauri::PhysicalPosition::new(x, y)) {
+                    log::warn!("position orb window (saved fallback) failed: {e}");
+                }
             }
             return;
         }
@@ -285,7 +297,9 @@ fn position_orb_window(handle: &tauri::AppHandle) {
     };
     let edge_margin = 20;
     let (x, y) = placement::anchor_bottom_right(&area, collapsed_phys, edge_margin);
-    let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
+    if let Err(e) = window.set_position(tauri::PhysicalPosition::new(x, y)) {
+        log::warn!("position orb window (default) failed: {e}");
+    }
 }
 
 /// 两个窗口在 `tauri.conf.json` 中均为 `visible: false`：
@@ -330,11 +344,15 @@ fn spawn_screen_inspection(handle: tauri::AppHandle) {
         ) else {
             continue;
         };
-        let _ = window.set_position(tauri::PhysicalPosition::new(snapped.x, snapped.y));
+        if let Err(e) = window.set_position(tauri::PhysicalPosition::new(snapped.x, snapped.y)) {
+            log::warn!("inspection: reposition orb window failed: {e}");
+        }
         if let Ok(mut conf) = OrbConf::load() {
             conf.position_x = Some(snapped.x);
             conf.position_y = Some(snapped.y);
-            let _ = conf.save();
+            if let Err(e) = conf.save() {
+                log::warn!("inspection: save orb position failed: {e}");
+            }
         }
     });
 }

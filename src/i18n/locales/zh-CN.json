@@ -90,6 +90,7 @@
       "description": "找不到设置页面【{{pageId}}】，它可能属于未启用的特性。",
       "back": "返回设置总览"
     },
+    "load_conf_failed": "设置加载失败，请重试",
     "overview": {
       "title": "设置总览",
       "subtitle": "查看当前配置状态，点击进入详细设置",
@@ -458,7 +459,6 @@
           "mutable": "可手动修改",
           "includes_derived": "包含可重新生成的缓存",
           "counts_self_logs": "包含当前程序的日志",
-          "availability_reason": "状态说明",
           "note": "补充说明"
         },
         "layer": {
@@ -771,6 +771,7 @@
       "add": "添加 Provider",
       "add_title": "添加 Provider",
       "empty": "尚未配置 Provider",
+      "load_failed": "加载 Provider 列表失败，请重试",
       "connect": "连接",
       "edit_title": "编辑 {{name}}",
       "connect_title": "连接 {{name}}",
@@ -1287,6 +1288,8 @@
     "rename_failed": "重命名失败",
     "export_success": "已保存到文件",
     "export_failed": "导出失败",
+    "load_messages_failed": "加载消息失败，请重试",
+    "load_conversations_failed": "加载对话列表失败，请重试",
     "operation_failed": "操作失败",
     "duplicated": "已复制",
     "duplicate_failed": "复制失败",
@@ -1570,7 +1573,7 @@
     "description": "安全存储和管理密码、凭证与密钥",
     "error": {
       "locked": "保险库已锁定，请先解锁",
-      "invalidPassword": "主密码不正确",
+      "invalidPassword": "密码错误，或保险库数据已损坏",
       "notInitialized": "保险库尚未初始化",
       "alreadyExists": "保险库已存在",
       "rateLimited": "尝试次数过多，请稍后再试",
@@ -1605,6 +1608,10 @@
       "vaultDekVersionBehind": "本机数据密钥版本高于远端，请先执行推送",
       "repositoryContainsForbiddenFile": "仓库包含不允许的文件，请检查仓库内容",
       "historyDekUnavailable": "缺少该历史版本的数据密钥，无法解密",
+      "database": "本机数据库访问失败",
+      "io": "文件读写失败",
+      "clipboard": "剪贴板操作失败",
+      "alreadyUnlocked": "保险库已处于解锁状态",
       "internal": "内部错误"
     },
     "versionTooNew": {

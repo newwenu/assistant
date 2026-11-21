@@ -148,7 +148,7 @@ fn restore_keys_from_plaintext(
     )?;
 
     let writer = state.audit_writer();
-    let _ = state.with_conn(|conn| {
+    if let Err(e) = state.with_conn(|conn| {
         log_dual(
             Some(conn),
             Some(&writer),
@@ -156,7 +156,9 @@ fn restore_keys_from_plaintext(
             None,
         );
         Ok(())
-    });
+    }) {
+        log::warn!("audit log_dual failed: {e}");
+    }
 
     Ok(())
 }
@@ -192,6 +194,7 @@ impl SecurityDbState {
 
         #[cfg(not(target_os = "windows"))]
         let enroll_result = {
+            // best-effort: 非 Windows 平台没有凭据回调，显式忽略该参数
             let _ = on_credential_ensured;
             self.enroll_separated(key_store, &payload)
         };
@@ -288,6 +291,7 @@ impl SecurityDbState {
         {
             if !key_store.has_key(KEY_ID_PAYLOAD)? {
                 if key_store.has_key(KEY_ID_FINGERPRINT)? {
+                    // best-effort: 清理不一致的残留指纹，删除失败不改变本次一致性判定
                     let _ = key_store.delete_key(KEY_ID_FINGERPRINT);
                 }
                 return Err(VaultError::BiometricReset);
@@ -299,6 +303,7 @@ impl SecurityDbState {
             let has_wrapping = key_store.has_key(KEY_ID_WRAPPING_KEY)?;
             let has_payload = key_store.has_key(KEY_ID_PAYLOAD)?;
             if !has_wrapping || !has_payload {
+                // best-effort: 清理不一致的残留密钥，删除失败不改变本次一致性判定
                 let _ = key_store.delete_key(KEY_ID_WRAPPING_KEY);
                 let _ = key_store.delete_key(KEY_ID_PAYLOAD);
                 let _ = key_store.delete_key(KEY_ID_FINGERPRINT);

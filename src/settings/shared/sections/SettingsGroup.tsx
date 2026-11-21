@@ -1,8 +1,9 @@
 import { useEffect, useRef } from "react";
-import { Form } from "antd";
+import { Alert, Button, Form } from "antd";
 import { useSearchParams, useLocation } from "react-router-dom";
 import { translateKey } from "@/i18n";
 import { createLogger } from "@/services/system/logger";
+import { useSettingsStore } from "@/stores/settingsStore";
 import type { SettingDefinition } from "../../core/field/fieldRegistry";
 import type { ConfGroup } from "../../core/types/confRegistry";
 import {
@@ -49,6 +50,7 @@ export const SettingsGroup: React.FC<SettingsGroupProps> = ({
 }) => {
   const defs = definitions ?? getDefinitionsByGroup(group);
   const conf = toConfRecord(useConfGroup(group));
+  const confError = useSettingsStore((s) => s.confErrors[group]);
   const { onPatch: internalOnPatch, onPatchComplete: internalOnPatchComplete } =
     useConfPatchHandlers(group);
   const onPatch = externalOnPatch ?? internalOnPatch;
@@ -99,7 +101,24 @@ export const SettingsGroup: React.FC<SettingsGroupProps> = ({
     return () => clearTimeout(timer);
   }, [focusKey, location.pathname, location.search]);
 
-  if (!conf) return null;
+  if (!conf) {
+    if (!confError) return null;
+    return (
+      <Alert
+        type="error"
+        showIcon
+        title={confError}
+        action={
+          <Button
+            size="small"
+            onClick={() => void useSettingsStore.getState().loadConf(group)}
+          >
+            {translateKey("common.actions.retry")}
+          </Button>
+        }
+      />
+    );
+  }
 
   const visibleDefs = defs.filter((d) => !d.visible || d.visible(conf));
 
@@ -117,6 +136,8 @@ export const SettingsGroup: React.FC<SettingsGroupProps> = ({
       }
     } catch (e) {
       log.error(`patch failed for ${def.key}`, e);
+      msg.showFailed(e);
+      await useSettingsStore.getState().loadConf(group);
     }
   };
 
@@ -137,6 +158,8 @@ export const SettingsGroup: React.FC<SettingsGroupProps> = ({
       }
     } catch (e) {
       log.error(`patch failed for ${def.key}`, e);
+      msg.showFailed(e);
+      await useSettingsStore.getState().loadConf(group);
     }
   };
 

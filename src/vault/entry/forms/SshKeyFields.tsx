@@ -33,9 +33,14 @@ export default function SshKeyFields({
       setParseFailed(false);
       return;
     }
-    const result = await sshParseKey(value);
-    setMeta(result);
-    setParseFailed(!result);
+    try {
+      const result = await sshParseKey(value);
+      setMeta(result);
+      setParseFailed(false);
+    } catch {
+      setMeta(null);
+      setParseFailed(true);
+    }
   };
 
   return (

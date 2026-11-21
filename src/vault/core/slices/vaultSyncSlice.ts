@@ -61,8 +61,8 @@ export interface VaultSyncSlice {
   sshListAgent: () => Promise<void>;
   sshAutoAddAll: () => Promise<string[]>;
   sshCheckAgentRunning: () => Promise<void>;
-  sshParseKey: (privateKey: string) => Promise<SshKeyMeta | null>;
-  sshKeyMeta: (id: string) => Promise<SshKeyMeta | null>;
+  sshParseKey: (privateKey: string) => Promise<SshKeyMeta>;
+  sshKeyMeta: (id: string) => Promise<SshKeyMeta>;
 }
 
 type FullState = VaultSyncSlice & {
@@ -212,6 +212,7 @@ export function createSyncSlice(
         set({ syncConfig: config });
       } catch (e) {
         log.error("loadSyncConfig failed", e);
+        failWith(e);
       }
     },
 
@@ -236,6 +237,7 @@ export function createSyncSlice(
       } catch (e) {
         log.error("loadRemoteStatus failed", e);
         set({ remoteStatus: null });
+        failWith(e);
       } finally {
         set({ remoteChecking: false });
       }
@@ -252,6 +254,7 @@ export function createSyncSlice(
         }
       } catch (e) {
         log.error("loadSyncReadyness failed", e);
+        failWith(e);
       }
     },
 
@@ -262,6 +265,7 @@ export function createSyncSlice(
       } catch (e) {
         log.error("loadSyncConflicts failed", e);
         set({ syncConflicts: [] });
+        failWith(e);
       }
     },
 
@@ -271,6 +275,7 @@ export function createSyncSlice(
         set({ pendingRemovals });
       } catch (e) {
         log.error("loadPendingRemovals failed", e);
+        failWith(e);
       }
     },
 
@@ -280,6 +285,7 @@ export function createSyncSlice(
         set({ syncLastAt });
       } catch (e) {
         log.error("loadSyncLastTime failed", e);
+        failWith(e);
       }
     },
 
@@ -514,7 +520,7 @@ export function createSyncSlice(
         return await vaultService.sshParseKey(privateKey);
       } catch (e) {
         log.error("sshParseKey failed", e);
-        return null;
+        throw e;
       }
     },
 
@@ -523,7 +529,7 @@ export function createSyncSlice(
         return await vaultService.sshKeyMeta(id);
       } catch (e) {
         log.error("sshKeyMeta failed", e);
-        return null;
+        throw e;
       }
     },
   };

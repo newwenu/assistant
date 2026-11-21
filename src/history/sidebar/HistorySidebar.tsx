@@ -1,6 +1,6 @@
 import React, { useCallback, useMemo, useRef, useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import { Empty, Spin } from "antd";
+import { Button, Empty, Spin } from "antd";
 import { RightOutlined, DownOutlined } from "@ant-design/icons";
 import type { Conversation } from "../../chat/core/chatTypes";
 import {
@@ -17,6 +17,7 @@ import css from "./HistorySidebar.module.css";
 
 interface HistorySidebarProps {
   conversations: Conversation[];
+  conversationsError?: string | null;
   isLoadingConversations: boolean;
   selectedId: string | null;
   searchQuery: string;
@@ -47,6 +48,7 @@ interface HistorySidebarProps {
 export const HistorySidebar: React.FC<HistorySidebarProps> = React.memo(
   ({
     conversations,
+    conversationsError,
     isLoadingConversations,
     selectedId,
     searchQuery,
@@ -273,6 +275,15 @@ export const HistorySidebar: React.FC<HistorySidebarProps> = React.memo(
                 displayConvs.map((conv, i) => renderItem(conv, i))
               )}
             </>
+          ) : conversationsError ? (
+            <Empty
+              description={conversationsError}
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+            >
+              <Button size="small" onClick={onRefresh}>
+                {t("common.actions.retry")}
+              </Button>
+            </Empty>
           ) : groups.length === 0 ? (
             <Empty
               description={t("history.no_conversations")}

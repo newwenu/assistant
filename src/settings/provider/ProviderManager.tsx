@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Button, Typography, Modal, Dropdown } from "antd";
+import { Alert, Button, Typography, Modal, Dropdown } from "antd";
 import { EditOutlined, DeleteOutlined, MoreOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import { translateKey } from "@/i18n";
@@ -174,11 +174,25 @@ export const ProviderManager: React.FC = () => {
           />
         }
       >
-        <EntityListContent
-          items={providerStore.providers}
-          sections={sections}
-          emptyDescription={t("settings.provider.empty")}
-        />
+        {providerStore.providers.length === 0 &&
+        providerStore.providersError ? (
+          <Alert
+            type="error"
+            showIcon
+            title={providerStore.providersError}
+            action={
+              <Button size="small" onClick={() => void loadProviders()}>
+                {t("common.actions.retry")}
+              </Button>
+            }
+          />
+        ) : (
+          <EntityListContent
+            items={providerStore.providers}
+            sections={sections}
+            emptyDescription={t("settings.provider.empty")}
+          />
+        )}
 
         <AddProviderDialog
           open={addDialogOpen}

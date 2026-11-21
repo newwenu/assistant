@@ -5,6 +5,9 @@ import type {
   TokenUsageSummary,
 } from "./chatTypes";
 import { chatService } from "@/services/chat/chatService";
+import { createLogger } from "@/services/system/logger";
+
+const log = createLogger("chatUtils");
 
 export interface FetchTokenUsageDeps {
   isActiveConv: (convId: string) => boolean;
@@ -63,7 +66,9 @@ export function fetchTokenUsage(convId: string, deps: FetchTokenUsageDeps) {
       if (!deps.isActiveConv(convId)) return;
       deps.setContextUsage(contextUsageFromSummary(summary));
     })
-    .catch(() => {});
+    .catch((e: unknown) =>
+      log.warn("fetchTokenUsage failed", { convId, error: e }),
+    );
 }
 
 export function mergeStreamingContent(

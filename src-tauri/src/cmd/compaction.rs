@@ -388,6 +388,7 @@ fn save_compaction_partial(
 ) {
     let state = app.state::<crate::setup::DbState>();
     let Ok(conn) = super::get_db_conn(&state) else {
+        log::error!("compaction: get_db_conn failed, msg_id={}", msg_id);
         return;
     };
     // 失败也落 usage：累计口径包含中断请求
@@ -400,5 +401,13 @@ fn save_compaction_partial(
         return;
     }
     // 摘要消息的 tokens 保持 NULL：压缩产出的 usage 只进累计口径，不写估算值
-    let _ = conversations::update_message_content(&conn, msg_id, &partial.full_content, None, None);
+    if let Err(e) =
+        conversations::update_message_content(&conn, msg_id, &partial.full_content, None, None)
+    {
+        log::error!(
+            "compaction persist failed: msg_id={} len={}: {e}",
+            msg_id,
+            partial.full_content.len()
+        );
+    }
 }

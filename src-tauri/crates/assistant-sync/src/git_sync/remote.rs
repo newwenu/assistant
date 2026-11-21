@@ -135,7 +135,9 @@ impl GitSync {
 
         let branch = git::git_current_branch(&self.repo_path);
         if let Ok(ref branch) = branch {
-            let _ = git::git_config_branch_set_remote(&self.repo_path, branch, remote);
+            git::git_config_branch_set_remote(&self.repo_path, branch, remote).map_err(|e| {
+                SyncError::GitCli(format!("set remote for branch {} failed: {}", branch, e))
+            })?;
         }
 
         Ok(())

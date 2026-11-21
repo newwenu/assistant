@@ -137,7 +137,12 @@ impl TurnRunner {
             .await;
 
         if let Err(err) = persister.persist_terminal(&outcome).await {
-            log::error!("terminal persist failed: {err}");
+            log::error!(
+                "terminal persist failed: conv={} turn={} msg={}: {err}",
+                conversation_id,
+                ctx.turn_id,
+                ctx.message_id
+            );
             outcome.status = TurnStatus::Failed;
             outcome
                 .error

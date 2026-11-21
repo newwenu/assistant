@@ -207,13 +207,20 @@ pub fn get_or_error(app: &AppHandle, label: &str) -> Result<tauri::WebviewWindow
 pub fn destroy_all(app: &AppHandle, labels: &[&str]) {
     for label in labels {
         if let Some(w) = app.get_webview_window(label) {
-            let _ = w.destroy();
+            if let Err(e) = w.destroy() {
+                log::warn!("destroy window {} failed: {e}", label);
+            }
         }
     }
 }
 
 pub fn show_or_create_main(app: &AppHandle) {
-    let _ = show_or_create(app, WINDOW_MAIN);
+    if let Err(e) = show_or_create(app, WINDOW_MAIN) {
+        log::warn!(
+            "show_or_create_main: show window {} failed: {e}",
+            WINDOW_MAIN
+        );
+    }
 }
 
 fn logical_scale(window: &tauri::WebviewWindow) -> Result<f64, String> {
@@ -565,18 +572,24 @@ pub fn on_window_event(window: &tauri::Window, event: &tauri::WindowEvent) {
                 api.prevent_close();
                 let app = window.app_handle().clone();
                 tauri::async_runtime::spawn(async move {
-                    let _ = crate::screenshot::cancel_active(&app).await;
+                    if let Err(e) = crate::screenshot::cancel_active(&app).await {
+                        log::warn!("cancel_active on orb close failed: {e}");
+                    }
                 });
                 return;
             }
             if window.label() == WINDOW_MAIN {
-                let _ = persist_main_geometry(window.app_handle());
+                if let Err(e) = persist_main_geometry(window.app_handle()) {
+                    log::warn!("persist_main_geometry failed: {e}");
+                }
                 let close_to_tray = assistant_config::app_conf::AppConf::load()
                     .map(|c| c.close_to_tray)
                     .unwrap_or(true);
                 if close_to_tray {
                     api.prevent_close();
-                    let _ = window.hide();
+                    if let Err(e) = window.hide() {
+                        log::warn!("hide main window failed: {e}");
+                    }
                 }
             }
         }
@@ -585,7 +598,9 @@ pub fn on_window_event(window: &tauri::Window, event: &tauri::WindowEvent) {
                 return;
             }
             use tauri::Emitter;
-            let _ = window.emit(event_name::ORB_BLUR, ());
+            if let Err(e) = window.emit(event_name::ORB_BLUR, ()) {
+                log::warn!("emit {} failed: {e}", event_name::ORB_BLUR);
+            }
         }
         _ => {}
     }

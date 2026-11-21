@@ -8,12 +8,16 @@ use crate::vision::{input_modalities_for, resolve_support_vision};
 
 fn extract_model_configs(body: &ModelsResponse) -> Vec<ModelConfig> {
     let mut configs = Vec::new();
+    let mut skipped = 0usize;
 
     if let Some(data) = &body.data {
         for m in data {
             let id = match m.resolved_id() {
                 Some(id) => id,
-                None => continue,
+                None => {
+                    skipped += 1;
+                    continue;
+                }
             };
             let ctx = resolve_context_window(&id, None, m.resolved_context_window());
             let name = {
@@ -46,7 +50,11 @@ fn extract_model_configs(body: &ModelsResponse) -> Vec<ModelConfig> {
             for (key, value) in models_map {
                 let m: ModelItem = match serde_json::from_value(value.clone()) {
                     Ok(m) => m,
-                    Err(_) => continue,
+                    Err(e) => {
+                        skipped += 1;
+                        log::debug!("openai discovery skip entry {}: {e}", key);
+                        continue;
+                    }
                 };
                 let id = m.resolved_id().unwrap_or_else(|| key.clone());
                 let ctx = resolve_context_window(&id, None, m.resolved_context_window());
@@ -76,6 +84,9 @@ fn extract_model_configs(body: &ModelsResponse) -> Vec<ModelConfig> {
         }
     }
 
+    if skipped > 0 {
+        log::warn!("openai discovery skipped {} entries", skipped);
+    }
     configs
 }
 

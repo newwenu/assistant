@@ -224,7 +224,11 @@ export function createStatePort(
       useChatStreamStore.getState().cancelStreaming();
 
       if (convId) {
-        chatService.incrementGeneration(convId).catch(() => {});
+        chatService
+          .incrementGeneration(convId)
+          .catch((e: unknown) =>
+            log.warn("incrementGeneration failed", { convId, error: e }),
+          );
       }
 
       if (convId && !usage) {

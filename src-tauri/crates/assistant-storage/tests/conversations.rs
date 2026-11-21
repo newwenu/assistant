@@ -1351,3 +1351,66 @@ fn fill_keeps_topology_and_closes_placeholder() {
         Some("p2".to_string())
     );
 }
+
+#[test]
+fn delete_subtree_moves_active_branch_to_remaining_leaf() {
+    let conn = init_db();
+    conversations::insert_conversation(&conn, &conv("c1")).unwrap();
+    conversations::insert_message(&conn, &msg("u1", "c1", "user", "q", 100)).unwrap();
+    conversations::insert_message(
+        &conn,
+        &msg_with_parent("a1", "c1", "assistant", "a", 200, Some("u1"), 0),
+    )
+    .unwrap();
+    conversations::insert_message(
+        &conn,
+        &msg_with_parent("b1", "c1", "assistant", "b", 300, Some("a1"), 0),
+    )
+    .unwrap();
+    conversations::update_active_branch_id(&conn, "c1", "b1").unwrap();
+
+    conversations::delete_subtree(&conn, "b1").unwrap();
+
+    let updated = conversations::get_conversation_by_id(&conn, "c1")
+        .unwrap()
+        .expect("conversation survives subtree deletion");
+    assert_eq!(
+        updated.active_branch_id.as_deref(),
+        Some("a1"),
+        "删除活跃分支后应回落到剩余叶子，而不是清空"
+    );
+}
+
+#[test]
+fn delete_subtree_propagates_query_failure_instead_of_clearing_branch() {
+    let conn = init_db();
+    conversations::insert_conversation(&conn, &conv("c1")).unwrap();
+    conversations::insert_message(&conn, &msg("u1", "c1", "user", "q", 100)).unwrap();
+    conversations::insert_message(
+        &conn,
+        &msg_with_parent("a1", "c1", "assistant", "a", 200, Some("u1"), 0),
+    )
+    .unwrap();
+    conversations::update_active_branch_id(&conn, "c1", "a1").unwrap();
+
+    conn.execute(
+        "ALTER TABLE messages RENAME COLUMN sibling_index TO sibling_index_broken",
+        [],
+    )
+    .unwrap();
+
+    let err = conversations::delete_subtree(&conn, "a1").unwrap_err();
+    assert!(
+        err.contains("sibling_index"),
+        "查询失败必须向上传播，实际: {err}"
+    );
+
+    let updated = conversations::get_conversation_by_id(&conn, "c1")
+        .unwrap()
+        .expect("conversation survives failed deletion");
+    assert_eq!(
+        updated.active_branch_id.as_deref(),
+        Some("a1"),
+        "查询失败不得被当成「分支不存在」而清空 active_branch_id"
+    );
+}

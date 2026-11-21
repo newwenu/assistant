@@ -116,17 +116,25 @@ pub fn snap_orb_to_screen(app: AppHandle) -> Result<(), String> {
         ORB_CHROME_INSET,
         ORB_HITBOX_SIZE,
     ) else {
-        let _ = save_orb_position_sync(&app);
+        if let Err(e) = save_orb_position_sync(&app) {
+            log::warn!("save orb position (off-screen) failed: {e}");
+        }
         return Ok(());
     };
 
     if target.x == pos.x && target.y == pos.y {
-        let _ = save_orb_position_sync(&app);
+        if let Err(e) = save_orb_position_sync(&app) {
+            log::warn!("save orb position (unchanged) failed: {e}");
+        }
         return Ok(());
     }
 
-    let _ = window.set_position(PhysicalPosition::new(target.x, target.y));
-    let _ = save_orb_position_sync(&app);
+    if let Err(e) = window.set_position(PhysicalPosition::new(target.x, target.y)) {
+        log::warn!("set orb position failed: {e}");
+    }
+    if let Err(e) = save_orb_position_sync(&app) {
+        log::warn!("save orb position failed: {e}");
+    }
     Ok(())
 }
 
@@ -158,7 +166,9 @@ pub fn snap_orb_to_edge(app: AppHandle) -> Result<(), String> {
     let target = placement::snap_orb_to_edge(&screens, bounds, WINDOW_EDGE_BUFFER as i32, border_x);
 
     if target.x == bounds.x && target.y == bounds.y {
-        let _ = save_orb_position_sync(&app);
+        if let Err(e) = save_orb_position_sync(&app) {
+            log::warn!("snap_orb_to_edge: save orb position (unchanged) failed: {e}");
+        }
         return Ok(());
     }
 
@@ -174,6 +184,7 @@ pub fn snap_orb_to_edge(app: AppHandle) -> Result<(), String> {
     std::thread::spawn(move || {
         let start = Instant::now();
         let mut cancelled = false;
+        let mut position_error: Option<String> = None;
         loop {
             if ORB_SNAP_CANCEL.load(Ordering::Acquire) {
                 cancelled = true;
@@ -182,7 +193,9 @@ pub fn snap_orb_to_edge(app: AppHandle) -> Result<(), String> {
             std::thread::sleep(step);
             let elapsed = start.elapsed();
             if elapsed >= duration {
-                let _ = window.set_position(PhysicalPosition::new(target.x, target.y));
+                if let Err(e) = window.set_position(PhysicalPosition::new(target.x, target.y)) {
+                    position_error = Some(e.to_string());
+                }
                 break;
             }
             let dur_secs = duration.as_secs_f64();
@@ -194,14 +207,21 @@ pub fn snap_orb_to_edge(app: AppHandle) -> Result<(), String> {
             let t = 1.0 - (1.0 - t).powi(3);
             let x = (start_x + (end_x - start_x) * t).round() as i32;
             let y = (start_y + (end_y - start_y) * t).round() as i32;
-            let _ = window.set_position(PhysicalPosition::new(x, y));
+            if let Err(e) = window.set_position(PhysicalPosition::new(x, y)) {
+                position_error = Some(e.to_string());
+            }
+        }
+        if let Some(e) = position_error {
+            log::warn!("snap_orb_to_edge: set position failed: {e}");
         }
         if !cancelled && !crate::screenshot::is_active() {
             if let Ok(pos) = window.outer_position() {
                 if let Ok(mut conf) = OrbConf::load() {
                     conf.position_x = Some(pos.x);
                     conf.position_y = Some(pos.y);
-                    let _ = conf.save();
+                    if let Err(e) = conf.save() {
+                        log::warn!("snap_orb_to_edge: save orb position failed: {e}");
+                    }
                 }
             }
         }

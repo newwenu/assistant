@@ -80,18 +80,23 @@ export interface Logger {
   error: (msg: string, data?: unknown) => void;
 }
 
+function consoleSink(level: LogLevel): (message: string) => void {
+  switch (level) {
+    case LogLevel.ERROR:
+      return console.error.bind(console);
+    case LogLevel.WARN:
+      return console.warn.bind(console);
+    case LogLevel.INFO:
+      return console.info.bind(console);
+    case LogLevel.DEBUG:
+      return console.debug.bind(console);
+    default:
+      return console.log.bind(console);
+  }
+}
+
 function createLogMethod(level: LogLevel, context: string) {
   const prefix = `[${context}]`;
-  const consoleFn =
-    level === LogLevel.ERROR
-      ? console.error
-      : level === LogLevel.WARN
-        ? console.warn
-        : level === LogLevel.INFO
-          ? console.info
-          : level === LogLevel.DEBUG
-            ? console.debug
-            : console.log;
 
   return (msg: string, data?: unknown): void => {
     if (level < currentLevel) return;
@@ -99,7 +104,7 @@ function createLogMethod(level: LogLevel, context: string) {
     const dataStr = data !== undefined ? ` ${formatData(data)}` : "";
     const fullMessage = `${prefix} ${msg}${dataStr}`;
 
-    consoleFn(fullMessage);
+    consoleSink(level)(fullMessage);
     if (level >= consoleForwardMinLevel) {
       void writeTauri(level, fullMessage);
     }

@@ -44,7 +44,7 @@ pub fn warm_up_keyring_backend() -> Result<(), String> {
 pub fn create_key_store() -> Box<dyn BiometricKeyStore> {
     #[cfg(target_os = "windows")]
     {
-        log::debug!("Biometric key store: Windows Hello");
+        log::trace!("Biometric key store: Windows Hello");
         Box::new(windows::WindowsHelloKeyStore)
     }
     #[cfg(target_os = "macos")]

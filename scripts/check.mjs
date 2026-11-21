@@ -92,6 +92,16 @@ const PHASE1 = [
       `"${bin("eslint")}" . --fix --cache --cache-location node_modules/.cache/eslint`,
     ],
   },
+  {
+    id: "swallow",
+    label: "吞没",
+    commands: [`"${process.execPath}" scripts/check-error-swallow.mjs`],
+  },
+  {
+    id: "i18n",
+    label: "文案",
+    commands: [`"${process.execPath}" scripts/check-i18n-parity.mjs`],
+  },
 ];
 
 const PHASE2 = [

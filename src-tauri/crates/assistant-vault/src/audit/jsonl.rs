@@ -1,6 +1,7 @@
 use std::fs::OpenOptions;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use log::warn;
 use rusqlite::Connection;
@@ -14,6 +15,13 @@ use crate::storage_stats::DirStats;
 const FILE_PREFIX: &str = "audit-";
 const FILE_SUFFIX: &str = ".jsonl";
 const MAX_FILE_BYTES: u64 = 8 * 1024 * 1024;
+
+/// 审计双通道失败的二级痕迹：策略为「首次失败 warn 全文，此后每
+/// `FAILURE_WARN_EVERY` 次 warn 一次并附累计数」，既避免持续失败刷屏，
+/// 又保留可观测的累计失败次数。
+const FAILURE_WARN_EVERY: u64 = 100;
+static DB_FAILURES: AtomicU64 = AtomicU64::new(0);
+static JSONL_FAILURES: AtomicU64 = AtomicU64::new(0);
 
 /// JSONL 追加日志的单行记录。
 ///
@@ -338,13 +346,53 @@ pub fn log_dual(
 
     if let Some(conn) = conn {
         if let Err(e) = super::write_db_at(conn, event, detail, at) {
-            warn!("Audit db write failed for '{}': {}", event, e);
+            let n = DB_FAILURES.fetch_add(1, Ordering::Relaxed) + 1;
+            if n == 1 || n.is_multiple_of(FAILURE_WARN_EVERY) {
+                warn!("Audit db write failed for '{}' (total {}): {}", event, n, e);
+            }
         }
     }
 
     if let Some(writer) = writer {
         if let Err(e) = writer.append_at(event, detail, at) {
-            warn!("Audit jsonl append failed for '{}': {}", event, e);
+            let n = JSONL_FAILURES.fetch_add(1, Ordering::Relaxed) + 1;
+            if n == 1 || n.is_multiple_of(FAILURE_WARN_EVERY) {
+                warn!(
+                    "Audit jsonl append failed for '{}' (total {}): {}",
+                    event, n, e
+                );
+            }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn log_dual_tolerates_both_channels_failing_and_counts() {
+        // 内存库无 `security_audit_log` 表 → DB 通道写入失败。
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        // 目录路径指向常规文件 → `create_dir_all` 失败，JSONL 通道写入失败。
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let not_a_dir = tmp.path().join("audit-as-file");
+        std::fs::write(&not_a_dir, b"x").expect("seed file");
+        let writer = AuditJsonlWriter::new(not_a_dir);
+
+        let db_before = DB_FAILURES.load(Ordering::Relaxed);
+        let jsonl_before = JSONL_FAILURES.load(Ordering::Relaxed);
+
+        // 双通道都失败：`log_dual` 返回 `()` 且不 panic。
+        log_dual(Some(&conn), Some(&writer), AuditEvent::VaultUnlock, None);
+
+        assert!(
+            DB_FAILURES.load(Ordering::Relaxed) > db_before,
+            "db failure counter should increment"
+        );
+        assert!(
+            JSONL_FAILURES.load(Ordering::Relaxed) > jsonl_before,
+            "jsonl failure counter should increment"
+        );
     }
 }

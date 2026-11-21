@@ -138,7 +138,7 @@ fn hide_menu_windows(deadline: Option<Instant>) -> Result<bool, String> {
 pub(crate) fn dismiss_menus_now() {
     let hidden = hide_menu_windows(None).unwrap_or(false);
     record_menu_closed();
-    log::debug!("screenshot: menu dismissed, hidden_windows={hidden}");
+    log::trace!("screenshot: menu dismissed, hidden_windows={hidden}");
 }
 
 /// 抓屏前的兜底：托盘菜单这类没有「点中即隐藏」钩子的入口靠这一步清理残留菜单；

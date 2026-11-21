@@ -114,13 +114,15 @@ pub async fn vault_hibp_audit(app: AppHandle) -> Result<Vec<HibpAuditEntryDto>, 
                 sleep(Duration::from_millis(HIBP_MIN_INTERVAL_MS)).await;
                 drop(_permit);
                 let finished = done.fetch_add(1, Ordering::SeqCst) + 1;
-                let _ = progress_app.emit(
+                if let Err(e) = progress_app.emit(
                     "vault:hibp-progress",
                     HibpProgress {
                         done: finished,
                         total,
                     },
-                );
+                ) {
+                    log::warn!("hibp progress emit failed: {e}");
+                }
                 (id, count)
             }
         })

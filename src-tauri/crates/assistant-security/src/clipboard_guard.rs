@@ -3,7 +3,7 @@ use std::thread;
 use std::time::Duration;
 
 use assistant_crypto::error::VaultError;
-use log::{info, warn};
+use log::{debug, info, warn};
 use zeroize::Zeroizing;
 
 /// 剪贴板读写后端；生产用 `ArboardBackend`，测试可注入内存实现。
@@ -126,6 +126,7 @@ impl<B: ClipboardBackend + 'static> ClipboardGuard<B> {
         let password_owned = Zeroizing::new(password.to_string());
         let timeout = Duration::from_secs(timeout_secs);
 
+        // best-effort: 定时清理线程，创建失败不影响复制结果
         let _ = thread::spawn(move || {
             thread::sleep(timeout);
 
@@ -144,16 +145,22 @@ impl<B: ClipboardBackend + 'static> ClipboardGuard<B> {
                 };
                 match original_content {
                     Some(ref text) => {
-                        let _ = backend.write(text.as_str());
+                        if let Err(e) = backend.write(text.as_str()) {
+                            warn!("clipboard restore write failed: {e}");
+                        }
                     }
                     None => {
-                        let _ = backend.clear();
+                        if let Err(e) = backend.clear() {
+                            warn!("clipboard auto-clear failed: {e}");
+                        }
                     }
                 }
                 {
                     let mut cur = current_password.lock().unwrap_or_else(|e| e.into_inner());
                     *cur = None;
                 }
+            } else {
+                debug!("clipboard content changed, skip auto-clear");
             }
         });
 

@@ -5,9 +5,10 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { Button, Tag, Tooltip } from "antd";
+import { App, Button, Tag, Tooltip } from "antd";
 import { AimOutlined, CopyOutlined, DeleteOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
+import { createLogger } from "@/services/system/logger";
 import { MessageBubble } from "../../chat/message/MessageBubble";
 import { BRANCH_COLORS, type HistoryMessageRow } from "./historyTree";
 import { MessageMetaLine } from "./MessageMetaLine";
@@ -16,6 +17,8 @@ import { toRawRecordJson, type HistoryRecordState } from "./recordSnapshot";
 import css from "./HistoryBranchView.module.css";
 
 const MAX_INDENT = 6;
+
+const log = createLogger("historyBranchRow");
 
 interface HistoryBranchRowProps {
   row: HistoryMessageRow;
@@ -39,6 +42,7 @@ export const HistoryBranchRow: React.FC<HistoryBranchRowProps> = React.memo(
     onRequestRecords,
   }) => {
     const { t } = useTranslation();
+    const { message: toast } = App.useApp();
     const message = row.node.message;
     const indent = Math.min(row.indent, MAX_INDENT);
     const color = BRANCH_COLORS[row.lane % BRANCH_COLORS.length];
@@ -79,8 +83,14 @@ export const HistoryBranchRow: React.FC<HistoryBranchRowProps> = React.memo(
     }, [onRequestRecords, rawOpen]);
 
     const handleCopyRecord = useCallback(() => {
-      navigator.clipboard.writeText(recordJson).catch(() => {});
-    }, [recordJson]);
+      navigator.clipboard
+        .writeText(recordJson)
+        .then(() => toast.success(t("common.actions.copied")))
+        .catch((e: unknown) => {
+          log.warn("copy record failed", { messageId: message.id, error: e });
+          toast.error(t("common.actions.copy_failed"));
+        });
+    }, [message.id, recordJson, t, toast]);
 
     const handleDelete = useCallback(() => {
       onDeleteMessage(message.id);
