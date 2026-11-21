@@ -93,9 +93,13 @@ pub fn classify(
     if registry::IGNORED_NAMES.contains(&name) {
         return (StorageInventoryClassDto::Ignored, None);
     }
+    // 伴生后缀大小写不敏感（§3.11.3）：四个 owner 侧判定都先 `to_ascii_lowercase()`，
+    // 管理器若按原样比对，`assistant.db-WAL` 就会从 `companion` 掉进 `unregistered`，
+    // 变成「未登记」假告警。行为等价要求两侧同一口径（V21），这里对齐 owner 侧。
+    let lowered = name.to_ascii_lowercase();
     if COMPANION_SUFFIXES
         .iter()
-        .any(|suffix| name.ends_with(suffix))
+        .any(|suffix| lowered.ends_with(suffix))
     {
         return (StorageInventoryClassDto::Companion, None);
     }
@@ -688,6 +692,27 @@ mod tests {
                 classify(name, none).0,
                 StorageInventoryClassDto::Companion,
                 "{name} 必须归 companion"
+            );
+        }
+    }
+
+    /// 大小写漂移（V21）：owner 侧判定先小写化，管理器必须给出同一结论，
+    /// 否则 `assistant.db-WAL` 会被当成「未登记」告警（§3.11.3 主信号）。
+    #[test]
+    fn companion_suffixes_are_case_insensitive() {
+        let none: &[&'static str] = &[];
+        for name in [
+            "assistant.db-WAL",
+            "assistant.db-SHM",
+            "assistant.db-JOURNAL",
+            "X.TMP",
+            "X.LOCK",
+            "DB-journal",
+        ] {
+            assert_eq!(
+                classify(name, none).0,
+                StorageInventoryClassDto::Companion,
+                "{name} 必须与 owner 侧同判 companion"
             );
         }
     }

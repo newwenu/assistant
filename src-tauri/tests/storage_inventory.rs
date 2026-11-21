@@ -383,3 +383,43 @@ fn registry_keeps_thirteen_entries() {
         assert_eq!(root.entry, format!("E{}", index + 1));
     }
 }
+
+/// V21（管理器侧）：伴生后缀大小写不敏感。
+///
+/// owner 侧判定一律先 `to_ascii_lowercase()`，`FOO.WAL` 在 owner 侧被跳过；
+/// 对账扫描若按原样比对，同名文件会落进 `unregistered`（§3.11.3 主信号），
+/// 变成「未登记」假告警。这里用真实临时目录锁死「两侧同一结论」。
+#[test]
+fn uppercase_companion_suffix_is_not_unregistered() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let data = tmp.path().join("data");
+    let local = tmp.path().join("local");
+    fs::create_dir_all(&data).expect("建 data");
+    fs::create_dir_all(&local).expect("建 local");
+    write_file(&data.join("assistant.db-WAL"), 7);
+    write_file(&data.join("assistant.db-SHM"), 3);
+    let dirs = AppDirs::with_bases(data, local);
+
+    let result = scan(&dirs, &[]).expect("扫描临时基根");
+
+    assert_eq!(result.nodes.len(), 2, "两个大写伴生文件都必须出观测项");
+    for scanned in &result.nodes {
+        assert_eq!(
+            scanned.class,
+            StorageInventoryClassDto::Companion,
+            "{} 必须与 owner 侧同判 companion",
+            scanned.name
+        );
+        assert!(
+            scanned.entry.is_none(),
+            "伴生项不得挂任何条目编号（§3.11.3）"
+        );
+    }
+    assert!(
+        result
+            .nodes
+            .iter()
+            .all(|scanned| scanned.class != StorageInventoryClassDto::Unregistered),
+        "大写伴生文件不得产生「未登记」假告警"
+    );
+}

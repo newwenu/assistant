@@ -191,6 +191,40 @@ async fn derived_stats_counts_regular_files_and_skips_companions() {
     assert!(stats.newest_at.is_some());
 }
 
+/// 符号链接不计入、也不使整条降级；建链接失败时（未开特权）显式跳过。
+#[tokio::test]
+async fn derived_stats_skips_symlinks() {
+    let (dir, store) = store();
+    let derived = dir.path().join("derived");
+    tokio::fs::create_dir_all(&derived).await.unwrap();
+    let outside = dir.path().join("outside.txt");
+    tokio::fs::write(&outside, b"0123456789").await.unwrap();
+    if !file_link(&outside, &derived.join("a.1.txt")) {
+        eprintln!("skip derived_stats_skips_symlinks: cannot create file symlink");
+        return;
+    }
+
+    let stats = store.derived_stats().await.unwrap();
+    assert_eq!(stats.count, 0, "符号链接不计入");
+    assert_eq!(stats.bytes, 0);
+}
+
+fn file_link(target: &std::path::Path, link: &std::path::Path) -> bool {
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(target, link).is_ok()
+    }
+    #[cfg(windows)]
+    {
+        std::os::windows::fs::symlink_file(target, link).is_ok()
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = (target, link);
+        false
+    }
+}
+
 /// V11：`A1`（`delete_orphans_by_ids`）与「导入 + 写引用」并发，不得留下指向已删文件的引用。
 ///
 /// 关键窗口：`save_attachment` 不持 DB 连接锁，`A1` 可以在「文件已写入、引用尚未落库」

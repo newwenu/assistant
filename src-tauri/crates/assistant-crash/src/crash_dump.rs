@@ -22,11 +22,23 @@ pub struct DirStats {
     pub newest_at: Option<i64>,
 }
 
-/// 只读扫描诊断产物目录：只认常规文件，跳过符号链接与非常规文件（不降级）。
+/// 只读扫描诊断产物目录：只认三类诊断产物，跳过符号链接与非常规文件（不降级）。
 pub fn dump_stats(dir: &Path) -> std::io::Result<DirStats> {
     let mut stats = DirStats::default();
     walk_stats(dir, &mut stats)?;
     Ok(stats)
+}
+
+/// 诊断产物文件名判据（I61 §3.10 E13）：`panic_*.log` / `crash_*.dmp` / `crash_*.log`。
+///
+/// 目录里其它文件（用户手放、历史遗留）既不计数也不使条目降级。
+fn is_crash_artifact(name: &str) -> bool {
+    let matches = |prefix: &str, suffix: &str| {
+        name.strip_prefix(prefix)
+            .and_then(|rest| rest.strip_suffix(suffix))
+            .is_some()
+    };
+    matches("panic_", ".log") || matches("crash_", ".dmp") || matches("crash_", ".log")
 }
 
 fn walk_stats(dir: &Path, stats: &mut DirStats) -> std::io::Result<()> {
@@ -47,6 +59,12 @@ fn walk_stats(dir: &Path, stats: &mut DirStats) -> std::io::Result<()> {
             continue;
         }
         if !meta.is_file() {
+            continue;
+        }
+        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        if !is_crash_artifact(name) {
             continue;
         }
         stats.bytes = stats.bytes.saturating_add(meta.len());
@@ -280,5 +298,67 @@ mod tests {
             .count();
         assert_eq!(written, 1);
         let _ = fs::remove_dir_all(&root);
+    }
+
+    /// 诊断产物判据：`panic_*.log` / `crash_*.dmp` / `crash_*.log` 各命中一份，
+    /// 无关文件既不计数也不降级（I61 §3.10 E13）。
+    #[test]
+    fn dump_stats_counts_only_crash_artifacts() {
+        let root = scratch("artifacts");
+        let dir = prepare_dir(Some(root.clone())).expect("目录应可创建");
+        fs::write(dir.join("panic_20260101_000000_000.log"), b"1234").expect("写入应成功");
+        fs::write(dir.join("crash_20260101_000000_000.dmp"), b"123456").expect("写入应成功");
+        fs::write(dir.join("crash_20260101_000001_000.log"), b"12").expect("写入应成功");
+        fs::write(dir.join("notes.txt"), b"ignored").expect("写入应成功");
+        fs::write(dir.join("other.log"), b"ignored").expect("写入应成功");
+
+        let stats = dump_stats(&dir).expect("扫描应成功");
+        assert_eq!(stats.count, 3, "只认三类诊断产物");
+        assert_eq!(stats.bytes, 4 + 6 + 2, "无关文件不计入字节");
+        assert!(stats.oldest_at.is_some());
+        assert!(stats.newest_at.is_some());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// 符号链接不计入、也不使整条降级；建链接失败时（未开特权）显式跳过。
+    #[test]
+    fn dump_stats_skips_symlinks() {
+        let root = scratch("symlink");
+        let dir = prepare_dir(Some(root.clone())).expect("目录应可创建");
+        let outside = root.join("outside.log");
+        fs::write(&outside, b"0123456789").expect("写入应成功");
+        if !file_link(&outside, &dir.join("panic_linked.log")) {
+            eprintln!("skip dump_stats_skips_symlinks: cannot create file symlink");
+            let _ = fs::remove_dir_all(&root);
+            return;
+        }
+
+        let stats = dump_stats(&dir).expect("扫描应成功");
+        assert_eq!(stats.count, 0, "符号链接不计入");
+        assert_eq!(stats.bytes, 0);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn dump_stats_missing_directory_is_empty_state() {
+        let root = scratch("missing");
+        let stats = dump_stats(&root.join("does-not-exist")).expect("缺失目录应为空态");
+        assert_eq!(stats, DirStats::default(), "无文件时全零、两端为 None");
+    }
+
+    fn file_link(target: &Path, link: &Path) -> bool {
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(target, link).is_ok()
+        }
+        #[cfg(windows)]
+        {
+            std::os::windows::fs::symlink_file(target, link).is_ok()
+        }
+        #[cfg(not(any(unix, windows)))]
+        {
+            let _ = (target, link);
+            false
+        }
     }
 }

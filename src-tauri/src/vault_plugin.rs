@@ -15,7 +15,7 @@ mod mounted {
         StorageOwnerProbeHandle,
     };
     use crate::cmd::vault;
-    use assistant_vault::security_db::SecurityDbState;
+    use assistant_vault::security_db::{SecurityDbState, MAX_BACKUPS};
     use assistant_vault::storage_stats::DirStats;
 
     /// `E7`–`E11` 的 vault 侧 provider：只调 owner 的公开观测入口，不拼路径、不开库。
@@ -110,6 +110,13 @@ mod mounted {
             self.app
                 .try_state::<SecurityDbState>()
                 .and_then(|state| state.audit_policy())
+        }
+
+        /// `E8` 的保留份数：直接自述 owner 常量，管理器不持有任何字面量（G3）。
+        ///
+        /// 取不到 `SecurityDbState` 不影响本值——它是常量，不是运行时状态。
+        fn max_backups(&self) -> Option<u32> {
+            u32::try_from(MAX_BACKUPS).ok()
         }
 
         /// `E8`：重新计数与裁剪都在 owner 侧一次完成（管理器只传 `keep`），

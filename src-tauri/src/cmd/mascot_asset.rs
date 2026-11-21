@@ -380,4 +380,38 @@ mod tests {
         assert_eq!(stats.bytes, 0);
         assert_eq!(stats.oldest_at, None, "无文件时两端为 None，不是 0");
     }
+
+    /// 符号链接不计入、也不使整条降级；建链接失败时（未开特权）显式跳过。
+    #[test]
+    fn asset_stats_skips_symlinks() {
+        let dir = tempfile::tempdir().expect("临时目录应可创建");
+        let root = dir.path().join("mascot-assets");
+        std::fs::create_dir_all(root.join("rive")).expect("子目录应可创建");
+        let outside = dir.path().join("outside.riv");
+        std::fs::write(&outside, b"0123456789").expect("写入应成功");
+        if !file_link(&outside, &root.join("rive").join("custom.riv")) {
+            eprintln!("skip asset_stats_skips_symlinks: cannot create file symlink");
+            return;
+        }
+
+        let stats = asset_stats(&root).expect("扫描应成功");
+        assert_eq!(stats.count, 0, "符号链接不计入，也不使整条降级");
+        assert_eq!(stats.bytes, 0);
+    }
+
+    fn file_link(target: &Path, link: &Path) -> bool {
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(target, link).is_ok()
+        }
+        #[cfg(windows)]
+        {
+            std::os::windows::fs::symlink_file(target, link).is_ok()
+        }
+        #[cfg(not(any(unix, windows)))]
+        {
+            let _ = (target, link);
+            false
+        }
+    }
 }

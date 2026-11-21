@@ -12,6 +12,13 @@ use assistant_app::protocol::dto::{
     StorageReclaimReasonDto,
 };
 
+// 链接夹具全仓只保留一份实现（`assistant-tools` 测试树），各 crate 用 `#[path]` 引入，
+// 避免各写一份后在 Windows 侧漂成两种策略。
+#[path = "../crates/assistant-tools/tests/support/link.rs"]
+mod link;
+
+use link::file_link;
+
 fn base() -> BreakdownBase {
     BreakdownBase {
         total_bytes: 0,
@@ -184,4 +191,41 @@ fn complete_ignores_only_logs_entry() {
     samples[4] = EntrySample::degraded(StorageAvailabilityDto::Unavailable, "timeout");
     let dto = assemble_breakdown(base(), &samples, 100, StorageInventoryDto::default());
     assert!(!dto.complete, "E5 超时降级后 complete 必须为 false");
+}
+
+/// `E13` 观测验收：诊断目录只认三类产物（`panic_*.log` / `crash_*.dmp` / `crash_*.log`），
+/// 无关文件不计入，符号链接不计入且不降级（I61 §3.10 E13）。
+#[test]
+fn e13_dump_stats_counts_only_crash_artifacts() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("crashes");
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(root.join("panic_20260101_000000_000.log"), b"1234").unwrap();
+    std::fs::write(root.join("crash_20260101_000000_000.dmp"), b"123456").unwrap();
+    std::fs::write(root.join("crash_20260101_000001_000.log"), b"12").unwrap();
+    std::fs::write(root.join("notes.txt"), b"ignored").unwrap();
+    std::fs::write(root.join("other.log"), b"ignored").unwrap();
+
+    let stats = assistant_crash::dump_stats(&root).expect("扫描应成功");
+    assert_eq!(stats.count, 3, "只认三类诊断产物");
+    assert_eq!(stats.bytes, 4 + 6 + 2, "无关文件不计入字节");
+    assert!(stats.oldest_at.is_some());
+    assert!(stats.newest_at.is_some());
+}
+
+#[test]
+fn e13_dump_stats_skips_symlinks() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("crashes");
+    std::fs::create_dir_all(&root).unwrap();
+    let outside = dir.path().join("outside.log");
+    std::fs::write(&outside, b"0123456789").unwrap();
+    if !file_link(&outside, &root.join("panic_linked.log")) {
+        eprintln!("skip e13_dump_stats_skips_symlinks: cannot create file symlink");
+        return;
+    }
+
+    let stats = assistant_crash::dump_stats(&root).expect("扫描应成功");
+    assert_eq!(stats.count, 0, "符号链接不计入");
+    assert_eq!(stats.bytes, 0);
 }

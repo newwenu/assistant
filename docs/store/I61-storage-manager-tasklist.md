@@ -6,18 +6,30 @@
 
 切片对应规格章节：T1 观测补全（§3.1–§3.2 / §3.9 / §3.10 / §3.11 / §6.2 / §7.1）→ T2 骨架 + 低风险回收（§5.1–§5.4 / §6.1 / §3.3 白名单）→ T3 中风险回收（§3.10 接口形状 / §5.5 / §3.6）→ T4 前端与收尾（[前端设计文档](./I61-storage-manager-frontend.md) / §10 / §12；规格 §6.3 已整体划出作废）。
 
+**可选功能分区自管理**（§3.1.1 / §3.10「可选功能分区自注册」/ §3.8 G16–G19 / §3.11.1 登记纪律 2–6 / V21–V24）是 T1 之后的装配层修订，任务落在 **T1-g 修订**，替换 T1-c 与 T1-c 修订的旧实现；该修订未完成前，T4 不得按「未挂载补占位行」实现。
+
 依赖：T1 无前置（后端可独立验收）；T2 依赖 T1；T3 依赖 T2（骨架 + 按 ID 锁）；T4 依赖 T1–T3 **且**依赖 I54 的 `R0`（页面容器与三 tab 挂载位，当前未开工）。
+
+**进度总览**（勾选状态与本节同步；T1-g 修订落地后，T2 / T3 的旧形态断言按该节表格改写）：
+
+| 切片 | 状态 | 阻塞 |
+|---|---|---|
+| T1 观测补全 | 主体完成 2026-11-20；`T1-h` 剩余项已迁到 [剩余清单](./I61-storage-manager-remaining.md)（`R-16` / `R-17`） | — |
+| T1-g 修订（分区自管理） | 进行中 2026-11-21：17 项中 2 项完成（`section.rs` 契约 + 注册校验）、2 项部分完成（`mod.rs` 模块声明、`registry.rs` 的 `OPTIONAL_SEGMENTS`） | — |
+| T2 骨架 + 低风险回收 | 完成 2026-11-20 | — |
+| T3 中风险回收 | 完成 2026-11-20（`E8` 形态待 T1-g 改写） | T1-g |
+| T4 前端与收尾 | 未开工 | T1-g + I54 `R0` |
 
 > 本清单不管理提交。提交粒度按代码依赖与可编译性现场决定；这里只回答「代码改没改、验收跑没跑」。
 > 勾选表示代码已改且对应验收已跑。
 
-> **路径读法**：文中 `src-tauri/src/cmd/storage.rs` 一律指「T1-c 首条目录化完成后」的 `src-tauri/src/cmd/storage/mod.rs`（模块路径仍是 `cmd::storage`）；其中带 `:130` 之类行号的是**改造前现状**行号，仅用于定位 `delete_attachments` 等既有函数，不要当作改动后的行号。目录化后的完整布局：`storage/mod.rs`（命令 + 装配）、`storage/probe.rs`（可选能力 trait）、`storage/inventory.rs`（§3.11 对账扫描，**唯一 `read_dir` 例外**）、`storage/reclaim.rs`（T2 起的计划与执行）。
+> **路径读法**：文中 `src-tauri/src/cmd/storage.rs` 一律指「T1-c 首条目录化完成后」的 `src-tauri/src/cmd/storage/mod.rs`（模块路径仍是 `cmd::storage`）；其中带 `:130` 之类行号的是**改造前现状**行号，仅用于定位 `delete_attachments` 等既有函数，不要当作改动后的行号。目录化后的完整布局：`storage/mod.rs`（命令 + 装配）、`storage/section.rs`（可选功能分区契约，**T1-g 修订后**取代 `storage/probe.rs`）、`storage/inventory.rs`（§3.11 对账扫描，**唯一 `read_dir` 例外**）、`storage/reclaim.rs`（T2 起的计划与执行）、`storage/entries.rs`（条目静态档装配）、`storage/sample.rs`（采样）。
 
 ---
 
-## 阶段 T1 — 观测补全（只读，无回收）（已完成 2026-11-20）
+## 阶段 T1 — 观测补全（只读，无回收）（主体完成 2026-11-20；遗留项已迁到 [剩余清单](./I61-storage-manager-remaining.md)）
 
-退出条件：V1–V5、V10、V13、V18、V19、V20 通过；golden 可断言 13 行；`reclaim.action` 按终态填、`eligibility` 按切片期填；`inventory` 键恒在（首次读 `status = neverRun`）。
+退出条件：V1–V5、V10、V13、V18、V19、V20 通过；golden 可断言 `vault` 构建 13 行、`vaultless` 构建 8 行（T1-g 修订前为「13 行恒在」，见该节）；`reclaim.action` 按终态填、`eligibility` 按切片期填；`inventory` 键恒在（首次读 `status = neverRun`）；T1-h 遗留清零（A-1 / D 组已于 2026-11-21 完成，剩余项见 [剩余清单](./I61-storage-manager-remaining.md) `R-16` / `R-17`）。
 
 ### T1-a 契约与 DTO
 
@@ -27,14 +39,16 @@
   - 核对（2026-11-20）：三者在 `storage.rs:196`–`:250`，字段顺序与 §3.2 逐条对应；全部 `Option` 无 `skip_serializing_if`；`ReclaimPolicyDto` 另有 `Default`（`source = None`、`fail_closed = true`）
 - [x] `src-tauri/src/protocol/dto/storage.rs`：`StorageBreakdownDto` **只追加** `sampledAt` / `byteBasis` / `sharedBytes` / `referencedOnceBytes` / `entries` / `complete`，全部 `#[serde(default)]`；既有 4 字段零改动（G13 / V16）
   - 核对（2026-11-20）：`storage.rs:30`–`:52` 六个字段全部带 `#[serde(default)]`，既有 `total_bytes` / `total_count` / `orphans` / `conversations` 键名与类型未动；实际还多一个 `inventory`（T1-f 追加，同样 `#[serde(default)]`），与本条不冲突
-- [x] `src-tauri/src/protocol/dto/storage.rs`：`StorageEntryDto` 必填 / 可选字段划分正确，且未新增 §6.2 之外的 DTO（provider 返回类型走 `probe.rs` 普通结构，见 T1-c）
-  - 核对（2026-11-20）：`storage.rs:240`–`:250` 必填 `key` / `layer` / `owner` / `includes_derived` / `counts_self_logs` / `availability` / `reclaim`，可选 `bytes` / `count` / `oldest_at` / `newest_at` / `availability_reason`；`probe.rs` 的 `ProbeStats` / `ProbeError` 是普通结构，不在 DTO 模块
+- [x] `src-tauri/src/protocol/dto/storage.rs`：`StorageEntryDto` 必填 / 可选字段划分正确，且未新增 §6.2 之外的 DTO（provider 返回类型走普通结构：T1-g 前为 `probe.rs` 的 `ProbeStats`，T1-g 后为 `section.rs` 的 `SectionStats` / `SectionError`）
+  - 核对（2026-11-20）：`storage.rs:240`–`:250` 必填 `key` / `layer` / `owner` / `includes_derived` / `counts_self_logs` / `availability` / `reclaim`，可选 `bytes` / `count` / `oldest_at` / `newest_at` / `availability_reason`；`probe.rs` 的 `ProbeStats` / `ProbeError` 是普通结构，不在 DTO 模块（T1-g 落地时随 `probe.rs` 退役改为 `SectionStats` / `SectionError`，字段语义不变）
 - [x] `src-tauri/tests/protocol_bindings.rs`：新增类型全部登记进 `use` 与 `decl(&cfg)` 列表（漏一个直接红，N18）
   - 核对（2026-11-20）：`protocol_bindings.rs:30`–`:43` 的 `use` 与 `:221`–`:265` 的 `decl(&cfg)` 两侧条目一致，含全部 `Storage*` / `Reclaim*` 新类型
 - [x] `npm run contract:gen` 后提交 `src/types/protocol.contract.ts`（禁止手改生成文件）
   - 核对（2026-11-20）：生成文件已含 `StorageEntryDto` / `ReclaimViewDto` / `StorageInventoryNodeDto` 等同名类型（camelCase 字段），无手写痕迹
 
-### T1-b owner stats 入口（13 条，按 I61 §3.10 表逐个落地）
+### T1-b owner stats 入口（条目全集，按 I61 §3.10 表逐个落地）
+
+> 本节「13 条」是 T1-g 修订前的旧口径（`vault` 构建 13 条、`vaultless` 构建 8 条）；下方带「13 条共用」的两条只描述**遍历 / 伴生口径**，口径本身与条目数无关，其余条目均为 core 8 条 + 分区条目按 `entries()` 快照顺序（改写表见 T1-g 修订末尾）。
 
 - [x] **遍历口径（13 条共用，唯一解释）**：各 owner stats 一律「递归 + `symlink_metadata`（不跟随链接）」；只累加常规文件长度，符号链接 / 非常规文件跳过、不计数、**不**使条目降级（§3.9 表末行按「不跟随、不计数、只跳过」执行）；`unreadable` 只由 `read_dir` / `metadata` 失败触发（§7.1）
   - 核对（2026-11-20）：`for_each_file`（`assistant-tools/src/runtime/storage.rs:409`）实现递归 + 跳符号链接 + 跳非常规文件，`dir_tree_stats` / `purge_tree_files` 共用；`assistant-vault/src/storage_stats.rs`、`app_dirs/fs_stats.rs`、`assistant-crash/src/crash_dump.rs` 各自同规则（`NotFound` → 空态，其余 `Err`）；`attachment_store::list_all` / `list_derived` 已改用 `file_type()` / `symlink_metadata` 跳过链接 → 已落地
@@ -70,12 +84,15 @@
   - 核对（2026-11-20）：字段名 `audit_effective_since: AtomicI64`（`state.rs:30`，构造于 `:47` 置本刻）；`set_audit_retention_days`（`:59`–`:64`）同一次写入天数与时刻；`audit_policy`（`:559`）返回 `Option`（本类型恒 `Some`，取不到状态时由 provider 层回 `None`）→ 已落地
 - [x] `src-tauri/crates/assistant-vault/src/security_db/state.rs`：`prune_backups` / `MAX_BACKUPS` 的可达性留给 T3；T1 只读，不改可见性
   - 核对（2026-11-20）：现状 `prune_backups` 为 `pub(super)`（`state.rs:502`）、`MAX_BACKUPS` 为 `mod.rs:27` 的私有 `const`，T1 未改；`purge_backups` 已是 `pub(crate)`（`state.rs:484`），T3 接入回收入口时再定
-- [ ] `src-tauri/crates/assistant-crash/`：新增 `pub fn dump_stats(dir: &Path) -> io::Result<DirStats>`（现只有 `install`）；`crash_dump.rs` 内定义 `DirStats`（本 crate **不依赖** `assistant-tools`，不得为共享结构新增依赖），`lib.rs` 需同时补 `pub use crash_dump::{dump_stats, DirStats};` 供外部取用；只统计 `panic_*.log` / `crash_*.dmp` / `crash_*.log` 三类常规文件
+- [x] `src-tauri/crates/assistant-crash/`：`pub fn dump_stats(dir: &Path) -> io::Result<DirStats>`（已在 `crash_dump.rs:26`）；`crash_dump.rs` 内定义 `DirStats`（本 crate **不依赖** `assistant-tools`，不得为共享结构新增依赖），`lib.rs` 再导出 `pub use crash_dump::{dump_stats, install, DirStats};`（已在 `lib.rs:3`）；只统计 `panic_*.log` / `crash_*.dmp` / `crash_*.log` 三类常规文件——**剩余缺口见 T1-h A-1**（`walk_stats` 文件名判据 + 单测）
   - 核对（2026-11-20）：`dump_stats`（`crash_dump.rs:26`）、`DirStats`（`:17`）、`lib.rs:3` 的 `pub use crash_dump::{dump_stats, install, DirStats};` 均已落地，管理器入口 `sample.rs:243` 已在用；**但 `walk_stats`（`:30`）按「任意常规文件」计数，没有三类文件名判据**，与条目口径不一致；且 `crash_dump.rs` 的 `mod tests`（`:236`）只有 `prepare_dir` / `panic_hook` 三例，**无 `dump_stats` 用例**、`src-tauri/tests` 也无 E13 验收 → 本条不勾选
-- [ ] `E12`（`logs/`）**不新增任何 owner 方法**：管理器直接产出 `availability = notImplemented` + `availabilityReason` 固定文案「`tauri-plugin-log` 不暴露 stats」+ `bytes` / `count = null`（§3.10 表末行）；该文案进 golden 快照，**不得**改写为其他措辞
-  - 核对（2026-11-20）：`sample.rs:407`–`:411` 已产出 `NotImplemented` + 该固定文案（无 owner 方法、无 `logs` 目录遍历）；`entries.rs:230`–`:238` 的 `E12` 静态项为 `rotate` / `ownerManaged` / `externalOwner` / `keepCount = 3`。**但仓库内不存在任何 golden 快照夹具**（全仓无 `golden*` 文件、`tests/` 无对应断言），文案未被测试锁死 → 本条不勾选
+  - 核对（2026-11-21）：`walk_stats` 已加 `is_crash_artifact()`（`crash_dump.rs:37`，`panic_*.log` / `crash_*.dmp` / `crash_*.log` 前缀 + 后缀双匹配，其余文件跳过、不降级），`mod tests` 补 3 例、`tests/storage_breakdown.rs` 补 2 例 E13 → 已落地（T1-h A-1 关闭）
+- [ ] ~~`E12`（`logs/`）**不新增任何 owner 方法**：管理器直接产出 `availability = notImplemented` + `availabilityReason` 固定文案「`tauri-plugin-log` 不暴露 stats」+ `bytes` / `count = null`（§3.10 表末行）；该文案进 golden 快照，**不得**改写为其他措辞~~ **（已作废：方案 C 删除 `availabilityReason`，缺口说明改由 `reclaim.note` 承载——见 [剩余清单](./I61-storage-manager-remaining.md) `R-16` / `R-40`）**
+  - 核对（2026-11-20）：`sample.rs:407`–`:411` 已产出 `NotImplemented` + 该固定文案（无 owner 方法、无 `logs` 目录遍历）；`entries.rs:230`–`:238` 的 `E12` 静态项为 `rotate` / `ownerManaged` / `externalOwner` / `keepCount = 3`。**但仓库内不存在任何 golden 快照夹具**（全仓无 `golden*` 文件、`tests/` 无对应断言），文案未被测试锁死 → 本条不勾选（剩余缺口见 T1-h A-2）
 
-### T1-c 可选能力 provider（唯一 feature 缝）
+### T1-c 可选能力 provider（唯一 feature 缝）〔已被 T1-c 修订 → 再被 T1-g 修订取代，仅存历史核对〕
+
+> **已被 T1-g 修订取代**：本节按「可选条目由 core 登记表声明、provider 按能力名接收」实现，条目清单 / 策略 / 资格判据仍在 core。保留为历史核对记录，**不作验收依据**；实现条目以 T1-g 修订为准。
 
 - [x] **结构改造**：`src-tauri/src/cmd/storage.rs` 改为目录模块 `src-tauri/src/cmd/storage/mod.rs`（子模块 `probe.rs` / `inventory.rs` / `reclaim.rs` / `entries.rs` / `sample.rs` 只在 `mod.rs` 声明，`inventory.rs` 文件头注明「G2 唯一例外」）；模块路径仍是 `cmd::storage`，`cmd/mod.rs` 与 `ipc.rs` 的命令引用**零改动**；**禁止** `#[path]` 挂载或残留同名 `storage.rs`（`assembly_contract` 按常规布局扫描源码）
   - 核对（2026-11-20）：`cmd/storage/mod.rs:1`–`:5` 声明 `pub mod entries; pub mod inventory; pub(crate) mod probe; pub mod reclaim; mod sample;`；`cmd/storage.rs` 已不存在；`inventory.rs:3` 文件头写明 G2 例外边界；`ipc.rs` 的 `cmd::storage::…` 引用未动 → 已落地
@@ -101,7 +118,9 @@
 - [x] 门禁自查：`cmd/storage/` **无** `use assistant_vault` / `assistant_security`、**无** `#[cfg(feature = ...)]`（G1）
   - 核对（2026-11-20）：`cmd/storage/` 五个文件均无 vault / security crate 的 `use`，也无 `#[cfg(feature = …)]`（`vault_plugin.rs` 才是唯一 feature 缝）→ 已落地
 
-### T1-c 修订 — 声明与接收统一为「能力名 + key」+ 通用槽（I61 §3.8 G17 / G18 / G19 / §3.10 取用第 3–5 条 / §3.11.1 登记纪律 4–6 / X15 / X16 / X17 / X18 / V22 / V23 / V24）
+### T1-c 修订 — 声明与接收统一为「能力名 + key」+ 通用槽（I61 §3.8 G17 / G18 / G19 / §3.10 取用第 3–5 条 / §3.11.1 登记纪律 4–6 / X15 / X16 / X17 / X18 / V22 / V23 / V24）〔已被 T1-g 修订取代，仅存历史核对〕
+
+> **已被 T1-g 修订取代**：本节把「可选条目仍由 core 登记表声明」保留了下来（`SECURITY_OBSERVABILITY` 能力名 + `RootMount::Feature` + `E7`–`E11` 五行），且 V22–V24 的断言按能力名口径写死。保留为历史核对记录，**不作验收依据**；对应断言需按 T1-g 修订删除或改写。
 
 > 触发原因：原实现有三套词汇描述同一件事——登记表用 `key` 字符串声明身份、管理器用**数字下标**接收（`sample.rs` 的 `const SECURITY_DB: usize = 6` + 一句「与登记表同序」的注释）、provider 用五个具名方法声明归属。三者之间唯一的连接是注释，没有任何断言：在 `MANAGED_ROOTS` 中间插一条登记，下标全部静默错位一格，编译通过、测试通过，`E7` 显示 `E6` 的字节数。规格已改为「登记表 `Feature(SECURITY_OBSERVABILITY)` + `capability()` 声明、按 `key` 接收」；**槽位名是能力名（`"security-observability"`），不是实现类型名（`"VaultProbe"`）、不是 feature 名（`"vault"`）**——换实现 / 改类型名 / 特性退役时登记表不动（G18(g)）。
 
@@ -128,6 +147,69 @@
 - [x] 验收：V24 新增静态断言——全仓能力名字面量只能出现在 `const SECURITY_OBSERVABILITY` 的定义与引用；能力名不含 `::`、不等于任何实现类型名 / feature flag 名；负例：把该常量值临时改成 `"VaultProbe"` 或 `"vault"` 断言失败
   - 核对（2026-11-20）：`registry.rs` 的 `capability_literal_only_lives_in_its_constant` 递归扫 `src` / `tests` / `crates` 下全部 `.rs`（排除定义文件 `app_dirs/registry.rs`）断言字面量零命中；同时断言不含 `::`、无大写、不等于 `"vault"` / `"VaultProbe"`（改值即判红）；测试内一律引用常量而非字面量 → 已落地
 
+### T1-g 修订 — 可选功能分区自管理（`StorageSection` / `SectionRegistry` / `OPTIONAL_SEGMENTS`）（I61 §3.1.1 / §3.10「可选功能分区自注册」/ §3.8 G16–G19 / §3.11.1 登记纪律 2–6 / V21–V24）
+
+> 未完成条目已迁到 [剩余清单](./I61-storage-manager-remaining.md)（`R-01` – `R-15`），本节的未勾选项保留原文并划掉，只作对照；完成状态以剩余清单为准。
+
+> **本修订取代 T1-c 与 T1-c 修订的全部实现条目**。旧实现把「可选条目仍由 core 登记表声明、provider 按能力名接收」保留了下来：条目清单、策略、资格判据仍有一份在 core，功能侧只提供取数。规格已改为「条目清单与全部行为由功能分区自述，core 只做通用接收」——条目 `key` / `segments` / 策略 / 判据 / 回收实现全部在功能 crate，core 只保留首段磁盘事实 `OPTIONAL_SEGMENTS`。T1-c / T1-c 修订的代码与核对记录保留为历史事实，**不再作为验收依据**；其中 `SECURITY_OBSERVABILITY` 能力名、`RootMount::Feature` 行、`ProbeRegistry` 三态断言（V22–V24 旧口径）随本节作废。
+>
+> 影响面：`app_dirs/registry.rs`（8 条 + `OPTIONAL_SEGMENTS`）、`cmd/storage/section.rs`（新契约）、`cmd/storage/{sample,entries,inventory,reclaim}.rs`（按分区自述装配）、`plugins.rs`（槽）、`feature_mounts.rs`（注册时序）、`vault_plugin.rs`（适配器）、`assistant-vault/src/storage_section.rs`（自述）、`tests/{storage_breakdown,storage_inventory,storage_reclaim}.rs` 与 golden。
+
+- [x] `src-tauri/src/cmd/storage/section.rs`（新建）：定义**无条件编译**的通用分区契约——`trait StorageSection`（`id` / `entries` / `stats` / `eligibility` / `policy` / `reclaim_actions` / `reclaim`）、`SectionEntry`（`entry` / `key` / `segments` / `scope` / `coverage` / `owner` / `inventory` / `decl`）、`SectionStats` / `SectionError` / `SectionReclaimReport`、`StorageSectionHandle = Arc<dyn StorageSection>`、`SectionRegistry { sections: Mutex<Vec<StorageSectionHandle>> }`；方法**同步阻塞**（管理器在 `spawn_blocking` 里调）；全文件无 `#[cfg(feature = ...)]`、无功能 crate 类型、无条目 `key` / `security` 字面量（G1 / G16 / §3.10 第 1–3 条）
+  - 验收：`cargo check --no-default-features --lib` 绿；该文件检索 `vault` / `security` / `E7` 零命中
+  - 核对（2026-11-21）：`cargo check --no-default-features --lib` 绿（37s，无 error / warning）；`section.rs` 检索 `vault` / `security` / `E7`–`E11` / `cfg(feature` 零命中（`is_empty` 注释由「vaultless 构建」改为「关闭特性构建」，与其它文件的措辞对齐）；另附 `SectionSample`（观测四元组 + 策略快照，`from_stats` / `from_error` / `with_policy` 三个构造器）与四个 `const fn` 策略助手（`no_policy` / `constant_policy` / `owner_policy` / `config_policy`），供 `entries.rs` / `reclaim.rs` 共用，避免 core 侧再写一份策略字面量
+- [x] `src-tauri/src/cmd/storage/section.rs`：`SectionRegistry::register` 只做**结构校验**——分区 `id` 非空且唯一、`entries()` 非空、每条 `key == segments.join("/")`、`segments` 首段命中 `OPTIONAL_SEGMENTS`、条目 `entry` / `key` 不与 core 条目或其它已注册分区重名；失败返回 `Err` 且**不覆盖**先注册者；`snapshot()` 克隆 `Vec<Arc<…>>` 后立即释放锁（G18(c)(e) / V22 / V23）
+  - 验收：单测覆盖「首段不在 `OPTIONAL_SEGMENTS`」「`key` 与 `segments` 不一致」「重名条目」「空清单」四组拒绝；`snapshot` 不随后续注册增长
+  - 核对（2026-11-21）：8 条单测全绿——`empty_registry_has_no_sections` / `first_segment_outside_optional_segments_is_rejected` / `key_must_equal_segments_join` / `duplicate_core_entry_is_rejected` / `empty_entry_list_is_rejected` / `duplicate_section_id_and_key_are_rejected`（同一条覆盖「分区标识重复」「条目 key 重复」「条目 id 重复」三种拒绝）/ `snapshot_does_not_grow_after_later_registration` / `section_error_maps_to_fixed_availability`；拒绝路径在写入前返回，先注册者不被覆盖；`snapshot()` 在锁内 `clone` 后立刻出作用域，锁不跨调用方
+- [ ] ~~`src-tauri/src/cmd/storage/mod.rs`：`mod section;` 引入新模块；删除 `pub(crate) mod probe;`，`cmd/storage/probe.rs` 整体移除（旧 trait / 注册表退役，不留双份契约）~~ **（已迁到 [剩余清单](./I61-storage-manager-remaining.md)，以该文件编号为准）**
+  - 验收：全仓检索 `StorageOwnerProbe` / `ProbeRegistry` / `StorageOwnerProbeHandle` 零命中
+  - 进度（2026-11-21，部分完成）：`pub mod section;` 已加；`pub(crate) mod probe;` 仍在（`sample` / `inventory` / `reclaim` / `plugins` / `vault_plugin` 尚未切换，删早了会整片编译不过）——本项与第 5–9 项必须成组落地
+- [ ] ~~`src-tauri/src/app_dirs/registry.rs`：`MANAGED_ROOTS` 删 `E7`–`E11` 五行（收敛为 8 条：`E1`–`E6` / `E12` / `E13`）；删除 `SECURITY_OBSERVABILITY` 与 `RootMount`（`Feature` 分支随条目一起消失，只剩 `Always` 时枚举无意义）；新增 `pub const OPTIONAL_SEGMENTS: &[&str] = &["security"];`（**只写首段**，不写条目 / 策略 / 实现）；`validate_registry` 改为校验 8 条 core 行 + `OPTIONAL_SEGMENTS` 非空、不含 `::`、不等于 feature 名 / 实现类型名（G16 / G19 / V19 / V24）~~ **（已迁到 [剩余清单](./I61-storage-manager-remaining.md)，以该文件编号为准）**
+  - 验收：`app_dirs_contract` 绿；`registry.rs` 内检索 `security/`（带子段）零命中；`OPTIONAL_SEGMENTS` 每项都是单段且无大写
+  - 进度（2026-11-21，部分完成）：`OPTIONAL_SEGMENTS` 已新增并附语义边界注释（只写首段，条目 / 策略 / 实现留给功能 crate）；`MANAGED_ROOTS` 的 `E7`–`E11` 五行、`SECURITY_OBSERVABILITY`、`RootMount`、`validate_registry` 的 13 条口径均**未改**——它们被 `section.rs` 的 core 重名校验引用，须与第 5–9 项同批切换，否则注册校验失去对照表
+- [ ] ~~`src-tauri/src/plugins.rs`：`manage(Arc::new(ProbeRegistry::new()))` 改 `manage(Arc::new(SectionRegistry::new()))`——仍在 `Builder` 阶段、先于 `feature_mounts::on_setup`（G18(b)，建槽与注册不得跨层）~~ **（已迁到 [剩余清单](./I61-storage-manager-remaining.md)，以该文件编号为准）**
+  - 验收：槽类型与 `sample.rs` / `inventory.rs` / `reclaim.rs` 的 `try_state::<Arc<SectionRegistry>>()` 同源
+- [ ] ~~`src-tauri/src/feature_mounts.rs`：`on_setup` 钩子改为调用各功能装配缝导出的注册入口（当前只有 vault）；取不到槽或 `register` 返回 `Err` 时只 `log::error!` 后继续（不 panic、不覆盖、不静默降级成占位行）~~ **（已迁到 [剩余清单](./I61-storage-manager-remaining.md)，以该文件编号为准）**
+  - 验收：vaultless 构建下 `on_setup` 不注册任何分区，`entries` 只剩 core 8 条
+- [ ] ~~`src-tauri/crates/assistant-vault/src/storage_section.rs`（新建）：用功能**自有普通类型**自述 `E7`–`E11`——`VaultStorageEntry` 清单（`entry` / `key` / `segments` / `scope` / `coverage` / `owner` / `inventory` / `decl`）+ `VaultStats` / `VaultSectionError`；`owner` 用 `SecurityDb` / `SecurityRepo` / `SecurityRecovery`，动作 / 确认档 / `autoActive` / `note` / 策略 / 资格判据 / 回收入口全部在此；**不依赖 app crate**（§3.1.1 依赖方向）~~ **（已迁到 [剩余清单](./I61-storage-manager-remaining.md)，以该文件编号为准）**
+  - 验收：`cargo test -p assistant-vault` 绿；crate 依赖图里无 `assistant-app`
+- [ ] ~~`src-tauri/src/vault_plugin.rs`：`#[cfg(feature = "vault")] mod mounted` 提供 `StorageSection` 适配器——`id()` 返回分区标识（只用于日志 / 去重）、`entries()` 转发功能侧清单、`stats(key)` / `eligibility` / `policy` / `reclaim_actions` / `reclaim` 按 `key` 分派到功能侧并**无损映射**成 core 类型；适配器内**不出现**条目 `key` / `security` 字面量（G17(b) / V21 / V24）~~ **（已迁到 [剩余清单](./I61-storage-manager-remaining.md)，以该文件编号为准）**
+  - 验收：故意漏搬 `newestAt` 的负例被 V21 判红；适配器源码检索 `security/` 零命中
+- [ ] ~~`src-tauri/src/vault_plugin.rs`：删除 `VaultStorageProbe` / `StorageOwnerProbe` 实现与 `ProbeRegistry` 注册；改为导出注册入口（`fn register_storage_section(app: &AppHandle)`）供 `feature_mounts::on_setup` 调用，分区实例由 app 侧 `SectionRegistry` 接收，插件不 `manage` 独立 state（G18(a)(d)）~~ **（已迁到 [剩余清单](./I61-storage-manager-remaining.md)，以该文件编号为准）**
+  - 验收：`vault_plugin.rs` 内 `app.manage` 零命中；注册入口只在 `on_setup` 被调用
+- [ ] ~~`src-tauri/src/cmd/storage/sample.rs`：条目清单改为「core 8 条（登记表）+ 各分区 `entries()` 快照」；采样按 `key` → 所属分区索引取数（分区条目走 `stats(key)` + `eligibility` / `policy`，core 条目走既有入口）；分区 stats 同步阻塞，统一在 `spawn_blocking` 里调用并套同一套 **500 ms** 超时（超时只放弃等待、不取消）；删除 `RootMount::Feature` 分支、`probe_sample_for`、`unmounted_probe_sample`——**未挂载 = 该行不存在**，不是 `notImplemented` 占位（G18(f) / §3.10 第 5–6 条）~~ **（已迁到 [剩余清单](./I61-storage-manager-remaining.md)，以该文件编号为准）**
+  - 验收：`sample.rs` 内 `notImplemented` 只剩 `E12` 一处；分区条目零硬编码
+- [ ] ~~`src-tauri/src/cmd/storage/entries.rs`：`ENTRY_COUNT = 13` 与 `static_for` 的 `E7`–`E11` 分支删除；静态档只保留 core 8 条；分区条目的 `action` / 静态 `eligibility` / `reason` / `policy` / `note` 一律从 `SectionEntry::decl` + 分区 `eligibility` / `policy` 取，core 不写功能条目 `key` / `entry` 字面量（G17(b) / V22④）；`complete` 改为「除 `E12` 外 `entries` 中全部 `availability ∈ {available, missing}`」（条目数动态、未挂载分区条目不参与）~~ **（已迁到 [剩余清单](./I61-storage-manager-remaining.md)，以该文件编号为准）**
+  - 验收：`entries.rs` 检索 `security` / `E7`–`E11` 零命中；`assemble_breakdown` 入参改为动态长度（不再 `&[EntrySample; 13]`）
+- [ ] ~~`src-tauri/src/cmd/storage/inventory.rs`：挂载判定从「`ProbeRegistry::capabilities()` 含能力名」改为「首段 ∈ `OPTIONAL_SEGMENTS` 且**无**已注册分区声明该首段 → `optionalNotMounted`；有分区声明 → 按分区 `entries()` 的 `segments` / `coverage` 做减法归 `declared`」；`E7`–`E11` 的 `declaredBytes` 只来自分区条目（G16 / G18(d) / §3.11.3）~~ **（已迁到 [剩余清单](./I61-storage-manager-remaining.md)，以该文件编号为准）**
+  - 验收：零分区时 `security` 归 `optionalNotMounted`（不是 `unregistered`）；单分区时与改造前逐字段等价
+- [ ] ~~`src-tauri/src/cmd/storage/reclaim.rs`：可执行动作校验从「core 硬编码 `E1`–`E8` 白名单」改为「core 8 条动作表 + 分区 `reclaim_actions()` ∪ 按 `key` 调分区 `reclaim`」；`E8` 的 `pruneToLimit` 只由分区自述，core 不出现 `security/backups` 字面量；vaultless 构建下该 `key` 不存在 → 请求按未知 key 拒绝（G17(b) / V23⑤）~~ **（已迁到 [剩余清单](./I61-storage-manager-remaining.md)，以该文件编号为准）**
+  - 验收：`reclaim.rs` 检索 `security` 零命中；`E8 + A4` 在 vault 构建放行、vaultless 构建拒绝且零副作用
+- [ ] ~~`src-tauri/tests/storage_breakdown.rs`：golden 改为两种构建分别断言——`vault` 13 行、`vaultless` 8 行；`vaultless` 断言 `security` 组**整体不存在**（不得出现 `notImplemented` 占位行），core 条目逐字段与 `vault` 构建一致（V13 / V23①⑤）~~ **（已迁到 [剩余清单](./I61-storage-manager-remaining.md)，以该文件编号为准）**
+  - 验收：删掉 `unmounted_probe_keeps_e7_to_e11_visible_and_not_reclaimable`，改为「未挂载 = 行缺失」用例
+  - 进度（2026-11-21，顺带完成）：本文件内重复的 `file_link` 辅助函数已删除，改为 `#[path = "../crates/assistant-tools/tests/support/link.rs"] mod link;` 引入全仓唯一实现（避免各 crate 各写一份后在 Windows 侧漂成两种建链策略）；golden 断言本身未改，仍待本条正式改写
+- [ ] ~~`src-tauri/tests/storage_inventory.rs`：`optionalNotMounted` 断言改为按 `OPTIONAL_SEGMENTS` 首段判定（不再依赖能力名注册）；覆盖「槽缺失 / 零分区 / 单分区 / 双分区」四态（V19 / V23）~~ **（已迁到 [剩余清单](./I61-storage-manager-remaining.md)，以该文件编号为准）**
+  - 验收：注册一个首段不在 `OPTIONAL_SEGMENTS` 的假分区 → `register` 拒绝且 breakdown 不出现该行
+- [ ] ~~`src-tauri/tests/storage_reclaim.rs`：`entryKeys` 空 = core 8 条 + 已挂载分区条目（不再写 13）；白名单用例改为分区自述动作驱动；请求已退役分区的 `key` → 按未知 key 拒绝（V20 / V23）~~ **（已迁到 [剩余清单](./I61-storage-manager-remaining.md)，以该文件编号为准）**
+  - 验收：上述两组在 `vault` / `vaultless` 各跑一遍
+- [ ] ~~验收：V21–V24 按新口径落地（口径四元组一致 / 分区自述与 core 事实一致 / 通用槽四态 / core 不感知具体功能），并把 `T1-c 修订` 的 V22–V24 旧断言（能力名 `SECURITY_OBSERVABILITY`、`ProbeRegistry`、`Feature(capability)` 行）在测试中删除~~ **（已迁到 [剩余清单](./I61-storage-manager-remaining.md)，以该文件编号为准）**
+
+**随本修订同步作废 / 改写的旧断言**（改写时逐条按本节新口径，不要保留双份）：
+
+| 位置 | 旧断言 | 新口径 |
+|---|---|---|
+| T1-b 标题 / 遍历口径 | 「13 条共用」 | 口径本身不变，条目数不再是常量 13（`vault` 13 / `vaultless` 8） |
+| T1-d 装配 | 「13 条按 `E1`→`E13` 固定顺序」、`ENTRY_COUNT`、`&[EntrySample; 13]` | core 8 条固定 + 分区条目按 `entries()` 快照顺序 |
+| T1-e 测试 | 「两种构建 `entries` 恒 13 条」 | 两种构建分别断言 13 / 8，`vaultless` 无占位行 |
+| T1-f 对账 | 「13 条登记」、`subtract_declared(&RawNode, &[EntrySample; ENTRY_COUNT])` | 8 条 core + 已挂载分区条目（长度动态），`optionalNotMounted` 按首段判 |
+| T2-a 计划 | 「`entryKeys` 空 = 全部 13 条」 | core 8 条 + 已挂载分区条目 |
+| T3-b `E8` | `StorageOwnerProbe::prune_backups`、core 侧 `E8 + A4` 白名单、vaultless 时 `E8` 为 `notImplemented` | 分区 `reclaim_actions` / `reclaim` 自述，core 无 `security/backups` 字面量；vaultless 时该行不存在 |
+| T4-b vaultless 回归 | 「`entries` 恒 13 条；`E7`–`E11` 为 `notImplemented`」 | `entries` 8 条，安全域整组不出现 |
+| 门禁 G10 | 「不把 13 条相加」 | 「不把 core 8 条 + 已挂载分区条目相加」 |
+| 门禁表 | 只有 G1–G14 | 补 G15–G19（已落在文末「门禁自查表（G1–G19）」G15–G19 五行） |
+
+> **阅读顺序提示**：上一节 T1-g 修订取代 T1-c / T1-c 修订。T1-d–T1-h 中与「13 条 / 可选条目 / provider」相关的表述在 T1-g 落地时按该节末尾的改写表执行；其余条目（core 8 条、对账余量、超时与并行、遗留收尾）不受影响。
+
 ### T1-d 管理器装配（`get_storage_breakdown` 扩展）
 
 - [x] `src-tauri/src/cmd/storage/mod.rs`：`sampledAt` 只取一次（采样开始时刻，秒），**禁止**每条各取一次
@@ -138,11 +220,11 @@
   - 核对（2026-11-20）：`load_attachment_refs`（`mod.rs:48`–`:79`）单条 SQL `attachment_refs LEFT JOIN conversations` 一次带回 `title` / `updated_at`；有单测 `conversations_group_by_id_with_title_from_join`（`:414`）→ 已落地
 - [x] `src-tauri/src/cmd/storage/mod.rs`：`sharedBytes` / `referencedOnceBytes` 由 `attachment_refs` 的「附件 → 会话数」直接算，保证 `totalBytes = referencedOnceBytes + sharedBytes + orphanBytes`（V5）
   - 核对（2026-11-20）：`build_base`（`mod.rs:132`–`:146`）按 `conv_count` 分档求和；V5 恒等式由 `ledger_identity_splits_shared_once_and_orphan`（`:381`–`:411`）断言 → 已落地
-- [ ] `src-tauri/src/cmd/storage/sample.rs`：`E2`–`E13` 与 `E1` **并行**采样；异步 owner（`AttachmentStore` / `ToolResultStorage`）用 `tokio::time::timeout`，同步 owner（provider / `metadata` / 目录遍历）用 `spawn_blocking` + 对 `JoinHandle` 超时；单条 **500 ms** 超时 → `bytes/count = null` + `availability = unavailable` + `availabilityReason = timeout`（超时只放弃等待，**不取消**，因此 owner stats 必须只读 / 幂等 / 不持锁长遍历）
-  - 核对（2026-11-20）：`SAMPLE_TIMEOUT = 500ms`（`sample.rs:31`）、`timed` 用 `tokio::time::timeout`（`:170`）、`timed_blocking` 用 `spawn_blocking` + 超时（`:176`–`:188`）、`join_all` 并行（`:413`）均已落地；**但 `E7`–`E11` 走 `timed_probe`（`:154`–`:164`），其 `call()` 在 async future 内联同步执行、未走 `spawn_blocking`** → 本条未完全满足，保持未勾选
+- [ ] ~~`src-tauri/src/cmd/storage/sample.rs`：`E2`–`E13` 与 `E1` **并行**采样；异步 owner（`AttachmentStore` / `ToolResultStorage`）用 `tokio::time::timeout`，同步 owner（provider / `metadata` / 目录遍历）用 `spawn_blocking` + 对 `JoinHandle` 超时；单条 **500 ms** 超时 → `bytes/count = null` + `availability = unavailable` + `availabilityReason = timeout`（超时只放弃等待，**不取消**，因此 owner stats 必须只读 / 幂等 / 不持锁长遍历）~~ **（剩余缺口只剩 `E7`–`E11` 的 `spawn_blocking`，见 [剩余清单](./I61-storage-manager-remaining.md) `R-17`；`availabilityReason` 部分已随方案 C 删除）**
+  - 核对（2026-11-20）：`SAMPLE_TIMEOUT = 500ms`（`sample.rs:31`）、`timed` 用 `tokio::time::timeout`（`:170`）、`timed_blocking` 用 `spawn_blocking` + 超时（`:176`–`:188`）、`join_all` 并行（`:413`）均已落地；**但 `E7`–`E11` 走 `timed_probe`（`:154`–`:164`），其 `call()` 在 async future 内联同步执行、未走 `spawn_blocking`** → 本条未完全满足，保持未勾选（缺口编号 T1-h B：T1-g 删除 `timed_probe`、分区采样统一进 `spawn_blocking` 后一并勾选）
 - [x] `src-tauri/src/cmd/storage/mod.rs`：`E1` **不参与** 500 ms 超时；`list_all` 失败即整命令 `Err`（旧字段非 `Option`）；**禁止**把旧字段改成 `Option` 或加 `default` 伪装成 0
   - 核对（2026-11-20）：`mod.rs:170` 的 `list_all().await.map_err(…)?` 直接传播为命令 `Err`；DTO 顶层 `total_bytes` / `total_count` 仍非 `Option`（`entries.rs:390`–`:391`）→ 已落地
-- [x] `src-tauri/src/cmd/storage/entries.rs`：13 条按 `E1`→`E13` 固定顺序装配（key 与 §3.1 逐字一致），`missing` 计 `0`、其余取不到数为 `null`（G6）；`complete` = 除 `E12` 外 12 条全部 `availability ∈ {available, missing}`
+- [x] `src-tauri/src/cmd/storage/entries.rs`：13 条按 `E1`→`E13` 固定顺序装配（key 与 §3.1 逐字一致），`missing` 计 `0`、其余取不到数为 `null`（G6）；`complete` = 除 `E12` 外 12 条全部 `availability ∈ {available, missing}`〔**旧口径，T1-g 落地时改写**：core 8 条固定 + 分区条目按 `entries()` 快照顺序，`complete` 覆盖 `entries` 中全部条目〕
   - 核对（2026-11-20）：`assemble_breakdown` 按 `0..ENTRY_COUNT` 顺序装配（`entries.rs:379`）；`EntrySample::missing()` 为 `observed(0, 0, …)`（`:61`–`:63`）；`complete` 判定排除 `LOGS_INDEX`（`:381`–`:388`），有单测 `complete_ignores_only_logs_entry`（`tests/storage_breakdown.rs:174`）→ 已落地
 - [x] `src-tauri/src/cmd/storage/entries.rs`：`reclaim.action` **按终态矩阵**填（§3.1 本期动作口径表）——`action` 必须保持终态动作（`E1` = `deleteOrphans`、`E2`/`E4` = `rebuildCache`、`E3` = `sweepExpired`、`E8` = `pruneToLimit`、`E13` = `none`），禁止随 `eligibility` 一起降级成 `none`；`E5`/`E6`/`E7`/`E9` = `none` + `notEligible` + `userData`/`businessData`；`E10`/`E11` = `sweepExpired` + `ownerManaged`；`E12` = `rotate` + `ownerManaged` + `externalOwner`
   - 核对（2026-11-20）：`static_for`（`entries.rs:120` 起）逐条核对：0=`DeleteOrphans`、1=`RebuildCache`、2=`SweepExpired`、3=`RebuildCache`、4/5/6/8=`None`、7=`PruneToLimit`、9/10=`SweepExpired`+`OwnerManaged`、11=`Rotate`+`OwnerManaged`+`ExternalOwner`、12=`None`；`E2`/`E4` 已随 T2 落地转为 `Eligible`（`reclaim.rs:288`–`:290` 的 `executor_action` 仅放行 1|3），`E1`/`E3`/`E8`/`E13` 仍 `NotImplemented`+`NoReclaimApi`+`note` → 已落地
@@ -150,8 +232,8 @@
   - 核对（2026-11-20）：`ReclaimPolicyDto::default` 已 `fail_closed = true` / `mutable = false` / `max_bytes = None`（`protocol/dto/storage.rs:210`–`:221`）；`E3` 由 `sample_tool_results` 的 `result_retention()` 注入 `config_policy(days, effective_since)`（`sample.rs:205`），`E11` 由 `audit_policy` 注入（`sample.rs:418`）；`E8` = `constant_policy(Some(5))`、`E12` = `constant_policy(Some(3))` + note 10 MiB、`E10` = `constant_policy(None)`、`E4` = `owner_policy()` + note 64 MiB、`E11` policy `config` + `mutable: true`（`entries.rs:214`–`:224`）→ 已落地
 - [x] `src-tauri/src/cmd/storage/entries.rs`：`confirmation` 两步判定（§3.6 硬约束 5）——第一步 `eligibility ≠ eligible` 恒 `none`；第二步 `eligible` 按条目风险档定档（`E1` 高 → `strongConfirm`，`E2`/`E4`/`E3`/`E8` 低/中 → `confirm`），`expectedBytes` 不参与判定；`reclaimableBytes` / `reclaimableCount` 只对 `eligible` 给数，且必须 `≤ bytes`（V17 前半）
   - 核对（2026-11-20）：`confirmation_for`（`entries.rs:284`–`:296`）先判 `eligibility != Eligible → None`，再 `index 0 → StrongConfirm` / 其余 `Confirm`；`build_entry`（`:305`–`:309`）只在 `eligible` 时保留 `sample.reclaimable`，否则 `None` → 已落地（T2 后 `E2`/`E4` 为 `eligible`，因此不再是「T1 全部 `null`」）
-- [ ] `src-tauri/src/cmd/storage/entries.rs` + `sample.rs`：`E9` 锁定态 `availability = eligibility = locked`（`availabilityReason` 写「vault 未解锁」）；`E7` **不**因 vault 锁定变 `locked`（只 `metadata`）——正常为 `notEligible` + `reason = businessData`，仅当 `metadata` 失败时 `availability = unavailable` + `availabilityReason` 写「文件正在替换 / 迁移」**且** `eligibility = locked` + `reason = locked`（`availability` 与 `eligibility` 在这里**不同值**，不要「统一」）；vaultless 构建 `E7`–`E11` 的 `availability = notImplemented`（`eligibility` 仍按 §3.10 第 5 条：`E7` `notEligible`/`businessData`、`E9` `notEligible`/`userData`、`E8` `notImplemented`/`noReclaimApi`、`E10`/`E11` `ownerManaged`）
-  - 核对（2026-11-20）：`eligibility_for`（`entries.rs:264`–`:280`）对 index 8（`E9`）`locked → eligibility = locked` + `reason = locked`、对 index 6（`E7`）`unavailable → locked/locked` 均已落地；`E7` 正常态 `notEligible`/`businessData`、vaultless 五条 `notImplemented` 且 `eligibility` 取 `static_for` 静态值均符合；**唯一偏差：`ProbeError::Locked` 的 `availabilityReason` 实为「尚未解锁」（`sample.rs:147`），规格要求「vault 未解锁」** → 本条保持未勾选
+- [ ] ~~`src-tauri/src/cmd/storage/entries.rs` + `sample.rs`：`E9` 锁定态 `availability = eligibility = locked`（`availabilityReason` 写「vault 未解锁」）；`E7` **不**因 vault 锁定变 `locked`（只 `metadata`）——正常为 `notEligible` + `reason = businessData`，仅当 `metadata` 失败时 `availability = unavailable` + `availabilityReason` 写「文件正在替换 / 迁移」**且** `eligibility = locked` + `reason = locked`（`availability` 与 `eligibility` 在这里**不同值**，不要「统一」）；vaultless 构建 `E7`–`E11` 的 `availability = notImplemented`（`eligibility` 仍按 §3.10 第 5 条：`E7` `notEligible`/`businessData`、`E9` `notEligible`/`userData`、`E8` `notImplemented`/`noReclaimApi`、`E10`/`E11` `ownerManaged`）~~ **（`availability` / `eligibility` 部分已落地；唯一缺口是原因文案，而方案 C 直接删除该字段——代码改动见 [剩余清单](./I61-storage-manager-remaining.md) `R-16`，原「缺口 C」作废）**
+  - 核对（2026-11-20）：`eligibility_for`（`entries.rs:264`–`:280`）对 index 8（`E9`）`locked → eligibility = locked` + `reason = locked`、对 index 6（`E7`）`unavailable → locked/locked` 均已落地；`E7` 正常态 `notEligible`/`businessData`、vaultless 五条 `notImplemented` 且 `eligibility` 取 `static_for` 静态值均符合；**唯一偏差：`ProbeError::Locked` 的 `availabilityReason` 实为「尚未解锁」（`sample.rs:147`），规格要求「vault 未解锁」** → 本条保持未勾选（缺口编号 T1-h C：T1-g 改写分区错误映射时一并改文案）
 - [x] `src-tauri/src/cmd/storage/entries.rs`：仍为 `notImplemented` 的条目 `note` **逐字点名缺的方法**（T2/T3 补齐后对应 `note` 置 `null`、`eligibility` 转 `eligible`）：`E1` → `AttachmentStore::delete_orphans_by_ids`；`E3` → `ToolResultStorage::collect_expired` / `delete_candidates`；`E8` → `SecurityDbState::prune_backups_to`；`E13` → `assistant_crash::prune_to_limit`（**唯一例外**：`E13` 全程保持 `notImplemented` / `noReclaimApi` / `action = none`，OQ8 未定案，T2–T4 都**不**转 `eligible`、`note` 也**不**置 `null`）
   - 核对（2026-11-20）：`static_for` 中 index 0 / 2 / 7 / 12 的 `note` 分别逐字含上述方法名（`entries.rs:132` / `:149`–`:151` / `:197` / `:246`），且 `E13` 为 `action = None` + `NotImplemented` + `NoReclaimApi`；`E2`（index 1）/`E4`（index 3）已随 T2 转 `Eligible`、`note = None`（`E4` 仅留 64 MiB 说明），符合「补齐后置 null」→ 已落地。注：`tests/storage_breakdown.rs:91` 的 V4 只断言 `note` 非空，仓库内无 golden 快照锁死字面量（与 E12 条同一缺口）
 - [x] `src-tauri/src/tool_setup.rs`：**fail-closed 修正**——读配置失败回退 `0`（禁用），不再回退常量 30 天（N6 / V12 前半）
@@ -162,7 +244,7 @@
   - 核对（2026-11-20）：`tool_exec.rs:237`–`:239` 已新增 `pub fn storage()` 直接转发 `self.pipeline.storage()` → 已落地
 - [x] `src-tauri/src/cmd/storage/`：取 `E3` / `E4` 的 owner 入口——`E3` 经 `app.try_state::<Arc<PipelineToolExecution>>()` → `.storage()`；取不到 → `E3` `availability = notImplemented` + `availabilityReason` 点名 owner 缺失 + `bytes` / `count = null` + `eligibility = notImplemented` + `reason = noReclaimApi`（V17：方法不可达即不可执行）。`E4` 用 `AppDirs::indexes()` 传给公开的 `index_stats`；`AppDirs::resolve()` 失败 → 整命令 `Err`（与 `E1` 同级）。管理器**不得**自行拼受管目录路径（G1）
   - 核对（2026-11-20）：`sample.rs:299`–`:301` 取 `try_state::<Arc<PipelineToolExecution>>()` → `.storage()`，`None` 分支 `:353`–`:354` 产 `NotImplemented` + 文案「工具执行管线未装配」（语义等同「owner 未装配」，规格 §3.10 只要求点名缺失者，未锁字面量）；`eligibility`/`reason` 由 `static_for` index 2 给 `notImplemented`/`noReclaimApi`；`E4` 走 `dirs.indexes()`（`:359`–`:361`）→ `index_stats`；`AppDirs::resolve()` 在 `mod.rs:165` 整命令 `Err` → 已落地
-- [x] `src-tauri/src/cmd/storage/entries.rs`：把「13 条装配」抽成**纯函数** `pub fn assemble_breakdown(…) -> StorageBreakdownDto`（入参类型与字段同为 `pub`，**不能** `pub(crate)`——`tests/storage_breakdown.rs` 是 lib 的集成测试，跨 crate 只能看见 `pub`）——入参只含普通数据（`sampled_at`、附件采样结果、各条样本、`policy` 快照）；命令函数只负责取 state / 调 owner / 喂入参。**没有这一步，`tests/storage_breakdown.rs` 的 V1–V5 / V13 无法落地**
+- [x] `src-tauri/src/cmd/storage/entries.rs`：把「13 条装配」抽成**纯函数** `pub fn assemble_breakdown(…) -> StorageBreakdownDto`（入参类型与字段同为 `pub`，**不能** `pub(crate)`——`tests/storage_breakdown.rs` 是 lib 的集成测试，跨 crate 只能看见 `pub`）——入参只含普通数据（`sampled_at`、附件采样结果、各条样本、`policy` 快照）；命令函数只负责取 state / 调 owner / 喂入参。**没有这一步，`tests/storage_breakdown.rs` 的 V1–V5 / V13 无法落地**〔T1-g 落地后 `&[EntrySample; ENTRY_COUNT]` 改为动态长度 `&[EntrySample]`〕
   - 核对（2026-11-20）：实现为 `pub fn assemble_breakdown(base: BreakdownBase, samples: &[EntrySample; ENTRY_COUNT], sampled_at: i64, inventory: StorageInventoryDto)`（`entries.rs:373`–`:378`）——**未引入 `BreakdownInputs` 结构，改为 `pub BreakdownBase` + 三个显式入参**（同样只含普通数据、同样是纯函数，测试可完全伪造）；`BreakdownBase` 为 `pub`（`:87`），`tests/storage_breakdown.rs:8`–`:11` 已跨 crate 导入并驱动 V1–V5 / V13 → 目标已达成
 
 ### T1-e 测试
@@ -170,20 +252,23 @@
 - [x] **可见性（测试的前置条件，先做）**：`src-tauri/src/lib.rs` 的 `mod cmd;` 改为 `pub mod cmd;`，`src-tauri/src/cmd/mod.rs` 的 `mod storage;` 改为 `pub mod storage;`——现有 `src-tauri/tests/*` 全部只 `use` 已 `pub` 的模块，`assistant_app::cmd::storage::…` 不改则取不到，`storage_breakdown.rs` / `storage_reclaim.rs` 无法编译。`a3_lib_rs_is_assembly_only` 只校验 `lib.rs` 行数与「不得内联 `generate_handler!`」，`pub` 化不影响；也**不要**为测试新建 `pub mod storage_manager` 门面
   - 核对（2026-11-20）：`lib.rs:8` 为 `pub mod cmd;`、`cmd/mod.rs:18` 为 `pub mod storage;`；`tests/storage_breakdown.rs:8`–`:11` 与 `tests/storage_inventory.rs` 均已跨 crate 导入编译通过 → 已落地
 
-- [ ] `src-tauri/crates/assistant-storage/tests/attachment_store.rs`：`derived_stats` 用例（空目录 → `count = 0` 且两端 `None`；符号链接不计入；`bytes` = 常规文件长度之和）
-  - 核对（2026-11-20）：`derived_stats_counts_regular_files_and_skips_companions`（`attachment_store.rs:108`–`:133`）已覆盖空目录空态、`.tmp` 伴生排除、`bytes = 7` 求和；**无符号链接用例**（全文件无 `symlink` 字样）→ 缺一项，保持未勾选
-- [ ] `src-tauri/crates/assistant-tools/tests/storage.rs`：`result_stats` 与 `cleanup_expired_results` 判据一致（同目录先统计再清理，`removedBytes` 与统计值可对上）；`retention_days = 0` 时 stats 仍可出数但 `E3` 判 `policyDisabled`
-  - 核对（2026-11-20）：`result_stats_shares_the_cleanup_scope`（`:559`–`:576`）先统计后清理、前后 `count` / `bytes` 对得上，`result_stats_ignores_companion_files`（`:581`）另覆盖伴生文件；`retention_is_injected_once_and_survives_disabled_policy`（`:592`–`:611`）覆盖 `retention = 0` 时 stats 仍出数。**但「`E3` 判 `policyDisabled`」无任何实现或用例**（全仓 `PolicyDisabled` 仅出现在 `protocol/dto/storage.rs:155` / `:192` 的枚举定义）→ 本条保持未勾选
+- [x] `src-tauri/crates/assistant-storage/tests/attachment_store.rs`：`derived_stats` 用例（空目录 → `count = 0` 且两端 `None`；符号链接不计入；`bytes` = 常规文件长度之和）
+  - 核对（2026-11-20）：`derived_stats_counts_regular_files_and_skips_companions`（`attachment_store.rs:108`–`:133`）已覆盖空目录空态、`.tmp` 伴生排除、`bytes = 7` 求和；**无符号链接用例**（全文件无 `symlink` 字样）→ 缺一项，保持未勾选（缺口编号 T1-h D-1）
+  - 核对（2026-11-21）：补 `derived_stats_skips_symlinks`（指向目录外的文件链接 → `count = 0` / `bytes = 0`）；建链失败时显式 `eprintln` 跳过，本机无 skip 输出（真实建链）。`cargo test -p assistant-storage --test attachment_store` 11 项绿 → 已落地（T1-h D-1 关闭）
+- [x] `src-tauri/crates/assistant-tools/tests/storage.rs`：`result_stats` 与 `cleanup_expired_results` 判据一致（同目录先统计再清理，`removedBytes` 与统计值可对上）；`retention_days = 0` 时 stats 仍可出数但 `E3` 判 `policyDisabled`
+  - 核对（2026-11-20）：`result_stats_shares_the_cleanup_scope`（`:559`–`:576`）先统计后清理、前后 `count` / `bytes` 对得上，`result_stats_ignores_companion_files`（`:581`）另覆盖伴生文件；`retention_is_injected_once_and_survives_disabled_policy`（`:592`–`:611`）覆盖 `retention = 0` 时 stats 仍出数。**但「`E3` 判 `policyDisabled`」无任何实现或用例**（全仓 `PolicyDisabled` 仅出现在 `protocol/dto/storage.rs:155` / `:192` 的枚举定义）→ 本条保持未勾选（缺口编号 T1-h D-2）
+  - 核对（2026-11-21）：`E3` 判据已在 T3 落地——`tool_results_eligibility`（`entries.rs:341`–`:367`）在 `retention_days` 读不到或 `= 0` 时给 `notEligible` + `policyDisabled`；用例 `t3_dynamic_eligibility_follows_policy_and_count`（`entries.rs:678`）、`retention_zero_is_policy_disabled_and_deletes_nothing`（`storage_reclaim.rs:682`）与 `retention_is_injected_once_and_survives_disabled_policy`（`storage.rs:592`）三条均绿 → 已落地（T1-h D-2 关闭，无需再改代码）
 - [x] `src-tauri/crates/assistant-tools/tests/index_stats.rs`：`index_stats` 覆盖跨 revision 残留与符号链接跳过
   - 核对（2026-11-20）：`cross_revision_residuals_are_all_counted`（`:19`–`:33`）、`companion_files_are_not_counted`（`:35`）、`symlinks_are_skipped`（`:50`，`#[cfg(unix)]`）齐备 → 已落地（Windows 上符号链接用例按 `cfg` 不编译）
-- [ ] `src-tauri/src/cmd/mascot_asset.rs`（`mod tests`）：`asset_stats` 排除 `.tmp`、跳过子目录符号链接
-  - 核对（2026-11-20）：`asset_stats_counts_regular_files_and_skips_companions`（`mascot_asset.rs:362`）已断言 `.tmp` 不计入；**无符号链接用例** → 缺一项，保持未勾选
+- [x] `src-tauri/src/cmd/mascot_asset.rs`（`mod tests`）：`asset_stats` 排除 `.tmp`、跳过子目录符号链接
+  - 核对（2026-11-20）：`asset_stats_counts_regular_files_and_skips_companions`（`mascot_asset.rs:362`）已断言 `.tmp` 不计入；**无符号链接用例** → 缺一项，保持未勾选（缺口编号 T1-h D-3）
+  - 核对（2026-11-21）：补 `asset_stats_skips_symlinks`（`rive/` 下指向目录外的文件链接 → `count = 0` / `bytes = 0`）；建链失败时显式跳过，本机无 skip 输出。`cargo test --lib asset_stats` 3 项绿 → 已落地（T1-h D-3 关闭）
 - [x] `src-tauri/src/setup.rs`：新增 `#[cfg(test)] mod tests`，用例覆盖 `db_file_stats`——文件缺失按空态（由管理器翻译成 `missing` 计 0），且**不打开 / 不创建 DB**
   - 核对（2026-11-20）：`setup.rs:344` 起 `mod tests`，`missing_db_file_reports_zero_and_creates_nothing`（`:355`）断言缺失时 `bytes/count = 0`、两端 `None`、`!path.exists()`；`existing_db_file_is_measured_by_metadata_only`（`:369`）→ 已落地
-- [x] `src-tauri/tests/storage_breakdown.rs`（集成测试）：13 条 key 顺序（V1）；伪造 owner 失败 → `null` + `unreadable`（V2）；`action = none` 的条目 `eligibility ∈ {notEligible, ownerManaged, notImplemented, locked}`（V3；**`locked` 必列**）；`reason` / `note` 非空（V4）；账本恒等式（V5）
+- [x] `src-tauri/tests/storage_breakdown.rs`（集成测试）：13 条 key 顺序（V1）；伪造 owner 失败 → `null` + `unreadable`（V2）；`action = none` 的条目 `eligibility ∈ {notEligible, ownerManaged, notImplemented, locked}`（V3；**`locked` 必列**）；`reason` / `note` 非空（V4）；账本恒等式（V5）〔V1 的条数随 T1-g 改写为 `vault` 13 / `vaultless` 8〕
   - 核对（2026-11-20）：V1 `entries_follow_registry_order`（`:31`）、V2 `owner_failure_degrades_to_null_and_unreadable`（`:49`）、V3 `action_none_entries_are_never_eligible`（`:69`，含 `Locked`）、V4 `non_eligible_entries_carry_reason_and_not_implemented_carries_note`（`:91`）均在本文件；**V5 恒等式落在 `cmd/storage/mod.rs:381` 的单元测试 `ledger_identity_splits_shared_once_and_orphan`（不在本文件）** → 覆盖齐备，已落地
-- [x] `src-tauri/tests/storage_breakdown.rs`：注入假 provider 与**不注入**各跑一遍——不注入时 `E7`–`E11` 的 `availability = notImplemented`、`eligibility` 分别为 `notEligible`/`notImplemented`/`notEligible`/`ownerManaged`/`ownerManaged`（V13 后半）；两种构建 `entries` 恒 13 条、顺序不变
-  - 核对（2026-11-20）：`unmounted_probe_keeps_e7_to_e11_visible_and_not_reclaimable`（`:120`–`:170`）用 `unmounted_probe_sample()` 驱动「未装配」一侧、`available()` 驱动正常一侧，断言 13 条恒在、`bytes/count = None`、`eligibility` 五元组与规格一致。偏差：测试在**样本层**注入（`assemble_breakdown` 不吃 provider），未构造假 `StorageOwnerProbe` trait 对象；行为契约等价 → 已落地
+- [x] `src-tauri/tests/storage_breakdown.rs`：注入假 provider 与**不注入**各跑一遍——不注入时 `E7`–`E11` 的 `availability = notImplemented`、`eligibility` 分别为 `notEligible`/`notImplemented`/`notEligible`/`ownerManaged`/`ownerManaged`（V13 后半）；两种构建 `entries` 恒 13 条、顺序不变〔**旧断言，T1-g 落地时改写**：`vault` 13 / `vaultless` 8，未挂载 = 行不存在〕
+  - 核对（2026-11-20）：`unmounted_probe_keeps_e7_to_e11_visible_and_not_reclaimable`（`:120`–`:170`）用 `unmounted_probe_sample()` 驱动「未装配」一侧、`available()` 驱动正常一侧，断言 13 条恒在、`bytes/count = None`、`eligibility` 五元组与规格一致。偏差：测试在**样本层**注入（`assemble_breakdown` 不吃 provider），未构造假 `StorageOwnerProbe` trait 对象；行为契约等价 → 已落地（该用例本身随 T1-g 删除，见 T1-g「`storage_breakdown` golden」条）
 - [x] 静态门禁：`cmd/storage/` 无 `fs::remove_*` / `read_dir`（唯一例外 `inventory.rs`）/ 受管目录名字面量 / `AppConf::load()`（V10 / G1–G3）
   - 核对（2026-11-20）：全目录检索 `remove_file` / `remove_dir` / `fs::remove` 无命中；`read_dir` 仅 `inventory.rs:222` / `:259` / `:287`；`AppConf::load` 无命中 → 已落地
 
@@ -224,13 +309,36 @@
 - [x] 静态门禁：`read_dir` 只允许出现在 `cmd/storage/inventory.rs`；`inventory.rs` 内不得出现 `remove_*` / `fs::write` / `create(` / `log::`
   - 验收：按上述两条检索 `cmd/storage/` 判绿
 
-> 核对（2026-11-20）：16 条全部落地——`registry.rs` 三枚举 + 13 条登记（`:52`–`:184`）、`validate_registry`（`:207`）、`dir_name::ALL`（`:19`，实际带 `#[cfg(test)]`）、`roots.rs` 七个 getter 全转 `path_for`（`:100`）；DTO 五类型（`storage.rs:257`–`:326`，`Default` 在 `:313`）+ `inventory` 字段（`:48`）；`inventory.rs` 的 `scan`（`:327`）、`subtract_declared`（`:393`）、`residual`（`:419`）、`InventoryCache`（`:496`）、`status_of`（`:463`）、`trigger_scan`（`:581`）；`setup.rs:116` 已 `manage`；`events` 常量在 `protocol/events.rs:27`；`mod.rs` 读路径在 `:175`–`:186`、`refresh_storage_inventory` 在 `:188`；`ipc.rs:98` 已注册；`tests/storage_inventory.rs` 8 例。偏差三处（均已按实际形状记录，行为契约等价）：①扫描入口收 `(dirs, provider_mounted: bool)`、时刻由调用方在完成后打点，非条目原写的 `scan_inventory(dirs, &dyn Fn, now)`；②减法为 `subtract_declared(&RawNode, &[EntrySample; ENTRY_COUNT])` 三函数组合，非 `subtract(&mut [DTO], &HashMap)`；③`trigger_scan` 只收 `app`（缓存从 `try_state` 取），无 `cache` / `force` 入参。
+> 核对（2026-11-20）：16 条全部落地——`registry.rs` 三枚举 + 13 条登记（`:52`–`:184`；其中 `E7`–`E11` 五行随 T1-g 修订移除，届时只剩 8 条 core 行 + `OPTIONAL_SEGMENTS`）、`validate_registry`（`:207`）、`dir_name::ALL`（`:19`，实际带 `#[cfg(test)]`）、`roots.rs` 七个 getter 全转 `path_for`（`:100`）；DTO 五类型（`storage.rs:257`–`:326`，`Default` 在 `:313`）+ `inventory` 字段（`:48`）；`inventory.rs` 的 `scan`（`:327`）、`subtract_declared`（`:393`）、`residual`（`:419`）、`InventoryCache`（`:496`）、`status_of`（`:463`）、`trigger_scan`（`:581`）；`setup.rs:116` 已 `manage`；`events` 常量在 `protocol/events.rs:27`；`mod.rs` 读路径在 `:175`–`:186`、`refresh_storage_inventory` 在 `:188`；`ipc.rs:98` 已注册；`tests/storage_inventory.rs` 8 例。偏差三处（均已按实际形状记录，行为契约等价）：①扫描入口收 `(dirs, provider_mounted: bool)`、时刻由调用方在完成后打点，非条目原写的 `scan_inventory(dirs, &dyn Fn, now)`（T1-g 落地时 `provider_mounted` 改为「已注册分区声明的首段集合」，判定口径见 T1-g `inventory.rs` 条）；②减法为 `subtract_declared(&RawNode, &[EntrySample; ENTRY_COUNT])` 三函数组合，非 `subtract(&mut [DTO], &HashMap)`（T1-g 落地时第二参数改为动态长度）；③`trigger_scan` 只收 `app`（缓存从 `try_state` 取），无 `cache` / `force` 入参。
 
 > 验收记录（2026-11-20）：`cargo test -p assistant-app --test storage_breakdown --test storage_inventory` 14 项全绿（`storage_breakdown` 6 项覆盖 V1–V5 / V13，`storage_inventory` 8 项覆盖 V18 / V20 前半 / 有界 / `failed` 保留）；`cargo check --workspace --all-targets` 通过；`--no-default-features`（vaultless）编译通过；`cargo clippy` 无告警。门禁签字：G1（`cmd/storage` 无 `use assistant_vault` / `assistant_security`、无 `#[cfg(feature)]`）、G2（`read_dir` 仅 `cmd/storage/inventory.rs`）、G3（无 `remove_*` / `fs::write` / `create(` / `log::` / 受管目录字面量）、G5（符号链接一律 `symlink_metadata`、不跟随）、G6（`missing` 计 0、其余取不到数为 `null`）、G13 / G14（既有 4 字段键名 / 类型 / 含义与既有能力零改动）逐条通过。伴生文件口径（`-journal` / `-wal` / `-shm` / `.tmp` / `.lock`）在 owner 观测与 `inventory.rs` 分类两侧一致，无漂移。
 
+### T1-h 遗留收尾（原 7 项，已清 4 项；剩 B → 剩余清单 `R-17`，A-2 / C 合并为 `R-16`）
+
+> 原 7 项在各自条目下都带「未满足」核对注（不是「已落地但没勾」）。A-1 / D-1 / D-2 / D-3 已于 2026-11-21 清零（D-2 由 T3 顺带落地，只做复核）；剩余项都已迁到 [剩余清单](./I61-storage-manager-remaining.md)，本表只留编号对照。
+
+| 编号 | 位置 | 缺口 | 去向 |
+|---|---|---|---|
+| A-1 | T1-b `assistant-crash` | 已落地（2026-11-21） | 无（下方详列） |
+| A-2 | T1-b `E12` | 固定文案无 golden 锁死字面量 | 方案 C 删除 `availabilityReason` → 合并到 `R-16`（作废） |
+| B | T1-d `sample.rs` | `E7`–`E11` 走 `timed_probe`，`call()` 在 async future 内联同步执行，未 `spawn_blocking` | `R-17` |
+| C | T1-d `entries.rs` | `ProbeError::Locked` 的 `availabilityReason` 文案与规格不符 | 方案 C 删除该字段 → 合并到 `R-16`（作废） |
+| D-1 | T1-e `attachment_store.rs` | 已落地（2026-11-21） | 无 |
+| D-2 | T1-e `assistant-tools/tests/storage.rs` | 已落地（2026-11-21，随 T3 一起实现，本条仅需复核） | 无 |
+| D-3 | T1-e `mascot_asset.rs` | 已落地（2026-11-21） | 无 |
+
+A-2 / B / C 的验收已迁到剩余清单，不在此重复；下面只展开 A 组剩余一项。
+
+- [x] `src-tauri/crates/assistant-crash/src/crash_dump.rs`：`dump_stats` / `DirStats` 已在（`crash_dump.rs:26` / `:17`，`lib.rs` 已再导出），本条只剩两件——①`walk_stats`（`:30`）加三类文件名判据（`panic_*.log` / `crash_*.dmp` / `crash_*.log`），其余文件不计数、不降级；②补 `dump_stats` 单测（三类各命中一份 + 一份无关文件不计 + 符号链接不计）
+  - 验收：`cargo test -p assistant-crash` 绿；`src-tauri/tests` 补一条 `E13` 观测验收（伪造目录 → `bytes` / `count` 与三类文件严格对上）
+  - 核对（2026-11-21）：`walk_stats` 加 `is_crash_artifact()` 判据（前缀 + 后缀双匹配），递归目录内同样过滤；单测 3 条（三类命中 / 符号链接跳过 / 缺失目录空态）；`tests/storage_breakdown.rs` 补 `e13_dump_stats_counts_only_crash_artifacts` 与 `e13_dump_stats_skips_symlinks`。`cargo test -p assistant-crash` 7 项绿、`cargo test --test storage_breakdown` 全绿，符号链接用例在本机真实建链（无 skip 输出）→ 已落地
+- [ ] ~~`E12` 固定文案锁死：golden 断言改为「按 `key` 查 `E12` 的 `availability = notImplemented` + `availabilityReason` 与 §3.10 表末行逐字一致」，不再依赖外部快照文件（随 T1-g 的 `storage_breakdown` golden 一起落）~~ **（已作废：方案 C 删除 `availabilityReason`，改为断言 `availability = notImplemented` + `reclaim.note` 非空，见 [剩余清单](./I61-storage-manager-remaining.md) `R-16`）**
+  - 验收：把文案临时改成任意别的措辞，该断言判红
+  - 注：本项与 T1-g「golden 改为 `vault` 13 行 / `vaultless` 8 行」是同一次改动，按 T1-g 的用例落地即可
+
 ---
 
-## 阶段 T2 — plan / execute 骨架 + 低风险回收（`E2` / `E4`）
+## 阶段 T2 — plan / execute 骨架 + 低风险回收（`E2` / `E4`）（已完成 2026-11-20）
 
 退出条件：V6–V10 通过；单条失败隔离；白名单外请求被拒。
 
@@ -248,8 +356,8 @@
   - 验收：`execute_rejects_unknown_and_expired_plans` 绿
 - [x] `src-tauri/src/cmd/storage/reclaim.rs`：单实例串行，第二个执行回 `busy`（不排队、不用全局锁）
   - 验收：并发两次执行，第二次零副作用（用例在 T2-d）
-- [x] `src-tauri/src/cmd/storage/mod.rs`：`get_storage_reclaim_plan` 自行重新采样；`entryKeys` 空 = 全部 13 条，未知 key 整体拒绝；`totalReclaimableBytes` 只累加 `eligible` 条目，任一算不出则 `null`
-  - 验收：空 `entryKeys` 回 13 条；未知 / 重复 key 整体拒绝
+- [x] `src-tauri/src/cmd/storage/mod.rs`：`get_storage_reclaim_plan` 自行重新采样；`entryKeys` 空 = 全部条目（T1-g 落地后为 core 8 条 + 已挂载分区条目，不再是常量 13），未知 key 整体拒绝；`totalReclaimableBytes` 只累加 `eligible` 条目，任一算不出则 `null`
+  - 验收：空 `entryKeys` 回全部条目（`vault` 13 / `vaultless` 8）；未知 / 重复 key 整体拒绝
 - [x] `src-tauri/src/cmd/storage/mod.rs`：`reclaim_storage` 整批校验 `confirmed` / 非空 / 计划命中 / 白名单，任一不符拒绝整个请求、零副作用
   - 验收：`execute_rejects_keys_outside_whitelist` 绿（T2 只放行 `E2+A5` / `E4+A5`）
 - [x] `src-tauri/src/cmd/storage/reclaim.rs`：执行时重新校验资格（重算 / 重 stat / 重计数），不按计划里的数量删；计划后被改动的项计 `skipped`
@@ -263,7 +371,7 @@
 - [x] `src-tauri/tests/protocol_bindings.rs`：全部新 DTO 登记进 `use` 与 `decl(&cfg)`
   - 验收：该测试绿
 
-> 核对（2026-11-20）：12 条全部落地——`plan_storage_reclaim`（`reclaim.rs:162`）/ `execute_storage_reclaim`（`:218`）、`ReclaimPlanStore`（`:99` 起，`begin_execution` 在 `:127`，`ExecutionGuard` 在 `:154`）、`plan_age`（`:144`）、`validated_targets`（`:295`）、`execute_derived`（`:338`）/ `execute_index`（`:375`）、`MAX_ERRORS`（`:31`）与 `failure_errors`（`:430`）、`log::info!`（`:252`）、`ipc.rs:99`–`:100` 已注册、`protocol_bindings.rs:39`–`:43` 与 `:254`–`:265` 两侧齐全。四处实现与清单原写的形状不同（均按实际可装配性落地、行为契约等价）：①两个纯函数回 `Result<_, String>`（规格 §6.1 第 5 条要求沿用现有 Tauri 错误串，`StorageReclaimErrorDto` 只用于条目内 `errors`）；②`ReclaimPorts` 用 `attachments: &AttachmentStore`（`E1` / `E2` 恒装配）、`probe: Option<StorageOwnerProbeHandle>`、`db: Option<DbState>`、`tool_results: Option<Arc<dyn ToolResultStorage>>`，均为可克隆 / 可借用形态；③`totalReclaimableBytes` 未额外绑定 `complete`（以 §6.2 表「任一 `eligible` 算不出即 `null`」为准）；④`CachedPlanEntry` 本次补上 `policy` 快照，`ReclaimPolicyDto` 无 `Eq` 故相关 derive 降为 `PartialEq`。`busy` 并发用例仍待 T2-d 补齐。
+> 核对（2026-11-20）：12 条全部落地——`plan_storage_reclaim`（`reclaim.rs:162`）/ `execute_storage_reclaim`（`:218`）、`ReclaimPlanStore`（`:99` 起，`begin_execution` 在 `:127`，`ExecutionGuard` 在 `:154`）、`plan_age`（`:144`）、`validated_targets`（`:295`）、`execute_derived`（`:338`）/ `execute_index`（`:375`）、`MAX_ERRORS`（`:31`）与 `failure_errors`（`:430`）、`log::info!`（`:252`）、`ipc.rs:99`–`:100` 已注册、`protocol_bindings.rs:39`–`:43` 与 `:254`–`:265` 两侧齐全。四处实现与清单原写的形状不同（均按实际可装配性落地、行为契约等价）：①两个纯函数回 `Result<_, String>`（规格 §6.1 第 5 条要求沿用现有 Tauri 错误串，`StorageReclaimErrorDto` 只用于条目内 `errors`）；②`ReclaimPorts` 用 `attachments: &AttachmentStore`（`E1` / `E2` 恒装配）、`probe: Option<StorageOwnerProbeHandle>`、`db: Option<DbState>`、`tool_results: Option<Arc<dyn ToolResultStorage>>`，均为可克隆 / 可借用形态（`probe` 字段随 T1-g 修订改为分区句柄，回收按 `key` 分派到分区 `reclaim`）；③`totalReclaimableBytes` 未额外绑定 `complete`（以 §6.2 表「任一 `eligible` 算不出即 `null`」为准）；④`CachedPlanEntry` 本次补上 `policy` 快照，`ReclaimPolicyDto` 无 `Eq` 故相关 derive 降为 `PartialEq`。`busy` 并发用例仍待 T2-d 补齐。
 
 ### T2-b `E2`（`attachments/derived`，`A5`）
 
@@ -312,9 +420,9 @@
 - [x] `src-tauri/crates/assistant-tools/tests/index_stats.rs`：`purge_index_files` 幂等 + 只删缓存文件
   - 验收：第二次 `removed = 0`，非 `.idx` 文件仍在
 - [x] golden 断言：T2 结束时 `E2` / `E4` 为 `eligible`（`confirm`），其余按 §11 切片期表（V17）
-  - 验收：13 条资格逐条比对切片期表，`E2` / `E4` 的 `reason` / `confirmation` / 可回收数字固定
+  - 验收：条目资格逐条比对切片期表（T1-g 落地后按 `vault` 13 / `vaultless` 8 分别断言），`E2` / `E4` 的 `reason` / `confirmation` / 可回收数字固定
 
-> 核对（2026-11-20）：9 条全部落地——V6 在 `src-tauri/tests/storage_reclaim.rs:131`；V8 四组负例在 `:194`（未确认 / 空条目 / action 不符 / 不在计划内）+ `:241`（`planNotFound` / `planExpired`）；白名单负例 `execute_rejects_whitelisted_out_entry_action_pairs`（`:308` 起，`E3+A3` / `E10+A3` / `E11+A3` / `E13+A4` 四组各回 `entryNotAllowed` 且整根签名不变）；V20 后半 `inventory_and_unregistered_keys_are_rejected_on_both_sides`（`:350` 起，`"inventory"` 与未登记子节点 `security/audit/tmp` 在 plan / execute 两侧均被拒）；`busy` `concurrent_execution_returns_busy_without_side_effects`（`:387` 起，持闸门复现并发 → 第二次 `busy`、两份签名不变，释放后同计划可正常执行）；V9 在 `:380`（索引根被替换成文件 → E4 `failed`、E2 `done`），`skipped` 由 `:367` 的二次执行断言；owner 侧幂等两处在 `crates/assistant-storage/tests/attachment_store.rs:106`（`purge_derived_orphans_is_idempotent`，第二次 `removed = 0` / `failed = 0` / 全 `skipped`）与 `crates/assistant-tools/tests/index_stats.rs:47`（`purge_index_files_is_idempotent_and_only_removes_idx`，非 `.idx` 文件两轮都在）；golden 在 `src-tauri/src/cmd/storage/entries.rs:453`（13 条资格比对）+ `:488`（`E2` / `E4` 的 `Eligible` / `DerivedCache` / `Confirm` / 可回收数字）。`busy` 用例不真起线程：直接用 `ReclaimPlanStore::begin_execution()` 占住闸门，语义与「第一条执行未结束」等价且不引入时序抖动。另：V9 的 `partial` 态当前无路径可触发（`E2` / `E4` 各自只会 `done` / `failed` / `skipped`），故该条按已覆盖三态勾选。测试结果：`storage_reclaim` 10 条、`attachment_store` 7 条、`index_stats` 5 条（Windows 下 unix 用例按 cfg 排除）全绿。
+> 核对（2026-11-20）：9 条全部落地——V6 在 `src-tauri/tests/storage_reclaim.rs:131`；V8 四组负例在 `:194`（未确认 / 空条目 / action 不符 / 不在计划内）+ `:241`（`planNotFound` / `planExpired`）；白名单负例 `execute_rejects_whitelisted_out_entry_action_pairs`（`:308` 起，`E3+A3` / `E10+A3` / `E11+A3` / `E13+A4` 四组各回 `entryNotAllowed` 且整根签名不变）；V20 后半 `inventory_and_unregistered_keys_are_rejected_on_both_sides`（`:350` 起，`"inventory"` 与未登记子节点 `security/audit/tmp` 在 plan / execute 两侧均被拒）；`busy` `concurrent_execution_returns_busy_without_side_effects`（`:387` 起，持闸门复现并发 → 第二次 `busy`、两份签名不变，释放后同计划可正常执行）；V9 在 `:380`（索引根被替换成文件 → E4 `failed`、E2 `done`），`skipped` 由 `:367` 的二次执行断言；owner 侧幂等两处在 `crates/assistant-storage/tests/attachment_store.rs:106`（`purge_derived_orphans_is_idempotent`，第二次 `removed = 0` / `failed = 0` / 全 `skipped`）与 `crates/assistant-tools/tests/index_stats.rs:47`（`purge_index_files_is_idempotent_and_only_removes_idx`，非 `.idx` 文件两轮都在）；golden 在 `src-tauri/src/cmd/storage/entries.rs:453`（13 条资格比对；T1-g 落地后改为 core 8 条 + 分区条目按 `entries()` 快照逐条比对）+ `:488`（`E2` / `E4` 的 `Eligible` / `DerivedCache` / `Confirm` / 可回收数字）。`busy` 用例不真起线程：直接用 `ReclaimPlanStore::begin_execution()` 占住闸门，语义与「第一条执行未结束」等价且不引入时序抖动。另：V9 的 `partial` 态当前无路径可触发（`E2` / `E4` 各自只会 `done` / `failed` / `skipped`），故该条按已覆盖三态勾选。测试结果：`storage_reclaim` 10 条、`attachment_store` 7 条、`index_stats` 5 条（Windows 下 unix 用例按 cfg 排除）全绿。
 
 ---
 
@@ -334,6 +442,8 @@
 > 核对（2026-11-20）：6 条全部落地——候选收集 `crates/assistant-tools/src/runtime/storage.rs:332`（复用 `for_each_file` + 与 `cleanup_expired_results` 共用的 `retention_cutoff` / `is_expired`，`retention_days == 0` 返回空集）；删除 `:359`（`DeleteReport { removed, removed_bytes, failed, skipped }`，`NotFound` 计 `skipped`、其它错只计 `failed` 不中断）；`mtime` 在未来的文件由 `is_expired` 的「严格早于截止」判据天然排除（`:379` 起）；trait 默认 `None` 在 `:103` / `:110`，`FileToolResultStorage` 覆盖在 `:242` / `:249`；白名单 `E3 + A3` 在 `src-tauri/src/cmd/storage/reclaim.rs:314`（`executor_action`），`retentionDays = 0` → `notEligible` + `policyDisabled` 在 `src-tauri/src/cmd/storage/entries.rs:294` 起的 `tool_results_eligibility`；执行侧重新 `collect_expired` 在 `reclaim.rs` 的 `execute_tool_results`（计划只给数量与字节）。
 
 ### T3-b `E8`（`security/backups`，`A4`）
+
+> **实现形态已被 T1-g 修订取代**：条目声明、`pruneToLimit` 动作、`keep` 策略、资格判据与 `prune_backups` 入口全部由 vault 分区自述（`reclaim_actions` / `reclaim`），core 不再持有 `E8 + A4` 白名单与 `security/backups` 字面量。行为契约（先重新计数后裁剪、恒留最新 5 份、`locked` 态仍可 `eligible`、`keep` 不硬编码）**不变**。
 
 - [x] `src-tauri/crates/assistant-vault/src/security_db/state.rs`：现有 `prune_backups(dir, keep) -> Result<()>` 为 `pub(super)` 且**不报字节**；新增 `pub fn prune_backups_to(db_path: &Path, keep: usize) -> Result<PruneReport { removed, removedBytes, failed }, VaultError>`（内部复用 `backup_dir_for` + `BACKUP_PREFIX` / `BACKUP_SUFFIX` 匹配），并把 `MAX_BACKUPS` 暴露给 provider 可达的常量入口
 - [x] `src-tauri/crates/assistant-vault/src/security_db/state.rs`：`keep` **至少 1**，**不得删最新一份**；只按 `BACKUP_PREFIX` / `BACKUP_SUFFIX` 命名匹配，跳符号链接
@@ -378,7 +488,7 @@
 
 ---
 
-## 阶段 T4 — 前端与收尾
+## 阶段 T4 — 前端与收尾（未开工；条目已迁到 [剩余清单](./I61-storage-manager-remaining.md)）
 
 前置：I54 `R0` 已交付（页面容器 + 三 tab 挂载位）。R0 未开工前，T4 只能先做与容器无关的组件内部改造，**不得**自行新建第二个页面。
 
@@ -386,49 +496,56 @@
 
 ### T4-a 数据与交互
 
-- [ ] `src/services/desktop/storageService.ts`：**扩展现有 service**（不新建 store、不新建 service）——加 `getStorageReclaimPlan(entryKeys)` 与 `reclaimStorage(planId, entries, confirmed)`，以及 `refreshStorageInventory()`（返回 `StorageInventoryStatusDto`，只取 `status`，**不取数字**）
-- [ ] `src/settings/pages/StorageSettings.tsx`：**保留附件明细区全部既有能力**（会话分组 / 孤儿分组 / 折叠 / 组全选 / 勾选删除，服务 `A2`），在其后**追加**已知条目清理区块（4 列：名称 / 占用·条数 / 策略 / 清理；条目数由后端决定，前端不假设 13 条，G14 / V16）
-- [ ] `src/settings/pages/StorageSettings.tsx`：条目行按前端设计 §5.4 / §5.6 / §5.7 渲染（可用性 = 占用列角标 + 详情「诊断」行，资格 = 清理按钮可用态，不单独成列）；`bytes = null` 显示占位符（**不得**直接传 `formatBytes`，N17），不改 `src/utils/formatBytes.ts` 的签名
-- [ ] `src/settings/pages/StorageSettings.tsx`：不可回收条目按钮禁用并显示 `reason` 文案；`notImplemented` 额外显示 `note`（「缺少 owner 方法」）
-- [ ] `src/settings/pages/StorageSettings.tsx`：回收流程固定为 `get_storage_reclaim_plan` → 确认（`strongConfirm` 需二次输入条目名或等价强交互）→ `reclaim_storage` → 结果 toast → 重新 `get_storage_breakdown`
-- [ ] `src/settings/pages/StorageSettings.tsx`：**禁止**前端自算「可回收字节 / 是否安全」，**禁止**按 `expectedBytes` 自行降档确认强度（档位只信后端 `confirmation`）
-- [ ] `src/settings/pages/StorageSettings.tsx`：`planExpired` / `planNotFound` / `busy` 提示重试，**不自动重放**；`complete = false` 时不展示跨条目合计（G10）
-- [ ] `src/settings/pages/StorageSettings.tsx`：条目清理区块**不**提供第二套「删指定附件」入口，也**不得**把明细区删除按钮搬进条目表
-- [ ] `src/settings/pages/StorageSettings.tsx`：**第二段只读余量区（未登记占用）**（`breakdown.inventory`）——五态渲染、`partial` / `overRegistered` 提示、列示范围与 `declared` 折叠条件全部按前端设计 §7；**禁止**任何删除 / 清理按钮，**禁止**把余量数字加进页面任何合计（G10）
-- [ ] `src/settings/pages/StorageSettings.tsx`：`useEffect` 内 `listen("storage:inventory-updated", ...)`（与 `src/vault/core/hooks/useVaultEvents.ts` 同款写法，清理函数里调 `UnlistenFn`），收到后**只重拉一次** `getStorageBreakdown`，**不新增轮询**；「重新扫描」按钮调 `refreshStorageInventory()` 后按返回的 `status` 刷新按钮态
-- [ ] `src/settings/styles/settings.css`：新增条目表样式（与既有 `storage-*` 类名同族，不重命名既有类）＋ 余量区样式（含 `overRegistered` 警示态）
-- [ ] `src/i18n/locales/zh-CN.json` / `en-US.json`：新增条目名、`availability` / `eligibility` / `reason` 词表、策略摘要、确认文案（`strongConfirm` 必须含条目 / 数量 / 字节三件套）、结果 toast 文案，以及余量区文案（按前端设计 §11 键树；`residual.hint` 必须覆盖 `declared` 节点，不能写成「不属于任何条目」）；两份 key 结构必须一致
+- [ ] ~~`src/services/desktop/storageService.ts`：**扩展现有 service**（不新建 store、不新建 service）——加 `getStorageReclaimPlan(entryKeys)` 与 `reclaimStorage(planId, entries, confirmed)`，以及 `refreshStorageInventory()`（返回 `StorageInventoryStatusDto`，只取 `status`，**不取数字**）~~ **（已迁到 [剩余清单](./I61-storage-manager-remaining.md)，以该文件编号为准）**
+- [ ] ~~`src/settings/pages/StorageSettings.tsx`：**保留附件明细区全部既有能力**（会话分组 / 孤儿分组 / 折叠 / 组全选 / 勾选删除，服务 `A2`），在其后**追加**已知条目清理区块（4 列：名称 / 占用·条数 / 策略 / 清理；条目数、分组与行序**完全由后端 `entries` 驱动**，前端不假设 13 条、不补占位行、不写死条目名或分区名；未挂载的可选分区（如安全域）整组不渲染，G14 / V16）~~ **（已迁到 [剩余清单](./I61-storage-manager-remaining.md)，以该文件编号为准）**
+- [ ] ~~`src/settings/pages/StorageSettings.tsx`：条目行按前端设计 §5.4 / §5.6 / §5.7 渲染（可用性 = 占用列角标 + 详情「诊断」行，资格 = 清理按钮可用态，不单独成列）；`bytes = null` 显示占位符（**不得**直接传 `formatBytes`，N17），不改 `src/utils/formatBytes.ts` 的签名~~ **（已迁到 [剩余清单](./I61-storage-manager-remaining.md)，以该文件编号为准）**
+- [ ] ~~`src/settings/pages/StorageSettings.tsx`：不可回收条目按钮禁用并显示 `reason` 文案；`notImplemented` 额外显示 `note`（「缺少 owner 方法」）~~ **（已迁到 [剩余清单](./I61-storage-manager-remaining.md)，以该文件编号为准）**
+- [ ] ~~`src/settings/pages/StorageSettings.tsx`：回收流程固定为 `get_storage_reclaim_plan` → 确认（`strongConfirm` 需二次输入条目名或等价强交互）→ `reclaim_storage` → 结果 toast → 重新 `get_storage_breakdown`~~ **（已迁到 [剩余清单](./I61-storage-manager-remaining.md)，以该文件编号为准）**
+- [ ] ~~`src/settings/pages/StorageSettings.tsx`：**禁止**前端自算「可回收字节 / 是否安全」，**禁止**按 `expectedBytes` 自行降档确认强度（档位只信后端 `confirmation`）~~ **（已迁到 [剩余清单](./I61-storage-manager-remaining.md)，以该文件编号为准）**
+- [ ] ~~`src/settings/pages/StorageSettings.tsx`：`planExpired` / `planNotFound` / `busy` 提示重试，**不自动重放**；`complete = false` 时不展示跨条目合计（G10）~~ **（已迁到 [剩余清单](./I61-storage-manager-remaining.md)，以该文件编号为准）**
+- [ ] ~~`src/settings/pages/StorageSettings.tsx`：条目清理区块**不**提供第二套「删指定附件」入口，也**不得**把明细区删除按钮搬进条目表~~ **（已迁到 [剩余清单](./I61-storage-manager-remaining.md)，以该文件编号为准）**
+- [ ] ~~`src/settings/pages/StorageSettings.tsx`：**第二段只读余量区（未登记占用）**（`breakdown.inventory`）——五态渲染、`partial` / `overRegistered` 提示、列示范围与 `declared` 折叠条件全部按前端设计 §7；**禁止**任何删除 / 清理按钮，**禁止**把余量数字加进页面任何合计（G10）~~ **（已迁到 [剩余清单](./I61-storage-manager-remaining.md)，以该文件编号为准）**
+- [ ] ~~`src/settings/pages/StorageSettings.tsx`：`useEffect` 内 `listen("storage:inventory-updated", ...)`（与 `src/vault/core/hooks/useVaultEvents.ts` 同款写法，清理函数里调 `UnlistenFn`），收到后**只重拉一次** `getStorageBreakdown`，**不新增轮询**；「重新扫描」按钮调 `refreshStorageInventory()` 后按返回的 `status` 刷新按钮态~~ **（已迁到 [剩余清单](./I61-storage-manager-remaining.md)，以该文件编号为准）**
+- [ ] ~~`src/settings/styles/settings.css`：新增条目表样式（与既有 `storage-*` 类名同族，不重命名既有类）＋ 余量区样式（含 `overRegistered` 警示态）~~ **（已迁到 [剩余清单](./I61-storage-manager-remaining.md)，以该文件编号为准）**
+- [ ] ~~`src/i18n/locales/zh-CN.json` / `en-US.json`：新增 `availability` / `eligibility` / `reason` 词表、策略摘要、确认文案（`strongConfirm` 必须含条目 / 数量 / 字节三件套）、结果 toast 文案，以及余量区文案（按前端设计 §11 键树；`residual.hint` 必须覆盖 `declared` 节点，不能写成「不属于任何条目」）；条目名是**可选覆盖层**（`entries.names.<key 规范化>`，未命中回退 `key` 原文，不要求穷举、不随挂载状态变化），**不写死分组标题 / 行序**；两份 key 结构必须一致~~ **（已迁到 [剩余清单](./I61-storage-manager-remaining.md)，以该文件编号为准）**
+- [ ] ~~组件测试（按前端设计 §13 测试矩阵）：`entries` 13 条（全挂载）/ 8 条（未挂载，安全域整组不出现）/ 空 `entries` 三组夹具各一例；断言行数与分组完全来自夹具，不出现占位行、不写死条目名~~ **（已迁到 [剩余清单](./I61-storage-manager-remaining.md)，以该文件编号为准）**
+  - 验收：把夹具从 13 条改成 8 条，组件渲染行数随之变化且无残留分组标题
 
 ### T4-b 收尾
 
-- [ ] `npm run contract:gen` 后确认 `src/types/protocol.contract.ts` 无手改、无残留
-- [ ] 留痕复核：`execute` 日志只含 `planId` / key / action / 计数 / `sampledAt`（V15）
-- [ ] 全量回归：`cargo check --workspace --all-targets`、`cargo test -p assistant-app --lib`、`cargo test -p assistant-storage`、`cargo test -p assistant-tools`、`cargo test --test storage_breakdown`、`cargo test --test storage_inventory`、`cargo test --test storage_reclaim`、`cargo test --test protocol_bindings`、`cargo test --test app_dirs_contract`、`cargo test --test assembly_contract`
-- [ ] vaultless 构建再跑一遍：`cargo test --no-default-features --test storage_breakdown`（`entries` 恒 13 条；`E7`–`E11` 的 `availability = notImplemented`，`eligibility` 分别为 `notEligible`/`notEligible`/`notImplemented`/`ownerManaged`/`ownerManaged`）
-- [ ] 前端：`npm run typecheck`、`npm run lint`、`npm run test`
-- [ ] 附件明细区能力逐项回归（V16 的手动清单）：会话分组 / 孤儿分组 / 折叠 / 组全选 / 单选删除 / 删除结果提示
-- [ ] I61 §12 迁移清单复核：I54 中存储 tab 的残留条目已全部改为指针，且**未**删除任何共享 DTO 旧字段
+- [ ] ~~`npm run contract:gen` 后确认 `src/types/protocol.contract.ts` 无手改、无残留~~ **（已迁到 [剩余清单](./I61-storage-manager-remaining.md)，以该文件编号为准）**
+- [ ] ~~留痕复核：`execute` 日志只含 `planId` / key / action / 计数 / `sampledAt`（V15）~~ **（已迁到 [剩余清单](./I61-storage-manager-remaining.md)，以该文件编号为准）**
+- [ ] ~~全量回归：`cargo check --workspace --all-targets`、`cargo test -p assistant-app --lib`、`cargo test -p assistant-storage`、`cargo test -p assistant-tools`、`cargo test --test storage_breakdown`、`cargo test --test storage_inventory`、`cargo test --test storage_reclaim`、`cargo test --test protocol_bindings`、`cargo test --test app_dirs_contract`、`cargo test --test assembly_contract`~~ **（已迁到 [剩余清单](./I61-storage-manager-remaining.md)，以该文件编号为准）**
+- [ ] ~~vaultless 构建再跑一遍：`cargo test --no-default-features --test storage_breakdown`（`entries` **8 条**，安全域 `E7`–`E11` 整组不出现，**不得**出现 `notImplemented` 占位行；`security` 首段在 `inventory` 归 `optionalNotMounted`，不是 `unregistered`，见 T1-g 修订）~~ **（已迁到 [剩余清单](./I61-storage-manager-remaining.md)，以该文件编号为准）**
+- [ ] ~~前端：`npm run typecheck`、`npm run lint`、`npm run test`~~ **（已迁到 [剩余清单](./I61-storage-manager-remaining.md)，以该文件编号为准）**
+- [ ] ~~附件明细区能力逐项回归（V16 的手动清单）：会话分组 / 孤儿分组 / 折叠 / 组全选 / 单选删除 / 删除结果提示~~ **（已迁到 [剩余清单](./I61-storage-manager-remaining.md)，以该文件编号为准）**
+- [ ] ~~I61 §12 迁移清单复核：I54 中存储 tab 的残留条目已全部改为指针，且**未**删除任何共享 DTO 旧字段~~ **（已迁到 [剩余清单](./I61-storage-manager-remaining.md)，以该文件编号为准）**
 
 ---
 
-## 门禁自查表（G1–G14，代码审查逐条签字）
+## 门禁自查表（G1–G19，代码审查逐条签字）
 
 | # | 检查点 | 自查方式 |
 |---|---|---|
 | G1 | 管理器无受管目录名 / 无路径拼接；`cmd/storage.rs` 无 `assistant_vault` / `assistant_security` / `#[cfg(feature)]` | 对 `src-tauri/src/cmd/storage.rs`、`src-tauri/src/cmd/storage/` 检索 `assistant_vault`、`assistant_security`、`cfg(`、`join(` |
 | G2 | 管理器无 `read_dir` 遍历受管目录；**唯一例外** `cmd/storage/inventory.rs`（边界见 §3.11.2 第 1 条） | 检索 `read_dir`，只允许命中 `inventory.rs`；再在 `inventory.rs` 检索 `remove_*` / `fs::write` / `log::`，应为空 |
 | G3 | 管理器无 `fs::remove_*` | 检索 `remove_file` / `remove_dir` / `remove_dir_all` |
-| G4 | 每条目都有 owner getter + stats 入口（`E12` 明确记为无入口）；登记表 `MANAGED_ROOTS` 是 getter 唯一来源 | 对照 §3.10 表逐条核对 + V19 单测 |
+| G4 | 每个条目都有 owner getter + stats 入口（`E12` 明确记为无入口）；**core 条目的声明来源是 `MANAGED_ROOTS`**（新增 `dir_name` 常量必须同时新增登记，V19）；**分区条目的声明来源是功能分区**，core 不补声明、不写其 `key` / 子段字面量 | 对照 §3.10 表逐条核对 + V19 单测；`registry.rs` 检索功能条目 `key` 零命中 |
 | G5 | fail-closed：策略读不到 / 判据推不出 / 非普通文件 / 符号链接 → 不删 | owner 单测覆盖符号链接与非常规文件 |
 | G6 | 取不到数 `null` + `availability` + `reason`；`missing` 计 `0` | `storage_breakdown` 单测 |
 | G7 | 观测 / 计划 / 执行三步分离；计划无副作用；执行带 `planId` + `confirmed` | V6 / V8 |
 | G8 | 不自动回收 `E1` / `E5` / `E6` / `E7` / `E9` | 白名单 + `autoActive` 快照 |
 | G9 | 回收后重新采样，账本恒等式仍成立 | 执行后 `get_storage_breakdown` 断言 |
-| G10 | 不把 13 条相加成「总占用」；只允许附件账本与 `totalReclaimableBytes` 两处合计；余量数字不进任何合计、不回流 `entries` | DTO / UI 复核 + V20 |
+| G10 | 不把 core 8 条 + 已挂载分区条目相加成「总占用」；只允许附件账本与 `totalReclaimableBytes` 两处合计；余量数字不进任何合计、不回流 `entries` | DTO / UI 复核 + V20 |
 | G11 | 无全局回收锁；只串行化自己的执行请求 | 计划缓存状态复核 |
 | G12 | 留痕无绝对路径 | 日志断言 |
 | G13 | 既有 wire 字段零改动 | `protocol.contract.ts` diff 只增不改 |
 | G14 | 前端附件明细区能力全保留 | T4-b 手动回归 |
+| G15 | 口径声明唯一（§3.9）、遍历实现归 owner；同一棵 fixture 喂给任意 owner stats 入口，四元组逐字一致 | V21 单测 + 检索第二份口径表 |
+| G16 | 条目身份归声明方：`E7`–`E11` 的 `key` / `segments` 只在功能分区声明，core 登记表只保留首段 `OPTIONAL_SEGMENTS` | `app_dirs/registry.rs` 检索 `security/` 零命中；V19 / V24 |
+| G17 | 声明与接收同一套词汇：`owner` 只作展示不承载路由；分区自答 `entries()` + `stats(key)`；按 `key` 分派，无下标常量 | V22；检索 `const .*: usize =` 与 `MANAGED_ROOTS[` |
+| G18 | 分区注册进唯一通用槽 `SectionRegistry`，建槽先于注册（`Builder` 阶段建槽、`feature_mounts::on_setup` 注册）；按声明取数，未挂载 = 条目不存在 | V23；`plugins.rs` / `feature_mounts.rs` 时序复核 |
+| G19 | 登记表陈述磁盘事实、不承载策略；`security` 首段恒在、条目随功能；死事实删除 | 事实检验法（删掉分区后首段仍成立）+ V24 |
 
 ---
 
@@ -436,7 +553,7 @@
 
 | 判据 | 切片 | 说明 |
 |---|---|---|
-| V1 / V2 / V3 / V4 / V5 | T1 | 13 行 key / `null` 语义 / `action = none` 约束 / `reason`·`note` / 账本恒等式 |
+| V1 / V2 / V3 / V4 / V5 | T1 | `vault` 13 行 / `vaultless` 8 行 key 顺序 / `null` 语义 / `action = none` 约束 / `reason`·`note` / 账本恒等式 |
 | V6 / V8 / V9 / V10 | T2 | 计划无副作用 / 四组负例 / 失败隔离 / 静态门禁 |
 | V7 / V11 / V12 | T3 | 预期与实测偏差 / `E1` 并发 / fail-closed 与游标 |
 | V13 | T1 + T4 | `vault` / `vaultless` 两种构建各跑一遍 |
@@ -446,6 +563,10 @@
 | V17 | T1–T4 | 每个切片结束都用 golden 对一遍切片期资格表 |
 | V18 / V19 | T1 | 余量守恒与互斥 / 登记表双向一致（判据见 §10） |
 | V20 | T1 + T2 + T4 | 余量不影响条目（T1 字段比对、T2 白名单负例、T4 前端无合计） |
+| V21 | T1-g 修订 | 口径行为一致（G15）：同一棵 fixture（含伴生文件 / 符号链接 / 非常规文件 / 嵌套子目录）喂给每个 owner stats 入口，四元组逐字一致；适配函数漏搬字段即红 |
+| V22 | T1-g 修订 | 分区自述与 core 事实一致（G17）：分区 `entries()` 的 `key` 在自身 `stats(key)` 返 `Some`、非本分区 `None`；首段 ⊆ `OPTIONAL_SEGMENTS` 且 `vault` 构建下反向也满；`owner` 命名域合规；无数字下标接收 |
+| V23 | T1-g 修订 | 通用槽路由（G18）：零 / 单 / 双分区 + 重名 + 未挂载 + 快照六态；零分区时 `entries` 8 条、`security` 归 `optionalNotMounted`、无占位行；单分区 13 条与改造前逐字段等价 |
+| V24 | T1-g 修订 | core 不感知具体功能（G19(c)）：`security` 只出现在 `OPTIONAL_SEGMENTS` 定义处；不是实现类型名 / feature 名 / 不含 `::`；改实现类型名时登记表零改动 |
 
 ---
 

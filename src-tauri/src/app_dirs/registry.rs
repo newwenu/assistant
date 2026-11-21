@@ -190,6 +190,13 @@ pub const MANAGED_ROOTS: &[ManagedRoot] = &[
 
 pub const IGNORED_NAMES: &[&str] = &[".DS_Store", "Thumbs.db", "desktop.ini"];
 
+/// 可选功能分区的首段磁盘事实（G19(c)）：core 保留的**唯一**可选功能知识。
+///
+/// 只声明「该首段可能出现在盘上、归某个可选分区」，**不写条目、不写策略、不写实现**：
+/// 条目清单、资格判据、回收入口全在分区自述；分区是否挂载只看
+/// `cmd::storage::section::SectionRegistry` 里有没有对应分区，不看 `#[cfg]`。
+pub const OPTIONAL_SEGMENTS: &[&str] = &["security"];
+
 const EXPECTED_ENTRY_COUNT: usize = 13;
 
 /// 按 `key` 取登记项；未登记返回 `None`（管理器不得为未登记 key 产出条目，G4）。

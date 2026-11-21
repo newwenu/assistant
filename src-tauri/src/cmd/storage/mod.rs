@@ -3,6 +3,7 @@ pub mod inventory;
 pub(crate) mod probe;
 pub mod reclaim;
 mod sample;
+pub mod section;
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;

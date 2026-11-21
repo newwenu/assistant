@@ -202,6 +202,18 @@ pub fn audit_policy_of(probes: Option<&ProbeRegistry>) -> Option<(u32, i64)> {
         .audit_policy()
 }
 
+/// `E8` 的策略自述：备份保留份数同样按登记表能力名分派，管理器不持有字面量（G3）。
+pub fn max_backups_of(probes: Option<&ProbeRegistry>) -> Option<u32> {
+    let root = registry::find_by_entry("E8")?;
+    let capability = match root.mount {
+        RootMount::Feature(capability) => capability,
+        RootMount::Always => return None,
+    };
+    probes
+        .and_then(|probes| probes.find(capability))?
+        .max_backups()
+}
+
 async fn timed<F>(entry: &'static str, work: F) -> (&'static str, EntrySample)
 where
     F: Future<Output = EntrySample>,
@@ -312,6 +324,15 @@ fn config_policy(days: u32, effective_since: i64) -> ReclaimPolicyDto {
         retention_days: Some(days),
         effective_since: Some(effective_since),
         mutable: true,
+        ..ReclaimPolicyDto::default()
+    }
+}
+
+/// `E8` 的策略快照：份数来自 owner 自述，来源标 `owner`（用户不可改）。
+fn keep_policy(keep: u32) -> ReclaimPolicyDto {
+    ReclaimPolicyDto {
+        source: StoragePolicySourceDto::Owner,
+        keep_count: Some(keep),
         ..ReclaimPolicyDto::default()
     }
 }
@@ -456,6 +477,7 @@ pub async fn collect_with(inputs: SampleInputs<'_>) -> [EntrySample; ENTRY_COUNT
     );
 
     let audit_policy = audit_policy_of(probes.as_deref());
+    let max_backups = max_backups_of(probes.as_deref());
 
     for (entry, sample) in join_all(tasks).await {
         set_sample(&mut samples, entry, sample);
@@ -466,6 +488,14 @@ pub async fn collect_with(inputs: SampleInputs<'_>) -> [EntrySample; ENTRY_COUNT
             let mut sample = super::entries::sample_for(&samples, root).clone();
             sample = sample.with_policy(config_policy(days, effective_since));
             set_sample(&mut samples, "E11", sample);
+        }
+    }
+    // E8 的份数同法挂载：判据与执行都读这一份快照，管理器不再自填默认值（G3）。
+    if let Some(keep) = max_backups {
+        if let Some(root) = registry::find_by_entry("E8") {
+            let mut sample = super::entries::sample_for(&samples, root).clone();
+            sample = sample.with_policy(keep_policy(keep));
+            set_sample(&mut samples, "E8", sample);
         }
     }
     samples
@@ -733,6 +763,46 @@ mod tests {
         assert!(
             FullProbe.stats("security/unknown").is_none(),
             "未登记的 key 必须返回 None"
+        );
+    }
+
+    /// `E8` 的份数只走 owner 自述：管理器不自填默认值，未装配时保持 `null`（G3）。
+    #[test]
+    fn e8_keep_comes_from_owner_self_report() {
+        struct KeepProbe(Option<u32>);
+        impl StorageOwnerProbe for KeepProbe {
+            fn capability(&self) -> &'static str {
+                registry::SECURITY_OBSERVABILITY
+            }
+            fn stats(&self, _key: &'static str) -> Option<Result<ProbeStats, ProbeError>> {
+                None
+            }
+            fn audit_policy(&self) -> Option<(u32, i64)> {
+                None
+            }
+            fn max_backups(&self) -> Option<u32> {
+                self.0
+            }
+        }
+
+        let probes = Arc::new(ProbeRegistry::new());
+        probes.register(Arc::new(KeepProbe(Some(7)))).unwrap();
+        assert_eq!(max_backups_of(Some(&probes)), Some(7), "自述值原样透传");
+
+        let policy = keep_policy(7);
+        assert_eq!(policy.source, StoragePolicySourceDto::Owner);
+        assert_eq!(policy.keep_count, Some(7));
+        assert!(!policy.mutable, "份数由 owner 定，用户不可改");
+
+        assert_eq!(max_backups_of(None), None, "无 provider 时无自述");
+        let empty = Arc::new(ProbeRegistry::new());
+        assert_eq!(max_backups_of(Some(&empty)), None, "未装配时无自述");
+        let silent = Arc::new(ProbeRegistry::new());
+        silent.register(Arc::new(KeepProbe(None))).unwrap();
+        assert_eq!(
+            max_backups_of(Some(&silent)),
+            None,
+            "provider 未给份数时不猜"
         );
     }
 }

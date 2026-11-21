@@ -193,7 +193,7 @@ fn static_for(entry: &str) -> EntryStatic {
             action: StorageReclaimActionDto::PruneToLimit,
             eligibility: StorageEligibilityDto::Eligible,
             reason: StorageReclaimReasonDto::OverLimit,
-            policy: constant_policy(Some(5)),
+            policy: owner_policy(),
             auto_active: true,
             counts_self_logs: false,
             note: None,
@@ -291,7 +291,7 @@ fn eligibility_for(
         }
     }
     if root.entry == "E8" {
-        if let Some((eligibility, reason)) = backups_eligibility(sample, static_part) {
+        if let Some((eligibility, reason)) = backups_eligibility(sample) {
             return (eligibility, Some(reason));
         }
     }
@@ -377,25 +377,36 @@ fn tool_results_eligibility(
     }
 }
 
-/// `E8` 的资格随备份份数变化（§3.1）：超过 `keep` 才 `eligible`，否则 `notEligible`。
+/// `E8` 的资格随备份份数变化（§3.1）：超过 owner 自述的 `keep` 才 `eligible`。
 ///
+/// `keep` 只取样本里的策略自述（`sample.policy.keep_count`）——管理器不持有份数字面量，
+/// 也不填默认值（G3）。自述缺失时判据不可算 → `notEligible` + `unknown`（§3.4 的 Q2）；
+/// `count` 缺失同理，不得用 `0` 冒充「确实没超限」。
 /// `reason` 在该行只有一个词 `overLimit`（§3.1 表格）：`notEligible` 时读作
 /// 「已在上限内、无可裁剪」，因此两个分支同填，不另造词。
 /// 备份计数走目录列举、不依赖解锁，故 `locked` 态不降级（`SecurityDbState` 无锁态观测）。
 fn backups_eligibility(
     sample: &EntrySample,
-    static_part: &EntryStatic,
 ) -> Option<(StorageEligibilityDto, StorageReclaimReasonDto)> {
     match sample.availability {
         StorageAvailabilityDto::Available | StorageAvailabilityDto::Missing => {
-            let keep = static_part.policy.keep_count.unwrap_or(1);
-            let count = sample.count.unwrap_or(0);
-            let eligibility = if count > u64::from(keep) {
-                StorageEligibilityDto::Eligible
-            } else {
-                StorageEligibilityDto::NotEligible
+            let keep = sample.policy.as_ref().and_then(|policy| policy.keep_count);
+            let count = sample.count;
+            let judged = match (keep, count) {
+                (Some(keep), Some(count)) if count > u64::from(keep) => (
+                    StorageEligibilityDto::Eligible,
+                    StorageReclaimReasonDto::OverLimit,
+                ),
+                (Some(_), Some(_)) => (
+                    StorageEligibilityDto::NotEligible,
+                    StorageReclaimReasonDto::OverLimit,
+                ),
+                _ => (
+                    StorageEligibilityDto::NotEligible,
+                    StorageReclaimReasonDto::Unknown,
+                ),
             };
-            Some((eligibility, StorageReclaimReasonDto::OverLimit))
+            Some(judged)
         }
         StorageAvailabilityDto::NotImplemented => Some((
             StorageEligibilityDto::NotImplemented,
@@ -558,6 +569,15 @@ mod tests {
     use super::*;
     use crate::protocol::dto::StorageInventoryStatusDto;
 
+    /// owner 自述的备份份数（测试替身）：管理器只消费这个值，不持有份数字面量。
+    fn backups_policy(keep: u32) -> ReclaimPolicyDto {
+        ReclaimPolicyDto {
+            source: StoragePolicySourceDto::Owner,
+            keep_count: Some(keep),
+            ..ReclaimPolicyDto::default()
+        }
+    }
+
     fn samples() -> [EntrySample; ENTRY_COUNT] {
         let mut samples: [EntrySample; ENTRY_COUNT] =
             std::array::from_fn(|_| EntrySample::observed(1024, 1, Some(100), Some(200)));
@@ -581,11 +601,11 @@ mod tests {
                 ..ReclaimPolicyDto::default()
             }),
         );
-        // `E8` 的资格随备份份数变化：超过上限才 `eligible`。
+        // `E8` 的资格随备份份数变化：超过 owner 自述的份数才 `eligible`。
         set_sample(
             &mut samples,
             "E8",
-            EntrySample::observed(1024, 6, Some(100), Some(200)),
+            EntrySample::observed(1024, 6, Some(100), Some(200)).with_policy(backups_policy(5)),
         );
         samples
     }
@@ -715,7 +735,7 @@ mod tests {
         set_sample(
             &mut samples,
             "E8",
-            EntrySample::observed(1024, 5, Some(100), Some(200)),
+            EntrySample::observed(1024, 5, Some(100), Some(200)).with_policy(backups_policy(5)),
         );
         let dto = assemble_breakdown(base(), &samples, 100, StorageInventoryDto::default());
 
@@ -735,6 +755,50 @@ mod tests {
             dto.entries[7].reclaim.reason,
             Some(StorageReclaimReasonDto::OverLimit)
         );
+    }
+
+    /// `E8` 的判据只认 owner 自述：份数或条数缺失时判据不可算，不得用默认值凑一个答案（G3）。
+    #[test]
+    fn e8_without_owner_self_report_is_unknown_not_guessed() {
+        // 无自述份数（provider 未给 `max_backups`）→ `notEligible` + `unknown`。
+        {
+            let mut samples = samples();
+            set_sample(
+                &mut samples,
+                "E8",
+                EntrySample::observed(1024, 6, Some(100), Some(200)),
+            );
+            let dto = assemble_breakdown(base(), &samples, 100, StorageInventoryDto::default());
+            assert_eq!(
+                dto.entries[7].reclaim.eligibility,
+                StorageEligibilityDto::NotEligible
+            );
+            assert_eq!(
+                dto.entries[7].reclaim.reason,
+                Some(StorageReclaimReasonDto::Unknown)
+            );
+            assert!(
+                dto.entries[7].reclaim.policy.keep_count.is_none(),
+                "无自述时份数保持 null，不填默认值"
+            );
+        }
+        // 有自述份数但条数取不到 → 同样不可算，不得把 `None` 当 0 条。
+        {
+            let mut samples = samples();
+            let mut partial =
+                EntrySample::observed(1024, 6, Some(100), Some(200)).with_policy(backups_policy(5));
+            partial.count = None;
+            set_sample(&mut samples, "E8", partial);
+            let dto = assemble_breakdown(base(), &samples, 100, StorageInventoryDto::default());
+            assert_eq!(
+                dto.entries[7].reclaim.eligibility,
+                StorageEligibilityDto::NotEligible
+            );
+            assert_eq!(
+                dto.entries[7].reclaim.reason,
+                Some(StorageReclaimReasonDto::Unknown)
+            );
+        }
     }
 
     /// golden（§11 切片期资格表，T3 结束）：`E1` 有孤儿 → `eligible` + `strongConfirm`；

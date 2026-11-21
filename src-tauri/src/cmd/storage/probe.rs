@@ -62,11 +62,20 @@ pub trait StorageOwnerProbe: Send + Sync {
     /// 但**不**整条降级（stats 仍可能取到）。
     fn audit_policy(&self) -> Option<(u32, i64)>;
 
+    /// `E8` 的策略自述：备份保留份数。
+    ///
+    /// 份数是 owner 的私有常量，只由本方法自述；管理器**不得**自填默认值（G3）。
+    /// `None` = 本 provider 不提供该能力（未装配安全域），或无法给出份数——此时
+    /// `E8` 的判据不可算（`notEligible` + `unknown`），不做「大概按 5 份裁」的猜测。
+    fn max_backups(&self) -> Option<u32> {
+        None
+    }
+
     /// `E8` 的回收入口（T3）：把备份裁到 `keep` 份，返回删除条数与字节。
     ///
     /// `None` = 本 provider 不提供该能力（未装配安全域的构建）：此时 `E8` 保持
     /// `notImplemented` + `noReclaimApi`，管理器不得把它当成「已装配但为空」。
-    /// `keep` 由管理器从条目策略（owner 常量）传入，provider 不硬编码份数。
+    /// `keep` 由管理器从计划快照的策略传入（该值来自 `max_backups` 自述，见上）。
     fn prune_backups(&self, _keep: u32) -> Option<Result<BackupPruneReport, ProbeError>> {
         None
     }
