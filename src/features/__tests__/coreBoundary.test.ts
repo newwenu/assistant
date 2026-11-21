@@ -70,19 +70,11 @@ const FEATURE_FOOTPRINT_ALLOWLIST: Record<string, FootprintAllowance[]> = {
     {
       file: "src-tauri/src/app_dirs/registry.rs",
       reason:
-        "`E9` 的 key / segments：`security/vault` 是盘上目录名（改名等于改磁盘格式），且按 I61 G19(c) 该行与构建无关恒在，vaultless 下要能归 `optionalNotMounted` 而非 `unregistered`。只覆盖这两行，`owner` 等其余命中一律判红（I61 G17(a)）",
-      markers: ['key: "security/vault"', 'segments: &["security", "vault"]'],
-    },
-    {
-      file: "src-tauri/src/app_dirs/registry.rs",
-      reason:
         "V22 / V24 的反向断言：显式证明 `owner` 与能力名不等于 feature 名或可选项类型名，feature 名必须出现在断言里才有意义",
       markers: [
         'const FEATURE_NAMES: &[&str] = &["vault"];',
+        'const OPTIONAL_TYPE_MARKERS: &[&str] = &["Probe", "Section", "Vault"];',
         '!root.owner.contains("assistant_vault")',
-        '!root.owner.contains("VaultStorageProbe")',
-        'assert_ne!(SECURITY_OBSERVABILITY, "vault", "不得是 feature 名");',
-        'assert_ne!(SECURITY_OBSERVABILITY, "VaultProbe", "不得是类型名");',
       ],
     },
     {

@@ -54,7 +54,6 @@ export function makeEntry(
     oldestAt: 100,
     newestAt: 200,
     availability: "available",
-    availabilityReason: null,
     includesDerived: false,
     countsSelfLogs: false,
     reclaim: makeReclaim(),

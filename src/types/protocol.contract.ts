@@ -383,7 +383,7 @@ sharedBytes: number,
  */
 referencedOnceBytes: number, 
 /**
- * 13 条条目，顺序固定（`E1`→`E13`）；不可用条目也必须出现。
+ * core 8 条在前、已挂载分区自述条目紧随其后；未挂载分区**不出行**（不是占位行）。
  */
 entries: Array<StorageEntryDto>, 
 /**
@@ -391,13 +391,13 @@ entries: Array<StorageEntryDto>,
  */
 inventory: StorageInventoryDto, 
 /**
- * 除 `E12` 外的 12 条全部 `availability ∈ {available, missing}` 时为 `true`。
+ * 除 `E12` 外全部条目 `availability ∈ {available, missing}` 时为 `true`。
  */
 complete: boolean, };
 export type StorageByteBasisDto = "fileLength";
 export type StorageConfirmLevelDto = "none" | "confirm" | "strongConfirm";
 export type StorageEligibilityDto = "eligible" | "notEligible" | "locked" | "ownerManaged" | "notImplemented";
-export type StorageEntryDto = { key: string, layer: StorageLayerDto, owner: string, bytes: number | null, count: number | null, oldestAt: number | null, newestAt: number | null, availability: StorageAvailabilityDto, availabilityReason: string | null, includesDerived: boolean, countsSelfLogs: boolean, reclaim: ReclaimViewDto, };
+export type StorageEntryDto = { key: string, layer: StorageLayerDto, owner: string, bytes: number | null, count: number | null, oldestAt: number | null, newestAt: number | null, availability: StorageAvailabilityDto, includesDerived: boolean, countsSelfLogs: boolean, reclaim: ReclaimViewDto, };
 export type StorageInventoryClassDto = "declared" | "optionalNotMounted" | "companion" | "ignored" | "unregistered";
 export type StorageInventoryDto = { status: StorageInventoryStatusDto, scannedAt: number | null, failedAt: number | null, nodes: Array<StorageInventoryNodeDto>, unregisteredBytes: number | null, unregisteredCount: number | null, partial: boolean, truncatedNodes: Array<string>, };
 export type StorageInventoryItemDto = { name: string, bytes: number | null, count: number | null, };

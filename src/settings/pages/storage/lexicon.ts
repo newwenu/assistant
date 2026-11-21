@@ -1,6 +1,9 @@
 import { translateKey, type I18nPath } from "@/i18n";
 import type { ReclaimPolicyDto } from "@/types/protocol.contract";
 import { formatBytes } from "@/utils/formatBytes";
+import { createLogger } from "@/services/system/logger";
+
+const storageLog = createLogger("storage");
 
 const AVAILABILITY_KEYS = {
   available: "settings.storage.entries.availability.available",
@@ -114,7 +117,7 @@ function textOf(
 ): string {
   const key = lookupKey(keys, value);
   if (key === undefined) {
-    console.warn(`[storage] unknown ${kind} value: "${value}"`);
+    storageLog.warn(`unknown ${kind} value: "${value}"`);
     return value;
   }
   return translateKey(key);

@@ -29,46 +29,27 @@ pub struct SectionStats {
     pub newest_at: Option<i64>,
 }
 
-/// 取数失败的封闭类别 + 分区自述的固定文案（§7.1）。
+/// 取数失败的封闭类别（§7.1）。
 ///
-/// 类别由 core 映射成 `availability`（`locked` / `unavailable` / `unreadable`），
-/// 文案由分区给：分区比 core 更清楚「下一步该解锁还是该重试」，core 不必猜。
+/// 类别由 core 映射成 `availability`（`locked` / `unavailable` / `unreadable`）；
+/// 错误细节由分区写自己的日志，不进契约（R-16）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SectionError {
     /// 存在但受保护读不到：下一步是解锁。
-    Locked(&'static str),
+    Locked,
     /// 文件正被替换 / 迁移：下一步是重试。
-    Unavailable(&'static str),
+    Unavailable,
     /// 权限 / IO 失败。
-    Unreadable(&'static str),
+    Unreadable,
 }
 
 impl SectionError {
-    pub const fn locked(reason: &'static str) -> Self {
-        Self::Locked(reason)
-    }
-
-    pub const fn unavailable(reason: &'static str) -> Self {
-        Self::Unavailable(reason)
-    }
-
-    pub const fn unreadable(reason: &'static str) -> Self {
-        Self::Unreadable(reason)
-    }
-
     /// 类别 → `availability`（固定映射，分区不得自定义）。
     pub const fn availability(self) -> StorageAvailabilityDto {
         match self {
-            Self::Locked(_) => StorageAvailabilityDto::Locked,
-            Self::Unavailable(_) => StorageAvailabilityDto::Unavailable,
-            Self::Unreadable(_) => StorageAvailabilityDto::Unreadable,
-        }
-    }
-
-    /// 分区自述的固定文案（进 `availabilityReason`，不得含路径 / 文件名）。
-    pub const fn reason(self) -> &'static str {
-        match self {
-            Self::Locked(reason) | Self::Unavailable(reason) | Self::Unreadable(reason) => reason,
+            Self::Locked => StorageAvailabilityDto::Locked,
+            Self::Unavailable => StorageAvailabilityDto::Unavailable,
+            Self::Unreadable => StorageAvailabilityDto::Unreadable,
         }
     }
 }
@@ -79,6 +60,18 @@ pub struct SectionReclaimReport {
     pub removed: u64,
     pub removed_bytes: u64,
     pub failed: u64,
+}
+
+/// 条目风险档（§3.6 硬约束 5–6）：core 据此派生 `confirmation`，**不进 wire**。
+///
+/// 与 `action` 无关：风险档是「删这个东西有多危险」的登记事实，不是「这个动作需要多强确认」。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RiskTier {
+    Low,
+    Medium,
+    High,
+    /// 禁止回收（业务数据 / 插件自持）。
+    Forbidden,
 }
 
 /// 分区条目的静态声明：语义与 §3.2 的 core 条目字段一一对应。
@@ -93,6 +86,8 @@ pub struct EntryDecl {
     pub policy: ReclaimPolicyDto,
     pub auto_active: bool,
     pub counts_self_logs: bool,
+    /// 风险档：core 的 `confirmation` 由「资格 + 风险档」两步派生。
+    pub risk: RiskTier,
     /// 结构性能力缺口的说明（前端原文展示），不写策略数值 / 路径 / 时间点。
     pub note: Option<&'static str>,
 }
@@ -396,6 +391,7 @@ mod tests {
             policy: no_policy(),
             auto_active: false,
             counts_self_logs: false,
+            risk: RiskTier::Forbidden,
             note: None,
         }
     }
@@ -531,17 +527,16 @@ mod tests {
     #[test]
     fn section_error_maps_to_fixed_availability() {
         assert_eq!(
-            SectionError::locked("x").availability(),
+            SectionError::Locked.availability(),
             StorageAvailabilityDto::Locked
         );
         assert_eq!(
-            SectionError::unavailable("x").availability(),
+            SectionError::Unavailable.availability(),
             StorageAvailabilityDto::Unavailable
         );
         assert_eq!(
-            SectionError::unreadable("x").availability(),
+            SectionError::Unreadable.availability(),
             StorageAvailabilityDto::Unreadable
         );
-        assert_eq!(SectionError::locked("x").reason(), "x");
     }
 }

@@ -7,15 +7,19 @@
 use std::fs;
 use std::path::Path;
 
-use assistant_app::app_dirs::registry::{RootScope, MANAGED_ROOTS};
+use assistant_app::app_dirs::registry::{self, RootScope, MANAGED_ROOTS};
 use assistant_app::app_dirs::AppDirs;
 use assistant_app::cmd::storage::entries::{
-    assemble_breakdown, BreakdownBase, EntrySample, ENTRY_COUNT,
+    assemble_breakdown, set_sample, views, BreakdownBase, EntrySample, EntryView,
 };
 use assistant_app::cmd::storage::inventory::{scan, InventoryCache, RawNode, ScanResult};
+use assistant_app::cmd::storage::section::SectionRegistry;
 use assistant_app::protocol::dto::{
     StorageInventoryClassDto, StorageInventoryDto, StorageInventoryStatusDto, StorageLayerDto,
 };
+
+#[path = "support/fake_section.rs"]
+mod fake_section;
 
 fn base() -> BreakdownBase {
     BreakdownBase {
@@ -28,12 +32,16 @@ fn base() -> BreakdownBase {
     }
 }
 
-fn available() -> [EntrySample; ENTRY_COUNT] {
-    std::array::from_fn(|_| EntrySample::observed(1_024, 1, Some(100), Some(200)))
+fn core_views() -> Vec<EntryView> {
+    views(&[])
 }
 
-fn missing() -> [EntrySample; ENTRY_COUNT] {
-    std::array::from_fn(|_| EntrySample::missing())
+fn available(views: &[EntryView]) -> Vec<EntrySample> {
+    vec![EntrySample::observed(1_024, 1, Some(100), Some(200)); views.len()]
+}
+
+fn missing(views: &[EntryView]) -> Vec<EntrySample> {
+    vec![EntrySample::missing(); views.len()]
 }
 
 fn write_file(path: &Path, len: usize) {
@@ -70,7 +78,7 @@ fn seeded() -> (tempfile::TempDir, AppDirs) {
     let data = tmp.path().join("data");
     let local = tmp.path().join("local");
     fs::create_dir_all(data.join("attachments")).expect("建 attachments");
-    fs::create_dir_all(data.join("security")).expect("建 security");
+    fs::create_dir_all(data.join(registry::OPTIONAL_SEGMENTS[0])).expect("建可选首段");
     fs::create_dir_all(data.join("stray")).expect("建 stray");
     fs::create_dir_all(local.join("logs")).expect("建 logs");
     write_file(&data.join("attachments").join("a.bin"), 10);
@@ -85,7 +93,8 @@ fn seeded() -> (tempfile::TempDir, AppDirs) {
 #[test]
 fn conservation_classifies_every_first_level_entry() {
     let (_tmp, dirs) = seeded();
-    let result = scan(&dirs, &[]).expect("扫描临时基根");
+    let views = core_views();
+    let result = scan(&dirs, &views).expect("扫描临时基根");
 
     assert_eq!(result.nodes.len(), 6, "六个首层观测项必须逐项分类");
     let declared: Vec<&RawNode> = result
@@ -130,8 +139,11 @@ fn conservation_classifies_every_first_level_entry() {
     assert_eq!(declared[1].name, "logs");
     assert_eq!(declared[1].entry, Some("E12"));
     assert_eq!(declared[1].scope, RootScope::Local);
-    assert_eq!(optional[0].name, "security");
-    assert_eq!(optional[0].entry, Some("E7"));
+    assert_eq!(optional[0].name, registry::OPTIONAL_SEGMENTS[0]);
+    assert_eq!(
+        optional[0].entry, None,
+        "未挂载分区的条目在 core 侧不存在，不得挂条目编号"
+    );
     assert_eq!(ignored[0].name, "Thumbs.db");
     assert_eq!(companion[0].name, "assistant.db-wal");
 
@@ -149,9 +161,20 @@ fn conservation_classifies_every_first_level_entry() {
 #[test]
 fn declared_node_subtracts_only_declared_samples() {
     let cache = InventoryCache::new();
-    let mut samples = missing();
-    samples[0] = EntrySample::observed(4, 1, None, None);
-    samples[1] = EntrySample::observed(6, 1, None, None);
+    let views = core_views();
+    let mut samples = missing(&views);
+    set_sample(
+        &views,
+        &mut samples,
+        "E1",
+        EntrySample::observed(4, 1, None, None),
+    );
+    set_sample(
+        &views,
+        &mut samples,
+        "E2",
+        EntrySample::observed(6, 1, None, None),
+    );
 
     finish(
         &cache,
@@ -162,7 +185,7 @@ fn declared_node_subtracts_only_declared_samples() {
         )],
         100,
     );
-    let (dto, trigger) = cache.read(100, &samples);
+    let (dto, trigger) = cache.read(100, &views, &samples);
     let declared = &dto.nodes[0];
 
     assert_eq!(declared.declared_bytes, Some(10), "E1 + E2 都落在首段内");
@@ -172,9 +195,19 @@ fn declared_node_subtracts_only_declared_samples() {
     assert!(!declared.over_registered);
     assert!(!trigger, "fresh 快照不触发后台扫描");
 
-    let mut samples = missing();
-    samples[0] = EntrySample::observed(7, 1, None, None);
-    samples[1] = EntrySample::observed(6, 1, None, None);
+    let mut samples = missing(&views);
+    set_sample(
+        &views,
+        &mut samples,
+        "E1",
+        EntrySample::observed(7, 1, None, None),
+    );
+    set_sample(
+        &views,
+        &mut samples,
+        "E2",
+        EntrySample::observed(6, 1, None, None),
+    );
     finish(
         &cache,
         vec![node(
@@ -184,7 +217,7 @@ fn declared_node_subtracts_only_declared_samples() {
         )],
         100,
     );
-    let (dto, _) = cache.read(100, &samples);
+    let (dto, _) = cache.read(100, &views, &samples);
     assert!(
         dto.nodes[0].over_registered,
         "登记值大于扫描值必须报警（§3.11.3）"
@@ -196,6 +229,7 @@ fn declared_node_subtracts_only_declared_samples() {
 #[test]
 fn unregistered_node_has_zero_declared_and_residual_equals_scan() {
     let cache = InventoryCache::new();
+    let views = core_views();
     finish(
         &cache,
         vec![node(
@@ -205,7 +239,7 @@ fn unregistered_node_has_zero_declared_and_residual_equals_scan() {
         )],
         100,
     );
-    let (dto, _) = cache.read(100, &missing());
+    let (dto, _) = cache.read(100, &views, &missing(&views));
     let stray = &dto.nodes[0];
 
     assert_eq!(stray.declared_bytes, Some(0), "未登记节点没有减数");
@@ -217,19 +251,20 @@ fn unregistered_node_has_zero_declared_and_residual_equals_scan() {
 
 #[test]
 fn running_and_failed_states_leave_entries_untouched() {
-    let samples = available();
+    let views = core_views();
+    let samples = available(&views);
     let cache = InventoryCache::new();
 
     assert!(cache.begin(), "首次触发应真正开跑");
-    let (running, trigger) = cache.read(100, &samples);
+    let (running, trigger) = cache.read(100, &views, &samples);
     assert_eq!(running.status, StorageInventoryStatusDto::Running);
     assert!(!trigger, "running 期间不得再触发（single-flight）");
     assert!(running.nodes.is_empty(), "running 下没有数字可回");
     assert!(!cache.begin(), "running 期间重复触发直接复用");
 
     let never_run = StorageInventoryDto::default();
-    let running_dto = assemble_breakdown(base(), &samples, 100, running.clone());
-    let baseline = assemble_breakdown(base(), &samples, 100, never_run);
+    let running_dto = assemble_breakdown(base(), &views, &samples, 100, running.clone());
+    let baseline = assemble_breakdown(base(), &views, &samples, 100, never_run);
 
     finish(
         &cache,
@@ -242,10 +277,10 @@ fn running_and_failed_states_leave_entries_untouched() {
     );
     cache.begin();
     cache.fail(200);
-    let (failed, _) = cache.read(200, &samples);
+    let (failed, _) = cache.read(200, &views, &samples);
     assert_eq!(failed.status, StorageInventoryStatusDto::Failed);
     assert_eq!(failed.failed_at, Some(200));
-    let failed_dto = assemble_breakdown(base(), &samples, 100, failed.clone());
+    let failed_dto = assemble_breakdown(base(), &views, &samples, 100, failed.clone());
 
     assert_eq!(
         running_dto.entries, baseline.entries,
@@ -281,7 +316,8 @@ fn bounded_scan_truncates_and_keeps_other_nodes() {
     write_file(&deep.join("bottom.bin"), 4);
 
     let dirs = AppDirs::with_bases(data, local);
-    let result = scan(&dirs, &[]).expect("扫描临时基根");
+    let views = core_views();
+    let result = scan(&dirs, &views).expect("扫描临时基根");
 
     let deep_node = result
         .nodes
@@ -314,6 +350,7 @@ fn bounded_scan_truncates_and_keeps_other_nodes() {
 #[test]
 fn failed_keeps_previous_numbers() {
     let cache = InventoryCache::new();
+    let views = core_views();
     finish(
         &cache,
         vec![node(
@@ -324,7 +361,7 @@ fn failed_keeps_previous_numbers() {
         100,
     );
 
-    let (fresh, _) = cache.read(100, &missing());
+    let (fresh, _) = cache.read(100, &views, &missing(&views));
     assert_eq!(fresh.status, StorageInventoryStatusDto::Fresh);
     assert_eq!(fresh.scanned_at, Some(100));
     assert_eq!(fresh.nodes[0].scan_bytes, Some(100));
@@ -332,7 +369,7 @@ fn failed_keeps_previous_numbers() {
     assert!(cache.begin());
     cache.fail(200);
 
-    let (failed, _) = cache.read(200, &missing());
+    let (failed, _) = cache.read(200, &views, &missing(&views));
     assert_eq!(failed.status, StorageInventoryStatusDto::Failed);
     assert_eq!(failed.failed_at, Some(200));
     assert_eq!(failed.scanned_at, Some(100), "失败保留上次成功时刻");
@@ -351,6 +388,7 @@ fn failed_keeps_previous_numbers() {
 #[test]
 fn stale_snapshot_returns_old_numbers_and_triggers_once() {
     let cache = InventoryCache::new();
+    let views = core_views();
     finish(
         &cache,
         vec![node(
@@ -361,26 +399,28 @@ fn stale_snapshot_returns_old_numbers_and_triggers_once() {
         100,
     );
 
-    let (fresh, trigger) = cache.read(100, &missing());
+    let (fresh, trigger) = cache.read(100, &views, &missing(&views));
     assert!(!trigger);
     assert_eq!(fresh.nodes[0].scan_bytes, Some(100));
 
-    let (stale, trigger) = cache.read(100 + 300, &missing());
+    let (stale, trigger) = cache.read(100 + 300, &views, &missing(&views));
     assert_eq!(stale.status, StorageInventoryStatusDto::Stale);
     assert_eq!(stale.nodes[0].scan_bytes, Some(100), "stale 返回旧值");
     assert!(trigger, "stale 必须触发一次后台扫描");
 
     assert!(cache.begin());
-    let (running, trigger) = cache.read(100 + 300, &missing());
+    let (running, trigger) = cache.read(100 + 300, &views, &missing(&views));
     assert_eq!(running.status, StorageInventoryStatusDto::Running);
     assert!(!trigger, "已开跑则不再触发");
 }
 
 #[test]
-fn registry_keeps_thirteen_entries() {
-    assert_eq!(MANAGED_ROOTS.len(), ENTRY_COUNT);
+fn registry_keeps_core_eight() {
+    let views = core_views();
+    assert_eq!(views.len(), MANAGED_ROOTS.len(), "未挂载分区不贡献行");
     for (index, root) in MANAGED_ROOTS.iter().enumerate() {
-        assert_eq!(root.entry, format!("E{}", index + 1));
+        assert_eq!(views[index].entry, root.entry);
+        assert_eq!(views[index].key, root.key);
     }
 }
 
@@ -399,8 +439,8 @@ fn uppercase_companion_suffix_is_not_unregistered() {
     write_file(&data.join("assistant.db-WAL"), 7);
     write_file(&data.join("assistant.db-SHM"), 3);
     let dirs = AppDirs::with_bases(data, local);
-
-    let result = scan(&dirs, &[]).expect("扫描临时基根");
+    let views = core_views();
+    let result = scan(&dirs, &views).expect("扫描临时基根");
 
     assert_eq!(result.nodes.len(), 2, "两个大写伴生文件都必须出观测项");
     for scanned in &result.nodes {
@@ -422,4 +462,94 @@ fn uppercase_companion_suffix_is_not_unregistered() {
             .all(|scanned| scanned.class != StorageInventoryClassDto::Unregistered),
         "大写伴生文件不得产生「未登记」假告警"
     );
+}
+
+/// V19 / V23：可选首段四态——槽缺失 / 零分区 / 单分区 / 双分区。
+///
+/// 判定只看「有没有分区自述该首段」，不看能力名 / feature 名（V22）。
+#[test]
+fn optional_segment_states_follow_registered_sections() {
+    let (_tmp, dirs) = seeded();
+    let segment = registry::OPTIONAL_SEGMENTS[0];
+    let core_len = core_views().len();
+
+    // 槽缺失 / 零分区：清单只有 core 8 条，首段整体归 optionalNotMounted。
+    for sections in [Vec::new(), SectionRegistry::new().snapshot()] {
+        let entry_views = views(&sections);
+        assert_eq!(entry_views.len(), core_len, "零分区不贡献行");
+        let result = scan(&dirs, &entry_views).expect("扫描临时基根");
+        let optional: Vec<&RawNode> = result
+            .nodes
+            .iter()
+            .filter(|node| node.class == StorageInventoryClassDto::OptionalNotMounted)
+            .collect();
+        assert_eq!(optional.len(), 1, "可选首段整体归未挂载");
+        assert_eq!(optional[0].name, segment);
+        assert_eq!(optional[0].entry, None, "未挂载不挂条目编号");
+    }
+
+    // 单分区：自述 5 条进入清单，首段转为 declared。
+    let registry = SectionRegistry::new();
+    registry
+        .register(fake_section::mount(
+            "fake-five",
+            fake_section::five_entries(),
+        ))
+        .expect("首段命中 OPTIONAL_SEGMENTS");
+    let entry_views = views(&registry.snapshot());
+    assert_eq!(entry_views.len(), core_len + 5, "core 8 + 分区 5");
+    let result = scan(&dirs, &entry_views).expect("扫描临时基根");
+    let declared = result
+        .nodes
+        .iter()
+        .find(|node| node.name == segment)
+        .expect("首段必须出现");
+    assert_eq!(declared.class, StorageInventoryClassDto::Declared);
+    assert_eq!(
+        declared.entry,
+        Some(fake_section::five_entries()[0].entry),
+        "首段挂分区自述的首条条目编号"
+    );
+
+    // 双分区：同一首段下两个分区，条目累加。
+    let registry = SectionRegistry::new();
+    registry
+        .register(fake_section::mount(
+            "fake-pair",
+            fake_section::pair_entries(),
+        ))
+        .expect("首个分区");
+    registry
+        .register(fake_section::mount(
+            "fake-triple",
+            fake_section::triple_entries(),
+        ))
+        .expect("第二个分区");
+    let entry_views = views(&registry.snapshot());
+    assert_eq!(entry_views.len(), core_len + 5, "2 + 3 条分区条目");
+    let result = scan(&dirs, &entry_views).expect("扫描临时基根");
+    let declared = result
+        .nodes
+        .iter()
+        .find(|node| node.name == segment)
+        .expect("首段必须出现");
+    assert_eq!(declared.class, StorageInventoryClassDto::Declared);
+    assert_eq!(
+        declared.entry,
+        Some(fake_section::pair_entries()[0].entry),
+        "双分区首段挂第一个分区自述的首条条目编号"
+    );
+}
+
+/// 首段不在 `OPTIONAL_SEGMENTS` 的假分区：注册被拒，且不进入清单。
+#[test]
+fn foreign_section_is_rejected_and_absent_from_views() {
+    let registry = SectionRegistry::new();
+    let error = registry
+        .register(fake_section::foreign_handle())
+        .expect_err("首段不在 OPTIONAL_SEGMENTS 必须被拒");
+    assert!(error.contains("OPTIONAL_SEGMENTS"), "{error}");
+    let entry_views = views(&registry.snapshot());
+    assert_eq!(entry_views.len(), core_views().len(), "被拒分区不贡献行");
+    assert!(!entry_views.iter().any(|view| view.key == "elsewhere"));
 }

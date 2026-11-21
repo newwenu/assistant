@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { formatBytes } from "@/utils/formatBytes";
 import { entryDetailView, entryRowView } from "../entryView";
-import { reasonText } from "../lexicon";
+import { availabilityText, reasonText } from "../lexicon";
 import { makeEntry, makePolicy, makeReclaim } from "./fixtures";
 
 vi.mock("@/utils/formatBytes", async (importOriginal) => {
@@ -142,11 +142,9 @@ describe("条目行视图模型", () => {
       entryRowView(makeEntry({ availability: "missing" })).availabilityBadge,
     ).toBeNull();
 
-    const locked = entryRowView(
-      makeEntry({ availability: "locked", availabilityReason: "EACCES" }),
-    );
+    const locked = entryRowView(makeEntry({ availability: "locked" }));
     expect(locked.availabilityBadge?.tone).toBe("warning");
-    expect(locked.availabilityBadge?.reason).toBe("EACCES");
+    expect(locked.availabilityBadge?.reason).toBe(availabilityText("locked"));
 
     const unreadable = entryRowView(makeEntry({ availability: "unreadable" }));
     expect(unreadable.availabilityBadge?.tone).toBe("error");
@@ -197,12 +195,8 @@ describe("条目详情视图模型", () => {
 
   it("诊断原文原样透传，不做翻译", () => {
     const detail = entryDetailView(
-      makeEntry({
-        availabilityReason: "EACCES",
-        reclaim: makeReclaim({ note: "owner offline" }),
-      }),
+      makeEntry({ reclaim: makeReclaim({ note: "owner offline" }) }),
     );
-    expect(detail.availabilityReason).toBe("EACCES");
     expect(detail.note).toBe("owner offline");
   });
 

@@ -7,9 +7,11 @@ use std::path::Path;
 use std::sync::Arc;
 
 use assistant_app::app_dirs::AppDirs;
+use assistant_app::cmd::storage::entries::views;
 use assistant_app::cmd::storage::reclaim::{
     execute_storage_reclaim, plan_storage_reclaim, ReclaimPlanStore, ReclaimPorts, PLAN_TTL_SECONDS,
 };
+use assistant_app::cmd::storage::section::StorageSectionHandle;
 use assistant_app::protocol::dto::{
     StorageConfirmLevelDto, StorageEligibilityDto, StorageReclaimActionDto,
     StorageReclaimEntryRequestDto, StorageReclaimPlanRequestDto, StorageReclaimReasonDto,
@@ -17,6 +19,9 @@ use assistant_app::protocol::dto::{
 };
 use assistant_storage::attachment_store::AttachmentStore;
 use assistant_tools::{FileToolResultStorage, ToolResultStorage};
+
+#[path = "support/fake_section.rs"]
+mod fake_section;
 
 const DERIVED_KEY: &str = "attachments/derived";
 const INDEX_KEY: &str = "tool-index";
@@ -49,7 +54,7 @@ impl Fixture {
         self.ports_with(now, None)
     }
 
-    /// 带 `E3` owner 句柄的装配；`probes` / `db` 由调用方按需给（集成层拿不到这两者的类型）。
+    /// 带 `E3` owner 句柄的装配；`sections` / `db` 由调用方按需给（集成层不挂可选分区）。
     fn ports_with(
         &self,
         now: i64,
@@ -59,8 +64,25 @@ impl Fixture {
             plans: &self.plans,
             dirs: &self.dirs,
             attachments: &self.store,
-            probes: None,
+            sections: Vec::new(),
             tool_results,
+            db: None,
+            now,
+        }
+    }
+
+    /// 挂载可选分区的装配：`sections` 由假分区夹具提供，不依赖真实 vault。
+    fn ports_with_sections(
+        &self,
+        now: i64,
+        sections: Vec<StorageSectionHandle>,
+    ) -> ReclaimPorts<'_> {
+        ReclaimPorts {
+            plans: &self.plans,
+            dirs: &self.dirs,
+            attachments: &self.store,
+            sections,
+            tool_results: None,
             db: None,
             now,
         }
@@ -338,8 +360,8 @@ async fn execute_rejects_keys_outside_whitelist() {
     assert_eq!(error, "entryNotAllowed", "白名单外请求整体拒绝（V17 负例）");
 }
 
-/// 白名单只放行 `E1 + A1` / `E2 + A5` / `E3 + A3` / `E4 + A5` / `E8 + A4`：其余条目的
-/// 「本切片应执行的动作」（`E10 + A3` / `E11 + A3` / `E13 + A4`）即使计划里能查到也必须被拒。
+/// 白名单只放行 `E1 + A1` / `E2 + A5` / `E3 + A3` / `E4 + A5`：没有执行器的 core 条目
+/// （`E5` / `E6` / `E13`）即使计划里能查到，动作请求也必须被拒。
 #[tokio::test]
 async fn execute_rejects_whitelisted_out_entry_action_pairs() {
     let fixture = Fixture::new();
@@ -347,15 +369,15 @@ async fn execute_rejects_whitelisted_out_entry_action_pairs() {
     let now = future_now();
     let plan = plan_storage_reclaim(
         fixture.ports(now),
-        plan_request(&["security/recovery", "security/audit", "crashes"]),
+        plan_request(&["attachments", "mascot-assets", "crashes"]),
     )
     .await
     .unwrap();
     let before = signature(fixture.dirs.data());
 
     for (key, action) in [
-        ("security/recovery", StorageReclaimActionDto::SweepExpired),
-        ("security/audit", StorageReclaimActionDto::SweepExpired),
+        ("attachments", StorageReclaimActionDto::RebuildCache),
+        ("mascot-assets", StorageReclaimActionDto::SweepExpired),
         ("crashes", StorageReclaimActionDto::PruneToLimit),
     ] {
         let error = execute_storage_reclaim(
@@ -378,7 +400,11 @@ async fn inventory_and_unregistered_keys_are_rejected_on_both_sides() {
     fixture.seed().await;
     let now = future_now();
 
-    for key in ["inventory", "security/audit/tmp"] {
+    // 可选首段从登记表拼出：测试不另写首段字面量。
+    let nested = format!("{}/audit/tmp", fake_section::optional_segment());
+    let keys: [&str; 2] = ["inventory", nested.as_str()];
+
+    for key in keys {
         let error = plan_storage_reclaim(fixture.ports(now), plan_request(&[key]))
             .await
             .unwrap_err();
@@ -390,7 +416,7 @@ async fn inventory_and_unregistered_keys_are_rejected_on_both_sides() {
         .unwrap();
     let before_derived = signature(&fixture.dirs.attachments());
 
-    for key in ["inventory", "security/audit/tmp"] {
+    for key in keys {
         let error = execute_storage_reclaim(
             fixture.ports(now),
             execute_request(
@@ -575,6 +601,17 @@ async fn single_entry_failure_does_not_block_other_entries() {
     assert_eq!(result.entries[1].removed_count, 0);
     assert_eq!(result.entries[1].failed_count, 1, "读目录失败计一次");
     assert_eq!(result.entries[1].errors.len(), 1, "失败原因如实上报");
+    for error in &result.entries[1].errors {
+        let message = &error.message;
+        assert!(
+            message.chars().count() <= 120,
+            "失败文案长度上限 120（R-39）：{message}"
+        );
+        assert!(
+            !message.contains(':') && !message.contains('/') && !message.contains('\\'),
+            "失败文案不得含绝对路径与文件名（§5.3 硬约束 3 / R-39）：{message}"
+        );
+    }
 }
 
 /// V7：`expectedBytes` 是**计划时刻的预览**，执行侧重新收集候选——计划后新增的过期文件
@@ -727,30 +764,122 @@ async fn retention_zero_is_policy_disabled_and_deletes_nothing() {
     assert_eq!(before, signature(&root), "策略回退 0 时零副作用");
 }
 
-/// V12 后半：`E11` 没有补录游标（provider 未注入、`auditPolicy` 取不到）时不得判
-/// `eligible`——游标不可得即判据不可算，只能停在 `ownerManaged` 且不给可回收数字。
+/// 未挂载分区的条目在 core 侧整体不存在：可选首段的条目 key 在计划侧
+/// 一律回 `entryNotAllowed`，不会被当成「永远不可回收」的占位条目（§3.10）。
 #[tokio::test]
-async fn audit_without_cursor_is_never_eligible() {
+async fn optional_entries_disappear_when_section_not_mounted() {
     let fixture = Fixture::new();
     let now = future_now();
-    let plan = plan_storage_reclaim(fixture.ports(now), plan_request(&["security/audit"]))
-        .await
-        .unwrap();
-    let entry = &plan.entries[0];
+    let error = plan_storage_reclaim(
+        fixture.ports(now),
+        plan_request(&[fake_section::optional_key("audit")]),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(error, "entryNotAllowed", "未挂载分区不贡献条目");
+}
 
-    assert_eq!(entry.key, "security/audit");
-    assert_ne!(
-        entry.eligibility,
-        StorageEligibilityDto::Eligible,
-        "无游标时不得判 eligible"
-    );
-    assert_eq!(entry.eligibility, StorageEligibilityDto::OwnerManaged);
-    assert_eq!(entry.reason, Some(StorageReclaimReasonDto::Expired));
+/// V20：`entryKeys` 空集 = core 8 条 + 已挂载分区条目（长度动态，不再写死 13）。
+#[tokio::test]
+async fn empty_entry_keys_covers_core_and_mounted_sections() {
+    let fixture = Fixture::new();
+    fixture.seed().await;
+    let now = future_now();
+    let plan = plan_storage_reclaim(
+        fixture.ports_with_sections(
+            now,
+            vec![fake_section::mount(
+                "fake-five",
+                fake_section::five_entries(),
+            )],
+        ),
+        plan_request(&[]),
+    )
+    .await
+    .unwrap();
+
     assert_eq!(
-        entry.policy.retention_days, None,
-        "取不到游标时不留默认天数"
+        plan.entries.len(),
+        views(&[]).len() + 5,
+        "core 8 条 + 分区自述 5 条"
     );
-    assert_eq!(entry.expected_count, None, "判据不可算 → 不给条数");
-    assert_eq!(entry.expected_bytes, None, "判据不可算 → 不给字节");
-    assert_eq!(entry.confirmation, StorageConfirmLevelDto::None);
+    let backups = plan
+        .entries
+        .iter()
+        .find(|entry| entry.key == fake_section::optional_key("backups"))
+        .expect("分区条目必须进入清单");
+    assert_eq!(backups.eligibility, StorageEligibilityDto::Eligible);
+    assert_eq!(backups.reason, Some(StorageReclaimReasonDto::OverLimit));
+    assert_eq!(
+        backups.confirmation,
+        StorageConfirmLevelDto::Confirm,
+        "Medium 风险档 + eligible 派生 confirm（§3.6 硬约束 5–6）"
+    );
+}
+
+/// 分区自述动作驱动：`PruneToLimit` 只在分区声明过时才放行，执行原样交给分区。
+#[tokio::test]
+async fn section_declared_action_drives_plan_and_execute() {
+    let fixture = Fixture::new();
+    fixture.seed().await;
+    let now = future_now();
+    let handle = fake_section::backups_handle(2048, 6, 3);
+    let key = fake_section::optional_key("backups");
+
+    let plan = plan_storage_reclaim(
+        fixture.ports_with_sections(now, vec![handle.clone()]),
+        plan_request(&[key]),
+    )
+    .await
+    .unwrap();
+    let planned = &plan.entries[0];
+    assert_eq!(planned.key, key);
+    assert_eq!(
+        planned.expected_bytes, None,
+        "分区条目本期不自报可回收量（数字只由执行回报给出）"
+    );
+    assert_eq!(planned.expected_count, None);
+
+    let result = execute_storage_reclaim(
+        fixture.ports_with_sections(now, vec![handle]),
+        execute_request(
+            &plan.plan_id,
+            vec![request(key, StorageReclaimActionDto::PruneToLimit)],
+            true,
+        ),
+    )
+    .await
+    .unwrap();
+    let entry = &result.entries[0];
+    assert_eq!(entry.status, StorageReclaimStatusDto::Done);
+    assert_eq!(entry.removed_count, 3, "回报数字来自分区");
+    assert_eq!(entry.removed_bytes, 2048);
+}
+
+/// 分区没声明的动作一律拒绝：core 不猜「这个 key 还能做什么」。
+#[tokio::test]
+async fn section_action_not_declared_is_rejected() {
+    let fixture = Fixture::new();
+    fixture.seed().await;
+    let now = future_now();
+    let handle = fake_section::backups_handle(2048, 6, 3);
+    let key = fake_section::optional_key("backups");
+    let plan = plan_storage_reclaim(
+        fixture.ports_with_sections(now, vec![handle.clone()]),
+        plan_request(&[key]),
+    )
+    .await
+    .unwrap();
+
+    let error = execute_storage_reclaim(
+        fixture.ports_with_sections(now, vec![handle]),
+        execute_request(
+            &plan.plan_id,
+            vec![request(key, StorageReclaimActionDto::RebuildCache)],
+            true,
+        ),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(error, "entryNotAllowed", "分区未声明 RebuildCache");
 }

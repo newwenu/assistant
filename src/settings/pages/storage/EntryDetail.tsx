@@ -33,16 +33,6 @@ export const EntryDetail: React.FC<EntryDetailProps> = ({ id, detail }) => {
             </span>
           </div>
         ))}
-        {detail.availabilityReason !== null && (
-          <div className="storage-entry-detail-item">
-            <span className="storage-entry-detail-label">
-              {t("settings.storage.entries.facts.availability_reason")}
-            </span>
-            <span className="storage-entry-detail-value">
-              {detail.availabilityReason}
-            </span>
-          </div>
-        )}
         {detail.note !== null && (
           <div className="storage-entry-detail-item">
             <span className="storage-entry-detail-label">

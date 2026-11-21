@@ -280,7 +280,7 @@ G14 / V16 要求「不得删除附件明细区的任何既有能力」：本区�
 | `owner` | 详情展示（`由 {{owner}} 提供`） |
 | `bytes` / `count` | 占用 / 条数列 |
 | `oldestAt` / `newestAt` | 详情 |
-| `availability` / `availabilityReason` | 占用列异常角标 + 详情「诊断」行（**不占列**，§5.3 / §5.6） |
+| `availability` | 占用列异常角标 + 详情「诊断」行（**不占列**，§5.3 / §5.6） |
 | `includesDerived` / `countsSelfLogs` | 详情（口径提示 chip） |
 | `reclaim.eligibility` / `.reason` / `.note` | 清理按钮可用态与禁用 tooltip（§5.7） |
 | `reclaim.action` | 清理按钮文案来源（`actionText(action)`）；`action = none` 时不渲染按钮 |
@@ -321,7 +321,7 @@ G14 / V16 要求「不得删除附件明细区的任何既有能力」：本区�
 
 规则以 `bytesOrDash()` 单点实现（`format.ts`），组件内**禁止**再出现 `formatBytes(x ?? 0)` 或 `x ? … : …` 的数值兜底。
 
-**可用性不占列**：`missing` 只通过 `0 B` 表达，不加角标；只有 `unreadable` / `locked` / `unavailable` / `notImplemented` / `noReportYet` / `staleReport` 这类「数可能取不到或有前提」的异常态，才在占用列末尾追加 `InfoCircleOutlined` 角标，tooltip 显示 `availabilityReason` 原文（`null` 时用 `availabilityText` 兜底），详情「诊断」行同时给出原文（§5.6 / §5.9）。
+**可用性不占列**：`missing` 只通过 `0 B` 表达，不加角标；只有 `unreadable` / `locked` / `unavailable` / `notImplemented` / `noReportYet` / `staleReport` 这类「数可能取不到或有前提」的异常态，才在占用列末尾追加 `InfoCircleOutlined` 角标，tooltip 显示 `availabilityText(availability)` 词表文案，详情「诊断」行同时给出该文案（§5.6 / §5.9）。
 
 ### 5.4 列定义（四列，清理为第 4 列）
 
@@ -364,7 +364,7 @@ G14 / V16 要求「不得删除附件明细区的任何既有能力」：本区�
 | 列 | 第一行 / 主内容 | 第二行 / 附加 |
 |---|---|---|
 | 名称 | `entryNameText(key)` + 展开箭头 | `key`（仅第一行为本地化名称时） |
-| 占用 | `bytesOrDash(bytes)`；异常可用性追加 `InfoCircleOutlined` 角标（tooltip = `availabilityReason` 原文，`null` 时用 `availabilityText`） | 条数次行（`countText`） |
+| 占用 | `bytesOrDash(bytes)`；异常可用性追加 `InfoCircleOutlined` 角标（tooltip = `availabilityText(availability)`） | 条数次行（`countText`） |
 | 策略 | chip 组，最多 2 枚 + `+N`：第 1 枚恒为 `policySourceText(policy.source)`；其余按 `retentionDays` → `keepCount` → `maxBytes` → `autoActive` 顺序追加 | 不显示（其余 chip 与 `effectiveSince` / `mutable` 全在详情） |
 | 清理 | 见 §5.7（按钮 / 静态文案 / `—`） | 不显示 |
 
@@ -372,18 +372,18 @@ G14 / V16 要求「不得删除附件明细区的任何既有能力」：本区�
 
 | `availability` | 占用列 | 详情「诊断」行 |
 |---|---|---|
-| `available` / `missing` | 无角标（`missing` 由 `0 B` 表达） | 有 `availabilityReason` 才出现 |
+| `available` / `missing` | 无角标（`missing` 由 `0 B` 表达） | 不出现 |
 | `locked` / `unreadable` / `unavailable` / `notImplemented` / `noReportYet` / `staleReport` | `InfoCircleOutlined` 角标（`locked` / `staleReport` 橙、`unreadable` / `unavailable` 红、其余次要色） | 同上 |
 
 角标只影响图标颜色，不额外加 Tag —— Tag 会把「异常」说成一种并列的分类，角标才是「这条数字有前提」的正确语气。
 
-**`notImplemented` 只剩一种来源**：core 自有、组件不提供统计的条目（如 `logs`），`availabilityReason` 写明「该组件不提供占用统计」。可选功能分区的条目在未挂载时**根本不在 `entries` 里**，因此前端**不会**收到「可选功能未启用」的 `notImplemented` 行，也**不得**为它补一行——这是后端分区自管理语义（规格 §3.1.1 / §3.10）在前端的直接体现；把未挂载画成占位行会让用户看到一个永远点不动、也永远不会消失的条目。
+**`notImplemented` 只剩一种来源**：core 自有、组件不提供统计的条目（如 `logs`），其结构性缺口说明由后端 `reclaim.note` 承载（可用性本身只由 `availability = notImplemented` 表达，wire 上没有原因文案字段）。可选功能分区的条目在未挂载时**根本不在 `entries` 里**，因此前端**不会**收到「可选功能未启用」的 `notImplemented` 行，也**不得**为它补一行——这是后端分区自管理语义（规格 §3.1.1 / §3.10）在前端的直接体现；把未挂载画成占位行会让用户看到一个永远点不动、也永远不会消失的条目。
 
 **`policy.source = none` 时策略列只剩一枚「无保留策略」**：矛盾的两端分别落在「策略列说明没有保留策略」与「清理按钮的可用态说明现在能不能清」上，不再用 `failClosed` 的第二枚 chip 去补语义——`failClosed` 是后端判据字段，**前端不翻译、不渲染**（不进 chip、不进详情）；能否手动清理由第 4 列按钮的可用态决定（P16 / §5.7）。
 
 硬规则：
 
-1. **`availabilityReason` 与 `note` 是后端自由文本，原样展示**（含语言），不映射成前端枚举文案、不翻译、不截断成固定词；否则等于前端维护第二套判据词表（X7 的变体）；
+1. **`note` 是后端自由文本，原样展示**（含语言），不映射成前端枚举文案、不翻译、不截断成固定词；否则等于前端维护第二套判据词表（X7 的变体）；可用性文案一律走 `availabilityText(availability)` 词表，不再有后端原因原文；
 2. **封闭枚举**值未命中词表（后端新增值）→ 显示**原始枚举值**并 `console.warn`，**禁止**兜底成「可用」或空白（静默会把未知说成安全）；
 3. 占用列角标**不重复**详情已给的原文，只做「有前提」的提示；全文在详情「诊断」行。
 
@@ -428,7 +428,7 @@ G14 / V16 要求「不得删除附件明细区的任何既有能力」：本区�
 | 可清理 | `reclaim.reclaimableCount` / `reclaim.reclaimableBytes`（后端值） | `—` |
 | 策略 | `source` / `effectiveSince` / `mutable` | `—` |
 | 口径标记 | `includesDerived` / `countsSelfLogs` 两个 chip（真值才出现） | 都不出现 |
-| 诊断 | `availabilityReason` / `note`（原文） | 都不出现 |
+| 诊断 | `availabilityText(availability)`（仅异常态） / `note`（原文） | 都不出现 |
 
 ---
 
@@ -733,7 +733,7 @@ settings.storage
 │           policy.{source.{config,constant,owner,none}, retention, retention_disabled,
 │                   keep_count, max_bytes, auto_active},
 │           facts.{layer,oldest,newest,reclaimable,effective_since,mutable,
-│                  includes_derived,counts_self_logs,availability_reason,note}}
+│                  includes_derived,counts_self_logs,note}}
 ├─ cleanup.{planning, executing, ok, cancel,
 │           dialog.{title, body, key_hint, irreversible},
 │           strong.{title, body, placeholder, mismatch},
@@ -775,7 +775,7 @@ settings.storage
 | 禁用 | 扫描按钮在 `running` 态禁用 + `loading`；区块 A 的「删除选中」在 `selectedIds` 为空时禁用；区块 B 的「清理」在非 `eligible` 或另一清理流程进行中禁用，禁用原因写进 tooltip |
 | 键盘 | 行展开、组折叠支持 Enter / Space（用 `Button type="text"` 而非裸 `div` 点击） |
 | 数字 | 字节用 `formatBytes`；`null` 用 `—`；时间统一「月 日 时:分」（沿用既有 `formatTimestamp`） |
-| 语言 | `availabilityReason` / `note` / `error.message` 为后端原文，**不翻译、不改写**；枚举文案一律走词表 |
+| 语言 | `note` / `error.message` 为后端原文，**不翻译、不改写**；枚举文案（含 `availability`）一律走词表 |
 
 ---
 
@@ -784,7 +784,7 @@ settings.storage
 | 文件 | 断言 |
 |---|---|
 | `__tests__/lexicon.test.ts` | 「枚举值有键」由 `satisfies Record<Enum, I18nPath>` 在**编译期**保证，测试只覆盖运行期语义：枚举未知值（`"futureValue"`）返回原文并 `warn`；`constructor` / `toString` 等原型键不误命中；**任意未登记 `key`**（如 `"future/entry"`）`entryNameText` 回退 `key` 原文且**不告警**；未登记首段 `groupNameText` 回退首段原文；`entryNameText` 与 `availabilityText` 对同一输入稳定 |
-| `__tests__/entryView.test.ts` | `bytes = null` → `—` 且**不调用** `formatBytes`；`missing` + `0` → `0 B` 且**无角标**；`unreadable` / `locked` → 占用列带角标 + tooltip 取 `availabilityReason` 原文；视图模型**不含**可用性列、资格列字段，只含 4 列（`name` / `size` / `policyChips` / `cleanup`）；清理按钮四态：`eligible` → 可点、`strongConfirm` 标记、`ownerManaged` → 静态文案无按钮、其余非 eligible → 禁用 + tooltip（`notImplemented` 用 `note` 原文，否则 `reasonText`）；`action = none` → 清理列为 `—`；`policy.source = none` → 策略列只有一枚「无保留策略」chip（`failClosed` 不参与渲染）；分组派生：`attachments/derived` 并入 `attachments`、单成员组不生成组头、**未登记的新 `key` 自动成组 / 平铺**而不落「其他」；**条目行数 = `entries.length`**（8 条 core → 8 行；8 条 + 5 条 `security/*` → 13 行，两组用例都要覆盖）；**未挂载用例**：`entries` 不含任何 `security/*` 时**不产出安全域组**（无组头、无 `(0)` 计数、无占位行），且**不得**出现 `notImplemented` 的「可选功能未启用」行 |
+| `__tests__/entryView.test.ts` | `bytes = null` → `—` 且**不调用** `formatBytes`；`missing` + `0` → `0 B` 且**无角标**；`unreadable` / `locked` → 占用列带角标 + tooltip 取 `availabilityText(availability)` 词表文案；视图模型**不含**可用性列、资格列字段，只含 4 列（`name` / `size` / `policyChips` / `cleanup`）；清理按钮四态：`eligible` → 可点、`strongConfirm` 标记、`ownerManaged` → 静态文案无按钮、其余非 eligible → 禁用 + tooltip（`notImplemented` 用 `note` 原文，否则 `reasonText`）；`action = none` → 清理列为 `—`；`policy.source = none` → 策略列只有一枚「无保留策略」chip（`failClosed` 不参与渲染）；分组派生：`attachments/derived` 并入 `attachments`、单成员组不生成组头、**未登记的新 `key` 自动成组 / 平铺**而不落「其他」；**条目行数 = `entries.length`**（8 条 core → 8 行；8 条 + 5 条 `security/*` → 13 行，两组用例都要覆盖）；**未挂载用例**：`entries` 不含任何 `security/*` 时**不产出安全域组**（无组头、无 `(0)` 计数、无占位行），且**不得**出现 `notImplemented` 的「可选功能未启用」行 |
 | `__tests__/cleanupFlow.test.ts` | `idle → planning → confirming → executing → done/failed` 状态迁移；`confirmation = none` 跳过 `confirming`；`busy` / `planExpired` / `planNotFound` / `entryNotAllowed` → 对应 `cleanup.error.*` 且**不自动重放**；`result.status` 四态 → `cleanup.result.*`；`errors[0].code` → `cleanup.error_code.*`，未知码 → `unknown` |
 | `__tests__/residualView.test.ts` | 排序（`unregistered` 优先、同类别按余量降序、`null` 置末、同值按名称稳定）；`declared` 仅在 `residualBytes > 0` 时出现；`partial` → 警示栈含 `partial` 且 `truncatedNodes` 最多列 3 个；任一 `overRegistered` → 警示栈含 `over_registered` 且该行带 `is-over`；`failed` 且保留数字 → 警示栈含 `failed_keep_last` 且 `nodes` 非空；全空 → `empty`；合计 `null` → `—` |
 | `__tests__/localeParity.test.ts` | `zh-CN` 与 `en-US` 的键路径集合完全相等；`entries.names.*`（规范化 key）、`entries.groups.*`、`entries.layer.*`、`entries.availability.*`、`entries.eligibility.*`、`cleanup.*`、`residual.class.*`、`residual.status.*` 全部存在；**不得残留 `entries.names.e1..e13`、`entries.domains.*`、`entries.facts.fail_closed`、`reclaim.*`、`entries.reclaim_button`、`entries.columns.availability` / `eligibility` / `action`** |

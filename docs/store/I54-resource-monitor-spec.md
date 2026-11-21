@@ -44,7 +44,7 @@
 
 1. 把设置页从「附件清理」升级为**多 tab 资源监视器**，页面身份从「存储管理」改为「资源监视器」；
 2. 三个 tab 各自由**自己的取数缝**供数：存储 tab 由 [I61](./I61-storage-manager-spec.md) 的条目快照供数，进程 tab 与自身占用 tab 共用**同一个进程内采样缝**（根 = 自身 PID，一次全系统快照推导出整棵子树，§2.3）并投影成两种视图（§6.2）；三者不共用回收语义、不共用停止语义；
-3. 存储 tab 在 v1 交付 D1–D4 四个方向（体量 / 时间 / 分层归属 / 可用性状态）——**已迁出**，现由 [I61](./I61-storage-manager-spec.md) §3 交付 13 条资源监视条目并追加 D5 资格 / D6 策略；
+3. 存储 tab 在 v1 交付 D1–D4 四个方向（体量 / 时间 / 分层归属 / 可用性状态）——**已迁出**，现由 [I61](./I61-storage-manager-spec.md) §3 交付条目清单（core 8 条 + 可选功能分区自述条目）并追加 D5 资格 / D6 策略；
 4. 进程 tab 与自身占用 tab 在 v1 交付**采样缝 + 树级数字 + 口径定案**，数字只到「树级、无任务归因」的粒度（§5.4、§6.6）；
 5. 任何数字必须携带「来源 owner 或采样器、口径、采样时刻、可用性状态」四件套；
 6. 任何读不到的对象显示**状态与原因**，禁止显示 `0`。
@@ -560,10 +560,10 @@ v1 的自身占用 tab 由两块组成，**两块的数据性质不同，必须�
 
 | 项 | 变更 |
 |---|---|
-| `StorageSettings.tsx` | 改造为**容器**：内嵌 antd `Tabs`（`activeKey` + 三 tab）。本文只负责容器壳与另两个 tab 的挂载；**存储 tab 的内部结构（条目表、回收按钮、计划确认弹窗）由 [I61](./I61-storage-manager-spec.md) §6.3 定义** |
+| `StorageSettings.tsx` | 改造为**容器**：内嵌 antd `Tabs`（`activeKey` + 三 tab）。本文只负责容器壳与另两个 tab 的挂载；**存储 tab 的内部结构（条目表、回收按钮、计划确认弹窗）由 [I61 存储管理器前端设计](./I61-storage-manager-frontend.md) 定义** |
 | 进程 tab 组件 | 渲染 `get_process_snapshot` 中 `projection == children` 的明细（PID / 父 PID / `exeName` / CPU / 内存）+ 顶部 `sampledAt` 与 `coverage` / `truncated` 说明；**无停止按钮、无任务名、无角色列** |
 | 自身占用 tab 组件 | **两块分开渲染**：当前值（同一次 `get_process_snapshot` 的 `selfProjection` + `projection == self` 明细）+ 峰值区（`get_self_usage_report`，必须显示 `generatedAt` 与 `attributionNote`）；内存合计仅在 `memoryAdditive == true` 时显示，内存列名必须带口径（§6.3.2 约束 3） |
-| `storageService.ts` | 本文追加 `getResourceCapabilities()` / `getProcessSnapshot()` / `getSelfUsageReport()`；**存储相关调用（`getStorageBreakdown` / `reclaim_storage` / `deleteAttachments`）的封装与返回类型归 I61 §6.3**，同一文件内两部分不互相引用 |
+| `storageService.ts` | 本文追加 `getResourceCapabilities()` / `getProcessSnapshot()` / `getSelfUsageReport()`；**存储相关调用（`getStorageBreakdown` / `reclaim_storage` / `deleteAttachments`）的封装与返回类型归 I61（[规格](./I61-storage-manager-spec.md) §6.1 / §6.2、[前端设计](./I61-storage-manager-frontend.md) §4）**，同一文件内两部分不互相引用 |
 | i18n | 两份 locale 同步新增 tab 标题、状态文案、原因文案、口径说明；`common.navigation.storage.title` 只改值不改键（§3.3）；存储条目文案归 I61 |
 
 **前端必须按 `memoryAdditive` 分支**，不能无条件显示内存合计：`memoryAdditive == false` 时只显示各进程行，或显示合计但带「含共享页重复计数」标注（§6.3.2）。这条判断不能放在文案里靠人自觉，必须由字段驱动。CPU 合计不受此约束（天然可加），但必须注明「单核百分比之和，可超过 100」（§6.3.3）。

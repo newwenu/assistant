@@ -6,7 +6,10 @@ import type {
   StorageReclaimResultDto,
 } from "@/types/protocol.contract";
 import { formatBytes } from "@/utils/formatBytes";
+import { createLogger } from "@/services/system/logger";
 import { actionText, cleanupErrorCodeText, entryNameText } from "./lexicon";
+
+const storageLog = createLogger("storage");
 
 export type CleanupPhase = "idle" | "planning" | "confirming" | "executing";
 
@@ -183,7 +186,7 @@ export function cleanupResultNotice(
 ): CleanupResultNotice {
   const entry = result.entries[0];
   if (entry === undefined) {
-    console.warn("[storage] cleanup result carries no entry");
+    storageLog.warn("cleanup result carries no entry");
     return {
       kind: "error",
       text: translateKey("settings.storage.cleanup.result.failed"),
@@ -224,9 +227,7 @@ export function cleanupResultNotice(
         detail: null,
       };
     case "notEligible":
-      console.warn(
-        "[storage] cleanup returned notEligible for a planned entry",
-      );
+      storageLog.warn("cleanup returned notEligible for a planned entry");
       return {
         kind: "error",
         text: translateKey("settings.storage.cleanup.error.not_allowed"),
@@ -234,7 +235,7 @@ export function cleanupResultNotice(
       };
     default: {
       const status: string = entry.status;
-      console.warn(`[storage] unknown cleanup status: "${status}"`);
+      storageLog.warn(`unknown cleanup status: "${status}"`);
       return {
         kind: "error",
         text: translateKey("settings.storage.cleanup.result.failed"),

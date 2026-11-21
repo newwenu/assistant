@@ -1,5 +1,6 @@
 import { translateKey } from "@/i18n";
 import type { StorageEntryDto } from "@/types/protocol.contract";
+import { createLogger } from "@/services/system/logger";
 import { bytesOrDash, countText, timeText, type TagTone } from "./format";
 import {
   availabilityText,
@@ -12,6 +13,8 @@ import {
 } from "./lexicon";
 
 export type { TagTone } from "./format";
+
+const storageLog = createLogger("storage");
 
 export type CleanupActionView =
   | {
@@ -47,7 +50,6 @@ export interface EntryDetailItem {
 export interface EntryDetailView {
   items: EntryDetailItem[];
   chips: string[];
-  availabilityReason: string | null;
   note: string | null;
 }
 
@@ -78,7 +80,7 @@ function availabilityBadge(
   if (tone === null) return null;
   return {
     tone,
-    reason: entry.availabilityReason ?? availabilityText(entry.availability),
+    reason: availabilityText(entry.availability),
   };
 }
 
@@ -87,9 +89,7 @@ function cleanupView(entry: StorageEntryDto): CleanupActionView {
 
   if (reclaim.action === "none") {
     if (reclaim.eligibility === "eligible") {
-      console.warn(
-        `[storage] entry "${entry.key}" is eligible but action is "none"`,
-      );
+      storageLog.warn(`entry "${entry.key}" is eligible but action is "none"`);
     }
     return { kind: "none" };
   }
@@ -231,7 +231,6 @@ export function entryDetailView(entry: StorageEntryDto): EntryDetailView {
   return {
     items,
     chips,
-    availabilityReason: entry.availabilityReason,
     note: entry.reclaim.note,
   };
 }

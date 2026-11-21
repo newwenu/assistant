@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicI64, AtomicU32, AtomicU64, Ordering};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use log::info;
 use rusqlite::{Connection, OptionalExtension};
@@ -25,17 +25,20 @@ pub struct PruneReport {
     pub failed: u64,
 }
 
+/// 句柄可克隆：分区适配器要在 `spawn_blocking` 里持有 `'static` 句柄，
+/// 因此会话与策略状态全部 `Arc` 共享——克隆出的是**同一份**状态，不是快照。
+#[derive(Clone)]
 pub struct SecurityDbState {
-    pub(super) session: Mutex<Option<VaultSession>>,
+    pub(super) session: Arc<Mutex<Option<VaultSession>>>,
     db_path: String,
     audit_dir: PathBuf,
-    epoch: AtomicU64,
-    audit_retention_days: AtomicU32,
+    epoch: Arc<AtomicU64>,
+    audit_retention_days: Arc<AtomicU32>,
     /// 保留策略的生效时刻（秒）：策略注入时写入一次，之后只读。
     ///
     /// 与 `epoch` 分开：`epoch` 是会话代次（锁/解锁递增），这里是「策略从何时开始算」，
     /// 观测条目 `E11` 的 `policy.effective_since` 直接用它，不重新读时钟。
-    audit_effective_since: AtomicI64,
+    audit_effective_since: Arc<AtomicI64>,
 }
 
 impl SecurityDbState {
@@ -46,13 +49,13 @@ impl SecurityDbState {
             .map(|parent| parent.join("audit"))
             .unwrap_or_else(|| PathBuf::from("audit"));
         Self {
-            session: Mutex::new(None),
+            session: Arc::new(Mutex::new(None)),
             db_path: db_path.to_string(),
             audit_dir,
-            epoch: AtomicU64::new(0),
+            epoch: Arc::new(AtomicU64::new(0)),
             // 未注入前不清理：库层不读配置，也不在无显式保留策略时删用户数据。
-            audit_retention_days: AtomicU32::new(0),
-            audit_effective_since: AtomicI64::new(chrono::Utc::now().timestamp()),
+            audit_retention_days: Arc::new(AtomicU32::new(0)),
+            audit_effective_since: Arc::new(AtomicI64::new(chrono::Utc::now().timestamp())),
         }
     }
 

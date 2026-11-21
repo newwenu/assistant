@@ -40,13 +40,13 @@ pub struct StorageBreakdownDto {
     /// 仅被 1 个会话引用的附件字节之和。
     #[serde(default)]
     pub referenced_once_bytes: u64,
-    /// 13 条条目，顺序固定（`E1`→`E13`）；不可用条目也必须出现。
+    /// core 8 条在前、已挂载分区自述条目紧随其后；未挂载分区**不出行**（不是占位行）。
     #[serde(default)]
     pub entries: Vec<StorageEntryDto>,
     /// 对账余量快照；恒存在（未扫过时 `status = neverRun`）。
     #[serde(default)]
     pub inventory: StorageInventoryDto,
-    /// 除 `E12` 外的 12 条全部 `availability ∈ {available, missing}` 时为 `true`。
+    /// 除 `E12` 外全部条目 `availability ∈ {available, missing}` 时为 `true`。
     #[serde(default)]
     pub complete: bool,
 }
@@ -246,7 +246,6 @@ pub struct StorageEntryDto {
     pub oldest_at: Option<i64>,
     pub newest_at: Option<i64>,
     pub availability: StorageAvailabilityDto,
-    pub availability_reason: Option<String>,
     pub includes_derived: bool,
     pub counts_self_logs: bool,
     pub reclaim: ReclaimViewDto,

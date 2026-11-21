@@ -4,18 +4,20 @@ use tauri_plugin_log::{RotationStrategy, Target, TargetKind, TimezoneStrategy};
 
 pub fn attach(mut builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
     builder = builder
-        // 可选能力 provider 的通用槽在 `Builder` 阶段建好：插件 `setup` 早于 app `setup`，
-        // provider 注册时槽必须已存在（G18(b)）。关闭特性时槽仍存在、只是没人注册。
+        // 可选功能分区的通用接收槽在 `Builder` 阶段建好：插件 `setup` 早于 app `setup`，
+        // 分区注册时槽必须已存在（G18(b)）。关闭特性时槽仍存在、只是没人注册。
         .manage(std::sync::Arc::new(
-            crate::cmd::storage::probe::ProbeRegistry::new(),
+            crate::cmd::storage::section::SectionRegistry::new(),
         ))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
-        .plugin(log_plugin())
+        // single-instance 必须排在 log_plugin 之前：插件 setup 按注册顺序执行，
+        // 第二个实例要尽早退出，否则日志插件会先把正在写入的日志文件轮转掉。
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             crate::window::show_or_create_main(app);
         }))
+        .plugin(log_plugin())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
@@ -43,6 +45,7 @@ fn log_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
         .level_for("ignore::walk", log::LevelFilter::Off)
         .level_for("globset", log::LevelFilter::Off)
         .level_for("grep_searcher", log::LevelFilter::Warn)
+        .level_for("keyring_core", log::LevelFilter::Info)
         .level_for("hyper_util", log::LevelFilter::Info)
         .level_for("h2", log::LevelFilter::Info)
         .level_for("reqwest", log::LevelFilter::Info)

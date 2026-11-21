@@ -6,6 +6,9 @@ import type {
 } from "@/types/protocol.contract";
 import { bytesOrDash, countText, timeText, type TagTone } from "./format";
 import { inventoryClassText, layerText } from "./lexicon";
+import { createLogger } from "@/services/system/logger";
+
+const storageLog = createLogger("storage");
 
 export type ResidualNoticeLevel = "warning" | "error";
 
@@ -178,7 +181,7 @@ function statusOf(
       };
     default: {
       const status: string = inventory.status;
-      console.warn(`[storage] unknown inventory status: "${status}"`);
+      storageLog.warn(`unknown inventory status: "${status}"`);
       return { statusText: status, statusTone: "neutral" };
     }
   }
