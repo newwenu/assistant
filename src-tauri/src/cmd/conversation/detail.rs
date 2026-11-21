@@ -1,6 +1,7 @@
 use tauri::{command, AppHandle, Manager};
 
-use crate::cmd::{conversation_utils, get_db_conn};
+use super::to_dto;
+use crate::cmd::get_db_conn;
 use crate::protocol::{
     ConversationDetailDto, ConversationQueryOptsDto, TokenUsageEstimatedSourceDto,
     TokenUsageSummaryDto,
@@ -121,9 +122,9 @@ pub async fn get_conversation_token_usage(
     let (summary, detail, provider_row, window, mode_prompt, workspace_root) = {
         let state = app.state::<crate::setup::DbState>();
         let conn = get_db_conn(&state)?;
-        let window = context_window_tokens.filter(|&c| c > 0).or_else(|| {
-            conversation_utils::resolve_context_window_for_conversation(&conn, &conversation_id)
-        });
+        let window = context_window_tokens
+            .filter(|&c| c > 0)
+            .or_else(|| to_dto::resolve_context_window_for_conversation(&conn, &conversation_id));
         let conversation = conversations::get_conversation_by_id(&conn, &conversation_id)?
             .ok_or_else(|| assistant_i18n::t("error.conversation_not_found"))?;
         let summary = assistant_storage::token_usage::get_summary(

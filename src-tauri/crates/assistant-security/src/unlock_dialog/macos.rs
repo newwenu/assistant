@@ -1,5 +1,5 @@
 use crate::unlock_dialog::{UnlockDialog, UnlockResult};
-use crate::vault_crypto::types::SecureString;
+use assistant_crypto::vault_crypto::types::SecureString;
 
 use log::{info, warn};
 use zeroize::Zeroize;

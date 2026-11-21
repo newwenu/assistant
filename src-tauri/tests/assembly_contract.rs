@@ -1598,3 +1598,51 @@ fn b12_plugin_commands_use_feature_prefix() {
         problems
     );
 }
+
+#[test]
+fn g5_domain_placement_relocations() {
+    let workspace_root = manifest_dir()
+        .parent()
+        .expect("src-tauri 有父目录")
+        .to_path_buf();
+    let crates_root = workspace_root.join("crates");
+
+    let mut problems = Vec::new();
+
+    if src_root().join("protocol/dto/settings.rs").exists() {
+        problems.push("protocol/dto/settings.rs 仍存在（应已按域拆为 5 个文件）".to_string());
+    }
+    if !src_root().join("protocol/dto/window.rs").exists() {
+        problems.push("protocol/dto/window.rs 缺失（window 相关 DTO 应独立成文件）".to_string());
+    }
+
+    let audit_rs = read("cmd/vault/audit.rs");
+    let command_count = audit_rs.matches("#[command]").count();
+    if command_count != 1 {
+        problems.push(format!(
+            "cmd/vault/audit.rs 的 #[command] 数量为 {}（应为 1：TOTP / HIBP / 强度校验已拆出）",
+            command_count
+        ));
+    }
+    if !audit_rs.contains("pub fn vault_query_audit_log(") {
+        problems.push("cmd/vault/audit.rs 未包含 vault_query_audit_log".to_string());
+    }
+
+    if crates_root
+        .join("assistant-security/src/vault_crypto")
+        .exists()
+    {
+        problems
+            .push("assistant-security/src/vault_crypto 仍存在（再导出垫片应已删除）".to_string());
+    }
+    if crates_root
+        .join("assistant-agent/src/normalization.rs")
+        .exists()
+    {
+        problems.push(
+            "assistant-agent/src/normalization.rs 仍存在（应已迁入 multimodal/）".to_string(),
+        );
+    }
+
+    assert!(problems.is_empty(), "领域归属回流检查失败: {:?}", problems);
+}

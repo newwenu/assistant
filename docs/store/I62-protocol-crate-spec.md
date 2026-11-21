@@ -287,6 +287,7 @@ impl From<&AgentModeRow> for AgentModeDto {
 > **T1 与 T2 必须是同一个提交**。T1 结束后桥接处于「已删除未落位」状态，`cargo check` 必然失败；T2 在同提交内补齐落位。T1 的价值是把改动拆成两个可独立核对的动作（先归零、再归位），而非两个可独立发布的提交。
 
 1. `git mv src-tauri/src/protocol/dto crates/assistant-protocol/src`，`mod.rs` → `lib.rs`（`pub mod` 与 `pub use` 原样保留，`pub type Millis` 一并迁入）。
+   - 与 I63 的 P1-2（`dto/settings.rs` 拆 5 文件）已合并执行：抽取前的 `dto/` 已为 `agent_mode` / `mascot` / `provider` / `shortcut` / `theme` 五文件形态，`settings.rs` 不复存在；本次 `git mv` 搬的是这五个已拆分文件，无额外切分动作。
 2. 新建 `crates/assistant-protocol/Cargo.toml`（§4.2 白名单），加入 workspace `members`。
 3. 5 个 owner crate 各新建 `src/dto_bridge.rs`，按 T1 清单逐条落位 59 个 `impl From` + 1 个 `From<&AgentModeRow>`，并在各自 `lib.rs` 加 `mod dto_bridge;`（不 `pub use`：桥接是 trait impl，无需导出）。
 4. `src/cmd/agent_mode.rs` 的 2 处 `AgentModeDto::from_row(row)` 改写为 `AgentModeDto::from(row)`。

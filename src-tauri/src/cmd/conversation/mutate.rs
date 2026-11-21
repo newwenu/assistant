@@ -1,7 +1,8 @@
 use chrono::Utc;
 use tauri::{command, AppHandle, Manager};
 
-use crate::cmd::{conversation_utils, get_db_conn, translate_storage_error};
+use super::to_dto;
+use crate::cmd::{get_db_conn, translate_storage_error};
 use crate::protocol::events::{emit_broadcast, event_name};
 use crate::protocol::{
     ChatMessagesChangedPayloadDto, ConversationListChangeKindDto, ConversationPatchDto,
@@ -183,11 +184,7 @@ pub fn delete_message_persist(app: AppHandle, message_id: String) -> Result<(), 
                 ChatMessagesChangedPayloadDto {
                     conversation_id: cid.clone(),
                     change_kind: MessageChangeKindDto::MessageDeleted,
-                    messages: conversation_utils::messages_with_sibling_counts(
-                        &conn,
-                        cid,
-                        &detail.messages,
-                    )?,
+                    messages: to_dto::messages_with_sibling_counts(&conn, cid, &detail.messages)?,
                     active_branch_id: detail.conversation.active_branch_id.clone(),
                     seq: None,
                 },

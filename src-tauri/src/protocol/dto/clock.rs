@@ -36,17 +36,3 @@ pub struct ClockSnapshotDto {
     pub started_at_ms: Option<Millis>,
     pub elapsed_before_ms: Millis,
 }
-
-/// 主窗口形态（封闭集合，运行时状态，不落盘）。
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, TS)]
-#[serde(rename_all = "camelCase")]
-pub enum WindowModeDto {
-    Normal,
-    Mini,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct WindowModeChangedPayloadDto {
-    pub mode: WindowModeDto,
-}

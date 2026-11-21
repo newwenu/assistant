@@ -1,6 +1,7 @@
 use tauri::{command, AppHandle, Manager};
 
-use crate::cmd::{conversation_utils, get_db_conn, translate_storage_error};
+use super::to_dto;
+use crate::cmd::{get_db_conn, translate_storage_error};
 use crate::protocol::events::{emit_broadcast, event_name};
 use crate::protocol::{
     ChatMessagesChangedPayloadDto, ConversationListChangeKindDto, MessageChangeKindDto, MessageDto,
@@ -39,7 +40,7 @@ pub fn create_branch(
         ChatMessagesChangedPayloadDto {
             conversation_id: conversation_id.clone(),
             change_kind: MessageChangeKindDto::BranchCreated,
-            messages: conversation_utils::messages_with_sibling_counts(
+            messages: to_dto::messages_with_sibling_counts(
                 &conn,
                 &conversation_id,
                 &detail.messages,
@@ -73,7 +74,7 @@ pub fn switch_branch(
         ChatMessagesChangedPayloadDto {
             conversation_id: conversation_id.clone(),
             change_kind: MessageChangeKindDto::BranchSwitched,
-            messages: conversation_utils::messages_with_sibling_counts(
+            messages: to_dto::messages_with_sibling_counts(
                 &conn,
                 &conversation_id,
                 &detail.messages,
@@ -130,7 +131,7 @@ pub fn fork_to_new_conversation(
         ChatMessagesChangedPayloadDto {
             conversation_id: source_conversation_id.clone(),
             change_kind: MessageChangeKindDto::BranchForked,
-            messages: conversation_utils::messages_with_sibling_counts(
+            messages: to_dto::messages_with_sibling_counts(
                 &conn,
                 &source_conversation_id,
                 &detail.messages,

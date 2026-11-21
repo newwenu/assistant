@@ -5,7 +5,7 @@ use windows::Win32::{
 };
 use zeroize::Zeroize;
 
-use crate::vault_crypto::types::SecureString;
+use assistant_crypto::vault_crypto::types::SecureString;
 
 use super::ffi::{GetDlgItem, EM_EMPTYUNDOBUFFER};
 

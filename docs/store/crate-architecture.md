@@ -163,7 +163,7 @@ vault = ["dep:assistant-vault", "dep:assistant-sync", "dep:assistant-security"]
 | 模块 | 消费者 | 需要的依赖 |
 |---|---|---|
 | `api_key` | 主 app（provider / compaction / chat） | `aes-gcm` `base64` `rand` `sha2` `machine-uid` |
-| `vault_crypto` | `assistant-vault`（+ `assistant-security` 的再导出桩） | `argon2` `hkdf` `chacha20poly1305` `subtle` `data-encoding` `hmac` `sha1` `zeroize` |
+| `vault_crypto` | `assistant-vault` | `argon2` `hkdf` `chacha20poly1305` `subtle` `data-encoding` `hmac` `sha1` `zeroize` |
 
 `assistant-crypto` 是主 app 的**非可选**依赖，而 crate 内没有按依赖面切分的 feature，因此即使 `--no-default-features`（vault 三件套全部关闭），主 app 仍会编译 `argon2` / `hkdf` / `chacha20poly1305` 等约 10s 的依赖。这是**当前唯一一处已识别的、可通过 crate 内 feature 切分解决的浪费**（详见 `docs/store/compile-time-attribution.md` §7）。
 
@@ -202,9 +202,9 @@ vault = ["dep:assistant-vault", "dep:assistant-sync", "dep:assistant-security"]
 | 直接依赖 | 14（含 `image`、`pdf-extract`） |
 | 内部依赖 | `assistant-providers`、`assistant-storage` |
 | feature | `slow-tests`、`test-doubles`（仅测试用） |
-| 模块 | `chat_options` `compaction` `error` `multimodal` `normalization` `pdf_text` `prompt_builder` `provider_config` `request_projection` `token_estimate`；`agent`（`ladder` `middleware` `round_executor` `stop` `tool_call` `tool_event` + `loop_executor/{budget,call,execute,persist,terminal}`）；`kernel`（`ids` `limits` `request` `tasks` + `ports/{test_doubles}` + `turn/{emit,outcome,persist,phase,runner,state,stream}`） |
+| 模块 | `chat_options` `compaction` `error` `multimodal`（含 `normalization` `pdf_text`）`prompt_builder` `provider_config` `request_projection` `token_estimate`；`agent`（`ladder` `middleware` `round_executor` `stop` `tool_call` `tool_event` + `loop_executor/{budget,call,execute,persist,terminal}`）；`kernel`（`ids` `limits` `request` `tasks` + `ports/{test_doubles}` + `turn/{emit,outcome,persist,phase,runner,state,stream}`） |
 
-会话编排层：把用户输入 + 历史 + 工具结果组装成 provider 请求，并把结果落回 storage。`image`（9.8s）与 `moxcms` / `pfxm` / `png` / `tiff` 等图像栈由该 crate 的 `multimodal` 引入；`pdf-extract` 服务于 `pdf_text`。`kernel/turn/` 与 `agent/loop_executor/` 均为分组产物，`kernel/mod.rs` 以 `pub use turn::{...}` 保持原路径。
+会话编排层：把用户输入 + 历史 + 工具结果组装成 provider 请求，并把结果落回 storage。`image`（9.8s）与 `moxcms` / `pfxm` / `png` / `tiff` 等图像栈由该 crate 的 `multimodal` 引入；`pdf-extract` 服务于 `multimodal/pdf_text`。图像归一化（原根模块 `normalization`）与 PDF 文本抽取（原根模块 `pdf_text`）均已归入 `multimodal/`，根模块不再直接持有。`kernel/turn/` 与 `agent/loop_executor/` 均为分组产物，`kernel/mod.rs` 以 `pub use turn::{...}` 保持原路径。
 
 ### 2.7 assistant-tools
 
@@ -260,10 +260,10 @@ vault 的 git 同步实现。**唯一 crate 级消费者是 `assistant-vault`**�
 | 直接依赖 | 10（`arboard` `hex` `log` `reqwest` `rsa` `serde` `sha1` `ssh-key` `windows` `zeroize`） |
 | 内部依赖 | `assistant-crypto` |
 | feature | `slow-tests`（仅测试用） |
-| 模块 | `clipboard_guard` `reveal_guard` `vault_crypto`；`hibp`（`mod`）；`screen_lock`（`linux` `macos` `windows`）；`ssh_agent`（`unix` `validate` `windows`）；`unlock_dialog`（`linux` `macos` + `windows/{ffi,layout,localization,paint,state,subclass,text,theme,wm_handlers,wnd_proc}`） |
+| 模块 | `clipboard_guard` `reveal_guard`；`hibp`（`mod`）；`screen_lock`（`linux` `macos` `windows`）；`ssh_agent`（`unix` `validate` `windows`）；`unlock_dialog`（`linux` `macos` + `windows/{ffi,layout,localization,paint,state,subclass,text,theme,wm_handlers,wnd_proc}`） |
 | 平台依赖 | Windows：`windows`（源码实际引用 `Win32::Foundation`、`Win32::System::Registry`） |
 
-vault 的安全外围：剪贴板守卫、防截屏、锁屏/休眠监听、SSH agent 桥接、自绘解锁弹窗、HIBP 泄露检测、`vault_crypto` 再导出桩。
+vault 的安全外围：剪贴板守卫、防截屏、锁屏/休眠监听、SSH agent 桥接、自绘解锁弹窗、HIBP 泄露检测。加密能力直接使用 `assistant-crypto` 的 `vault_crypto`，本 crate 不再保留再导出桩。
 
 **关键事实**：`assistant-security` **不被 `assistant-vault` 依赖**，它与 vault 是主 app 的并列下游，二者耦合发生在代码层——`cmd/vault/{ssh,mod,lifecycle,audit}.rs` 调用 security 的模块。经 L1 解耦后，主功能（provider / chat / compaction）已完全改为直接使用 `assistant_crypto::api_key`，**不再有任何主功能代码引用 `assistant-security`**。它的可选依赖声明与 `cmd/vault` 同受 feature `vault` 门控，因此"排除 vault 却不排除 security"不会发生。
 

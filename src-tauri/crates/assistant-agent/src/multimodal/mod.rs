@@ -1,5 +1,7 @@
 mod admit;
 mod blocks;
+mod normalization;
+mod pdf_text;
 mod project;
 mod rehydrate;
 mod text;

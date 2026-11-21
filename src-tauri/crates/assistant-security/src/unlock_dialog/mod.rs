@@ -1,5 +1,5 @@
-use crate::vault_crypto::types::SecureString;
 use assistant_crypto::error::VaultError;
+use assistant_crypto::vault_crypto::types::SecureString;
 
 #[cfg(target_os = "linux")]
 mod linux;

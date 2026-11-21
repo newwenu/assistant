@@ -103,7 +103,7 @@ async fn admit_image(
         return Err(AgentError::ImageTooLarge { max_mb });
     }
 
-    let normalized = crate::normalization::normalize_image(&data, &mt)?;
+    let normalized = super::normalization::normalize_image(&data, &mt)?;
     let width = if normalized.width > 0 {
         Some(normalized.width)
     } else {

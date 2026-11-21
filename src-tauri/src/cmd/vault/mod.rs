@@ -107,25 +107,38 @@ pub struct SshAgentState {
     pub added_fingerprints: std::sync::Mutex<std::collections::HashSet<String>>,
 }
 
+pub(super) fn unix_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+}
+
 mod audit;
 mod biometric;
 mod conf;
 mod entries;
+mod hibp;
 mod lifecycle;
 mod recovery;
 mod reveal;
 mod ssh;
+mod strength;
 mod sync;
+mod totp;
 
 pub use audit::*;
 pub use biometric::*;
 pub use conf::*;
 pub use entries::*;
+pub use hibp::*;
 pub use lifecycle::*;
 pub use recovery::*;
 pub use reveal::*;
 pub use ssh::*;
+pub use strength::*;
 pub use sync::*;
+pub use totp::*;
 
 pub(crate) fn persist_sync_remote_url(url: Option<&str>) {
     let mut conf = match VaultConf::load() {

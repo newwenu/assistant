@@ -140,7 +140,7 @@ async fn project_one_file(
             }
         }
 
-        if let Some(text) = crate::pdf_text::extract_or_load(store, att).await {
+        if let Some(text) = super::pdf_text::extract_or_load(store, att).await {
             return project_text_body(att, &text, quota);
         }
 

@@ -5,6 +5,7 @@ use ts_rs::TS;
 
 use super::super::error::CommandErrorCodeDto;
 use super::usage::TokenUsageDto;
+use super::MessageDto;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -219,4 +220,28 @@ pub struct ConversationListChangedPayloadDto {
 pub struct ChatRegeneratePayloadDto {
     pub conversation_id: String,
     pub deleted_message_id: String,
+}
+
+/// `chat-messages-changed` 事件的变更原因（封闭集合）。
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum MessageChangeKindDto {
+    BranchCreated,
+    BranchSwitched,
+    BranchForked,
+    MessageDeleted,
+    MessagesCompacted,
+    StreamFinished,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ChatMessagesChangedPayloadDto {
+    pub conversation_id: String,
+    pub change_kind: MessageChangeKindDto,
+    pub messages: Vec<MessageDto>,
+    #[serde(default)]
+    pub active_branch_id: Option<String>,
+    #[serde(default)]
+    pub seq: Option<u32>,
 }

@@ -106,7 +106,7 @@ impl TauriEventSink {
                 return;
             }
         };
-        let messages = match crate::cmd::conversation_utils::messages_with_sibling_counts(
+        let messages = match crate::cmd::conversation::to_dto::messages_with_sibling_counts(
             &conn,
             &self.conversation_id,
             &detail.messages,
@@ -117,7 +117,7 @@ impl TauriEventSink {
                 detail
                     .messages
                     .iter()
-                    .map(|m| crate::cmd::conversation_utils::wire_message_dto(m.clone()))
+                    .map(|m| crate::cmd::conversation::to_dto::wire_message_dto(m.clone()))
                     .collect()
             }
         };
