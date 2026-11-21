@@ -2,8 +2,12 @@ use std::sync::Arc;
 
 use tauri::{command, AppHandle, State};
 
-use crate::clock::{now_ms, spawn_ticker, ClockMode, ClockRuntime};
-use crate::protocol::{ClockModeDto, ClockSnapshotDto, Millis};
+mod ticker;
+
+use assistant_clock::{now_ms, ClockMode, ClockRuntime};
+use assistant_protocol::{ClockModeDto, ClockSnapshotDto, Millis};
+
+use ticker::spawn_ticker;
 
 #[command]
 pub fn clock_set_mode(

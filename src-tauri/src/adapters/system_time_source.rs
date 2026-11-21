@@ -1,15 +1,15 @@
-use assistant_agent::kernel::Clock;
+use assistant_agent::kernel::Clock as TimeSource;
 
 #[derive(Default)]
-pub struct SystemClock;
+pub struct SystemTimeSource;
 
-impl SystemClock {
+impl SystemTimeSource {
     pub fn new() -> Self {
         Self
     }
 }
 
-impl Clock for SystemClock {
+impl TimeSource for SystemTimeSource {
     fn now(&self) -> std::time::Instant {
         std::time::Instant::now()
     }

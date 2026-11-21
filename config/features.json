@@ -1,5 +1,8 @@
 {
   "vault": {
     "default": true
+  },
+  "clock": {
+    "default": true
   }
 }

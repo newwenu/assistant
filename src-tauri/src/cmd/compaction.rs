@@ -3,14 +3,14 @@ use std::sync::Arc;
 use tauri::{command, AppHandle, Manager};
 use uuid::Uuid;
 
-use crate::adapters::{SystemClock, TauriEventSink};
+use crate::adapters::{SystemTimeSource, TauriEventSink};
 use crate::protocol::events::{emit_broadcast, event_name};
 use crate::protocol::{
     ConversationTerminatedPayloadDto, ConversationUnlockedPayloadDto, MessageChangeKindDto,
 };
 use assistant_agent::kernel::{
-    limits, request, stream, Clock, EventRoute, EventSink, OnBusy, PartialOutcome, PersistCtx,
-    StreamError, TurnEmitter, TurnPhase, TurnStatus, TurnTasks,
+    limits, request, stream, Clock as TimeSource, EventRoute, EventSink, OnBusy, PartialOutcome,
+    PersistCtx, StreamError, TurnEmitter, TurnPhase, TurnStatus, TurnTasks,
 };
 use assistant_agent::multimodal::ProjectionPurpose;
 use assistant_agent::provider_config::build_provider_config;
@@ -202,14 +202,14 @@ pub(crate) async fn execute_compaction(
     );
     emitter.stream_start(TurnPhase::Compacting);
 
-    let clock = SystemClock::new();
-    let request_started = clock.now();
+    let time_source = SystemTimeSource::new();
+    let request_started = time_source.now();
 
     let result = stream::consume(
         stream,
         cancel_token,
         Some(limits::DEFAULT_COMPACTION_MODEL_CALL_TIMEOUT),
-        &clock,
+        &time_source,
         request_started,
         |_seq, delta| {
             emitter.delta(delta);
@@ -226,7 +226,7 @@ pub(crate) async fn execute_compaction(
         provider_id: Some(provider_row.id.clone()),
         model_id: Some(model.clone()),
         cache_capable: crate::cmd::token_usage_record::cache_capable_of(provider_row),
-        created_at_ms: clock.now_millis(),
+        created_at_ms: time_source.now_millis(),
     };
 
     let (_, terminal_error) = match &result {

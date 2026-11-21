@@ -19,6 +19,10 @@ export async function loadFeatures(): Promise<void> {
     const { vaultModule } = await import("./vault/module");
     modules.push(vaultModule);
   }
+  if (__CLOCK_ENABLED__) {
+    const { clockModule } = await import("./clock/module");
+    modules.push(clockModule);
+  }
   const { observationModule } = await import("./observation/module");
   modules.push(observationModule);
   if (modules.length === 0) return;

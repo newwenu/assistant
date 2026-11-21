@@ -236,6 +236,7 @@ name = "assistant-app"
 version = "0.1.0"
 dependencies = [
  "assistant-agent",
+ "assistant-clock",
  "assistant-config",
  "assistant-crash",
  "assistant-crypto",
@@ -277,6 +278,14 @@ dependencies = [
  "uuid",
  "windows",
  "xcap",
+]
+
+[[package]]
+name = "assistant-clock"
+version = "0.1.0"
+dependencies = [
+ "assistant-protocol",
+ "chrono",
 ]
 
 [[package]]

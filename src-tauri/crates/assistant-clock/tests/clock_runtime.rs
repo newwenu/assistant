@@ -1,4 +1,4 @@
-use assistant_app::clock::{
+use assistant_clock::{
     ClockMode, ClockRuntime, ClockStatus, DEFAULT_DURATION_MS, MAX_DURATION_MS, MIN_DURATION_MS,
 };
 

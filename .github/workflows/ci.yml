@@ -7,13 +7,15 @@ name: CI
 # - macOS：Seatbelt 仍是占位，只能验证「编译通过 + probe 不可用 → 不注册 shell」的 fail-closed；
 # - Windows：本机可完整执行（fmt / 编译 / 用例），因此 CI 不再重复跑 Windows，只保留开发机跑不到的 Linux 与 macOS。
 #
-# 可选特性关闭态（full / slim 两态）的落点：
-# - 前端在 ubuntu 上跑 full build + `VAULT_ENABLED=0` slim build + 产物字符串探针；
-#   slim build 同时由 Vite 产物图断言（F7）硬失败兜底；
+# 可选特性关闭态（full / slim / 单特性两态）的落点：
+# - 前端在 ubuntu 上跑 full build + `VAULT_ENABLED=0 CLOCK_ENABLED=0` slim build + 产物字符串探针；
+#   slim build 同时由 Vite 产物图断言（F7）硬失败兜底（断言根同时覆盖 src/features/ 与 src/tools/）；
 # - 后端关闭态只在 Linux 跑（`-p assistant-app --no-default-features`），并追加
 #   `assert-feature-shed.mjs` 的 normal-edge 依赖图断言（CI-2），不跑 workspace 全量——
-#   workspace 成员的测试目标仍会编译 assistant-vault 自身，不能作为关闭态证据；
-# - Windows 仍不进 CI（同上平台结论），关闭态由开发机 `feature-build.ps1 -Task check/test -Without vault` 覆盖。
+#   workspace 成员的测试目标仍会编译 assistant-vault / assistant-clock 自身，不能作为关闭态证据；
+# - 单特性独立性由 `--features vault` / `--features clock` 两组互补证据覆盖：
+#   前者证明关 clock 时 assistant-clock 不在 normal-edge 图，后者证明关 vault 时三个 vault crate 消失；
+# - Windows 仍不进 CI（同上平台结论），关闭态由开发机 `feature-build.ps1 -Preset <name>` 覆盖。
 #
 # 本文件是草稿：首次接入时若某平台因 runner 环境（缺失系统库、内核 Landlock 不可用）失败，
 # 先修环境或把该步拆成独立 job，不要用 continue-on-error 掩盖失败。
@@ -71,13 +73,16 @@ jobs:
       - name: 前端构建（full）
         run: npm run build
 
-      # slim 态：VAULT_ENABLED=0 时特性模块不得进入产物图（F7 落地后由此步硬失败）。
-      - name: 前端构建（slim / VAULT_ENABLED=0）
-        run: VAULT_ENABLED=0 npm run build
+      # slim 态：两个特性都关，特性模块不得进入产物图（F7 由此步硬失败）。
+      - name: 前端构建（slim / VAULT_ENABLED=0 CLOCK_ENABLED=0）
+        run: VAULT_ENABLED=0 CLOCK_ENABLED=0 npm run build
 
-      # 字符串探针作为 slim 态的补充证据：产物中不得出现 settings.vault.* 文案。
-      - name: 关闭态产物字符串探针
+      # 字符串探针作为 slim 态的补充证据：产物中不得出现 settings.vault.* / tools.clock.* 文案。
+      - name: 关闭态产物字符串探针（vault）
         run: node scripts/assert-feature-absent.mjs --feature vault --dist dist
+
+      - name: 关闭态产物字符串探针（clock）
+        run: node scripts/assert-feature-absent.mjs --feature clock --prefix tools --dist dist
 
   rust:
     name: Rust 实机测试（${{ matrix.os }}）
@@ -159,3 +164,35 @@ jobs:
         if: runner.os == 'Linux'
         working-directory: src-tauri
         run: node ../scripts/assert-feature-shed.mjs
+
+      # 单特性独立性：--features vault 时 clock 必须整块消失（assistant-clock 不在 normal-edge 图）。
+      - name: 单特性编译（--features vault）
+        if: runner.os == 'Linux'
+        working-directory: src-tauri
+        run: cargo check -p assistant-app --no-default-features --features vault
+
+      - name: 单特性装配契约（--features vault）
+        if: runner.os == 'Linux'
+        working-directory: src-tauri
+        run: cargo test -p assistant-app --no-default-features --features vault --test assembly_contract
+
+      - name: 单特性依赖断开断言（--features vault）
+        if: runner.os == 'Linux'
+        working-directory: src-tauri
+        run: node ../scripts/assert-feature-shed.mjs --features vault
+
+      # 单特性独立性：--features clock 时 vault 必须整块消失（三个 vault crate 不在 normal-edge 图）。
+      - name: 单特性编译（--features clock）
+        if: runner.os == 'Linux'
+        working-directory: src-tauri
+        run: cargo check -p assistant-app --no-default-features --features clock
+
+      - name: 单特性装配契约（--features clock）
+        if: runner.os == 'Linux'
+        working-directory: src-tauri
+        run: cargo test -p assistant-app --no-default-features --features clock --test assembly_contract
+
+      - name: 单特性依赖断开断言（--features clock）
+        if: runner.os == 'Linux'
+        working-directory: src-tauri
+        run: node ../scripts/assert-feature-shed.mjs --features clock

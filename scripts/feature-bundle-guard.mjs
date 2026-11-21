@@ -3,19 +3,29 @@
 // 判定抽成纯函数 findFeatureModules，插件只报告不修改 bundle。
 
 const FEATURE_ROOT = "src/features/";
+const FEATURE_ROOTS = [FEATURE_ROOT];
 
 function normalizeModuleId(moduleId) {
   return moduleId.replace(/\\/g, "/").replace(/[?#].*$/, "");
 }
 
-export function findFeatureModules(moduleIds, featureIds) {
+export function findFeatureModules(
+  moduleIds,
+  featureIds,
+  roots = FEATURE_ROOTS,
+) {
   const violations = [];
   for (const moduleId of moduleIds) {
     const normalized = normalizeModuleId(moduleId);
     for (const id of featureIds) {
-      const prefix = `${FEATURE_ROOT}${id}/`;
-      if (normalized.includes(`/${prefix}`) || normalized.startsWith(prefix)) {
-        violations.push({ feature: id, module: normalized });
+      for (const root of roots) {
+        const prefix = `${root}${id}/`;
+        if (
+          normalized.includes(`/${prefix}`) ||
+          normalized.startsWith(prefix)
+        ) {
+          violations.push({ feature: id, module: normalized });
+        }
       }
     }
   }
@@ -36,7 +46,7 @@ function collectChunkModules(bundle) {
   return { chunkCount, moduleIds: [...moduleIds] };
 }
 
-export function featureBundleGuard(featureIds) {
+export function featureBundleGuard(featureIds, roots = FEATURE_ROOTS) {
   return {
     name: "feature-bundle-guard",
     apply: "build",
@@ -53,7 +63,7 @@ export function featureBundleGuard(featureIds) {
         );
       }
       if (featureIds.length === 0) return;
-      const violations = findFeatureModules(moduleIds, featureIds);
+      const violations = findFeatureModules(moduleIds, featureIds, roots);
       if (violations.length > 0) {
         const detail = violations
           .map((item) => `${item.feature} <- ${item.module}`)

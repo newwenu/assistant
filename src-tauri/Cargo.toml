@@ -21,6 +21,7 @@ members = [
     "crates/assistant-security",
     "crates/assistant-sync",
     "crates/assistant-vault",
+    "crates/assistant-clock",
     "crates/assistant-crash",
 ]
 
@@ -106,6 +107,7 @@ assistant-crypto = { path = "crates/assistant-crypto" }
 assistant-security = { path = "crates/assistant-security" }
 assistant-sync = { path = "crates/assistant-sync" }
 assistant-vault = { path = "crates/assistant-vault" }
+assistant-clock = { path = "crates/assistant-clock" }
 assistant-crash = { path = "crates/assistant-crash" }
 arboard = "3"
 csv = "1"
@@ -151,12 +153,13 @@ ssh-key = { version = "0.6", features = ["encryption", "rsa", "ed25519"] }
 rsa = { version = "0.9", features = ["pem"] }
 
 [features]
-default = ["vault"]
+default = ["vault", "clock"]
 vault = [
     "dep:assistant-vault",
     "dep:assistant-sync",
     "dep:assistant-security",
 ]
+clock = ["dep:assistant-clock"]
 
 # P7-C5 端到端夹具：仅测试用，不进 Tauri bundle
 [[bin]]
@@ -203,6 +206,7 @@ assistant-crypto = { workspace = true }
 assistant-security = { workspace = true, optional = true }
 assistant-sync = { workspace = true, optional = true }
 assistant-vault = { workspace = true, optional = true }
+assistant-clock = { workspace = true, optional = true }
 assistant-crash = { workspace = true }
 rustc_version_runtime.workspace = true
 

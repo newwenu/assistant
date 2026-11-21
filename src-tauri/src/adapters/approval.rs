@@ -90,7 +90,7 @@ impl ApprovalWaitRegistry {
 
 /// 审批计时装饰器：包住任意 `ApprovalPrompter`，按 `tool_call_id` 记录等待毫秒数。
 ///
-/// 用 `Instant::now()`（真实单调时钟）而不是注入的 `Clock`：测试替身是常量时钟，
+/// 用 `Instant::now()`（真实单调时间源）而不是注入的时间源抽象：测试替身是常量源，
 /// 差值恒为 0，无法断言。超时由 `ToolGateway` 外层的 `request_with_timeout` 触发，
 /// 会把本 future drop 掉，所以计时必须放在 `Drop` 守卫里 —— 正常审批与超时两条
 /// 路径都能拿到等待时长，且不必改动 `assistant-tools` 的超时归属。

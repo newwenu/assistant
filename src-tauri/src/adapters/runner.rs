@@ -6,7 +6,7 @@ use assistant_agent::kernel::{
 };
 use tauri::Manager;
 
-use super::{DbMessageStore, PipelineToolExecution, SystemClock, TauriCompactionSink};
+use super::{DbMessageStore, PipelineToolExecution, SystemTimeSource, TauriCompactionSink};
 
 /// 用宿主托管的单例状态装配 runner；每次 turn 只换 `sink` 与输入源。
 ///
@@ -30,7 +30,7 @@ pub fn build_turn_runner(
         input,
         states,
         tasks,
-        Arc::new(SystemClock::new()),
+        Arc::new(SystemTimeSource::new()),
         compaction_config(app),
     )
     .with_tool_exec(tool_exec)

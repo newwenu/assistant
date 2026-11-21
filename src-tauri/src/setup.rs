@@ -111,7 +111,6 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
 
     handle.manage(Arc::new(assistant_agent::kernel::TurnTasks::new()));
     handle.manage(Arc::new(assistant_agent::kernel::SessionStates::new()));
-    handle.manage(std::sync::Arc::new(crate::clock::ClockRuntime::new()));
     handle.manage(crate::screenshot::ScreenshotState::new());
     handle.manage(crate::cmd::storage::inventory::InventoryCache::new());
     handle.manage(std::sync::Arc::new(

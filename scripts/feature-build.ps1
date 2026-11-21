@@ -42,6 +42,7 @@
         -Task       选择动作：dev / build / check / test / lint / typecheck / clean
         -Features   显式启用集合（逗号分隔）；省略时取清单里的 default
         -Without    从启用集合中排除（逗号分隔）
+        -Preset     预置组合名（读 config/presets.json），与 -Features / -Without 互斥
         -NoBundle   build 时跳过打包，只出可执行文件
         -Release    check / test 使用 release profile
         -Target     指定 rust target triple
@@ -84,6 +85,8 @@ param(
     [string]$Features,
 
     [string]$Without,
+
+    [string]$Preset,
 
     [switch]$NoBundle,
 
@@ -374,6 +377,53 @@ function Resolve-Features {
     return @($enabled | Select-Object -Unique)
 }
 
+function Get-PresetFeatures {
+    param($Table, [string]$Name)
+
+    $presetsPath = Join-Path $RepoRoot 'config/presets.json'
+    if (-not (Test-Path -LiteralPath $presetsPath)) {
+        throw "找不到预置清单 $presetsPath"
+    }
+
+    $presets = Get-Content -LiteralPath $presetsPath -Encoding UTF8 -Raw | ConvertFrom-Json
+    $entries = @($presets.PSObject.Properties)
+    if ($entries.Count -eq 0) { throw "$presetsPath 未声明任何预置组合" }
+
+    $known = @($Table | ForEach-Object { $_.Id })
+    $sortedKnown = ($known | Sort-Object) -join ','
+
+    foreach ($entry in $entries) {
+        $keys = @($entry.Value.PSObject.Properties.Name)
+        foreach ($key in $keys) {
+            if ($key -ne 'features') {
+                throw "预置 '$($entry.Name)' 含未知键 '$key'，只允许 features"
+            }
+        }
+        if ($keys -notcontains 'features') {
+            throw "预置 '$($entry.Name)' 缺少 features 字段"
+        }
+        $features = @($entry.Value.features | ForEach-Object { [string]$_ })
+        foreach ($id in $features) {
+            if ($known -notcontains $id) {
+                throw "预置 '$($entry.Name)' 含未知特性 '$id'，可用值：$($known -join ', ')"
+            }
+        }
+        if ($entry.Name -eq 'full' -and (($features | Sort-Object) -join ',') -ne $sortedKnown) {
+            throw "预置 full 必须等于清单全集 [$sortedKnown]"
+        }
+        if ($entry.Name -eq 'slim' -and $features.Count -gt 0) {
+            throw "预置 slim 必须为空集合"
+        }
+    }
+
+    $names = @($entries | ForEach-Object { $_.Name })
+    if ($names -notcontains $Name) {
+        throw "未知预置 '$Name'，可用值：$($names -join ', ')"
+    }
+
+    return @($presets.$Name.features | ForEach-Object { [string]$_ })
+}
+
 function Set-FeatureEnvironment {
     param($Table, [string[]]$Enabled)
 
@@ -500,7 +550,15 @@ if ($interactive) {
     }
 }
 
-$enabled = Resolve-Features -Table $table -Include $Features -Exclude $Without
+if ($Preset -and ($Features -or $Without)) {
+    throw '-Preset 与 -Features / -Without 互斥：预置已完整定义启用集合'
+}
+
+$enabled = if ($Preset) {
+    Get-PresetFeatures -Table $table -Name $Preset
+} else {
+    Resolve-Features -Table $table -Include $Features -Exclude $Without
+}
 Set-FeatureEnvironment -Table $table -Enabled $enabled
 
 Set-TerminalTitle (Get-TerminalTitle -Choices $TaskChoices -Task $Task -Enabled $enabled)

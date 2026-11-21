@@ -1,0 +1,10 @@
+[package]
+name = "assistant-clock"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+assistant-protocol = { workspace = true }
+chrono = { workspace = true }

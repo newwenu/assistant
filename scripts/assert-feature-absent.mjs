@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // 关闭态产物探针：断言被关闭的特性没有 chunk 泄漏到 dist/assets
 // 用法: node scripts/assert-feature-absent.mjs --feature vault --dist dist [--prefix settings]
+// 探针源根为候选集：src/features/<id>/ 与 src/tools/<id>/（只扫存在的目录并合并）。
 
 import fs from "node:fs";
 import path from "node:path";
@@ -49,7 +50,10 @@ function collectSources(dir) {
 }
 
 function probeLiterals(options) {
-  const sourceRoot = path.join(REPO_ROOT, "src", "features", options.feature);
+  const candidateRoots = [
+    path.join(REPO_ROOT, "src", "features", options.feature),
+    path.join(REPO_ROOT, "src", "tools", options.feature),
+  ].filter((root) => fs.existsSync(root));
   const needle = `${options.prefix}.${options.feature}.`;
   const pattern = new RegExp(
     `["'\`](${needle.replace(/\./g, "\\.")}[A-Za-z0-9_.\\-]+)["'\`]`,
@@ -57,13 +61,17 @@ function probeLiterals(options) {
   );
 
   const probes = new Set();
-  for (const file of collectSources(sourceRoot)) {
-    const text = fs.readFileSync(file, "utf8");
-    for (const match of text.matchAll(pattern)) {
-      probes.add(match[1]);
+  for (const root of candidateRoots) {
+    for (const file of collectSources(root)) {
+      const text = fs.readFileSync(file, "utf8");
+      for (const match of text.matchAll(pattern)) {
+        probes.add(match[1]);
+      }
     }
   }
-  return probes;
+  const relative = (root) =>
+    path.relative(REPO_ROOT, root).split(path.sep).join("/");
+  return { probes, roots: candidateRoots.map(relative) };
 }
 
 function assetFiles(distDir) {
@@ -80,12 +88,19 @@ function assetFiles(distDir) {
 }
 
 const options = parseArgs(process.argv.slice(2));
-const probes = probeLiterals(options);
+const { probes, roots } = probeLiterals(options);
+if (roots.length === 0) {
+  console.error(
+    `[assert-feature-absent] 特性源码目录不存在: src/features/${options.feature}/ 与 src/tools/${options.feature}/`,
+  );
+  process.exit(2);
+}
 if (probes.size === 0) {
-  fail(
-    `未在 src/features/${options.feature}/ 提取到任何 ${options.prefix}.${options.feature}. 探针字面量，` +
+  console.error(
+    `[assert-feature-absent] 未在 ${roots.join(" + ")} 提取到任何 ${options.prefix}.${options.feature}. 探针字面量，` +
       "空扫描不能视为通过（特性文案可能被搬到 src/locales/）",
   );
+  process.exit(2);
 }
 
 const assets = assetFiles(path.resolve(REPO_ROOT, options.dist));
@@ -107,5 +122,5 @@ if (leaks.length > 0) {
 }
 
 console.log(
-  `[assert-feature-absent] ${options.feature}: ${assets.length} 个产物、${probes.size} 条探针，无泄漏`,
+  `[assert-feature-absent] ${options.feature}: ${assets.length} 个产物、${probes.size} 条探针（源根 ${roots.join(" + ")}），无泄漏`,
 );

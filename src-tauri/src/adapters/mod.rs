@@ -7,7 +7,7 @@ mod permission_policy;
 mod permission_store;
 mod question;
 mod runner;
-mod system_clock;
+mod system_time_source;
 mod tool_escalation;
 mod tool_exec;
 mod tool_resolver;
@@ -25,7 +25,7 @@ pub(crate) use permission_store::{decode_grant_key, encode_grant_key, outcome_st
 pub use permission_store::{DbPermissionAuditStore, DbPermissionGrantStore};
 pub use question::{PendingQuestionRegistry, TauriQuestionPrompter};
 pub use runner::build_turn_runner;
-pub use system_clock::SystemClock;
+pub use system_time_source::SystemTimeSource;
 pub use tool_escalation::{MaxToolTierSource, RegistryEscalationPort};
 pub use tool_exec::{PipelineToolExecution, WorkspaceRootSource};
 pub use tool_resolver::resolve_available_tools;

@@ -77,4 +77,26 @@ describe("feature-bundle-guard", () => {
       /未解析到任何模块/,
     );
   });
+
+  it("候选根包含 src/tools/ 时报告工具实现模块", () => {
+    expect(
+      findFeatureModules(
+        ["src/App.tsx", "src/tools/alpha/ClockLayout.tsx"],
+        ["alpha"],
+        ["src/features/", "src/tools/"],
+      ),
+    ).toEqual([
+      { feature: "alpha", module: "src/tools/alpha/ClockLayout.tsx" },
+    ]);
+    const plugin = featureBundleGuard(
+      ["alpha"],
+      ["src/features/", "src/tools/"],
+    );
+    expect(() =>
+      plugin.generateBundle(
+        {},
+        syntheticBundle(["src/tools/alpha/ClockLayout.tsx"]),
+      ),
+    ).toThrow(/仍含特性模块/);
+  });
 });

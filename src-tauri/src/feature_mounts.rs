@@ -12,12 +12,20 @@ pub(crate) struct FeatureMount {
     pub on_exit: ExitHook,
 }
 
-const MOUNTS: &[FeatureMount] = &[FeatureMount {
-    id: "vault",
-    plugin: crate::vault_plugin::init,
-    on_setup: crate::vault_plugin::on_setup,
-    on_exit: crate::vault_plugin::on_exit,
-}];
+const MOUNTS: &[FeatureMount] = &[
+    FeatureMount {
+        id: "vault",
+        plugin: crate::vault_plugin::init,
+        on_setup: crate::vault_plugin::on_setup,
+        on_exit: crate::vault_plugin::on_exit,
+    },
+    FeatureMount {
+        id: "clock",
+        plugin: crate::clock_plugin::init,
+        on_setup: crate::clock_plugin::on_setup,
+        on_exit: crate::clock_plugin::on_exit,
+    },
+];
 
 pub(crate) fn mounts() -> &'static [FeatureMount] {
     MOUNTS
