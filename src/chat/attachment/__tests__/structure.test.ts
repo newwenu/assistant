@@ -7,6 +7,14 @@ const SOURCES_DIR = path.join(MODULE_ROOT, "sources");
 const INTAKE_FILE = path.join(MODULE_ROOT, "intake.ts");
 const FACTORY_FILE = path.join(MODULE_ROOT, "factory.ts");
 const PATHS_FILE = path.join(MODULE_ROOT, "paths.ts");
+const ASSET_DIRS_FILE = path.resolve(
+  MODULE_ROOT,
+  "..",
+  "..",
+  "services",
+  "desktop",
+  "assetDirs.ts",
+);
 
 const CREATED_SOURCE_FILE_NAMES = ["paste", "filePicker", "dragDrop"];
 const FACTORY_EXPORT_NAMES = [
@@ -70,20 +78,22 @@ describe("attachment paths single join point", () => {
   it("exports only the URL helpers", () => {
     const paths = read(PATHS_FILE);
     expect(paths).toContain("export async function attachmentUrl(");
-    expect(paths).toContain("export async function mascotAssetUrl(");
+    expect(paths).toContain("export async function openAttachmentFile(");
+    expect(paths).not.toContain("mascotAssetUrl");
+    expect(paths).not.toContain("isLocalAssetUrl");
     expect(paths).not.toContain("getAttachmentsDir");
   });
 
   it("keeps exactly one convertFileSrc call", () => {
-    const paths = read(PATHS_FILE);
-    const hits = paths.match(/convertFileSrc\(/g) ?? [];
+    const assetDirs = read(ASSET_DIRS_FILE);
+    const hits = assetDirs.match(/convertFileSrc\(/g) ?? [];
     expect(hits.length).toBe(1);
   });
 
   it("takes directory names from the backend instead of literals", () => {
-    const paths = read(PATHS_FILE);
-    expect(paths).toContain("getAssetDirs");
-    expect(paths).not.toContain('"attachments"');
+    const assetDirs = read(ASSET_DIRS_FILE);
+    expect(assetDirs).toContain("getAssetDirs");
+    expect(assetDirs).not.toContain('"attachments"');
   });
 });
 

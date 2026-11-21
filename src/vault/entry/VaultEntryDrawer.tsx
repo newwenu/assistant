@@ -12,15 +12,15 @@ import {
 } from "antd";
 import { PlusOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
-import { useVaultShallow } from "./core/vaultStore";
-import { vaultService } from "./core/vault.service";
-import { vaultCategoryOptions } from "./core/display/vaultCategory";
+import { useVaultShallow } from "../core/vaultStore";
+import { vaultService } from "../core/vault.service";
+import { vaultCategoryOptions } from "../core/display/vaultCategory";
 import type {
   VaultCategory,
   CustomFieldInput,
   ParsedOtpAuth,
   TotpAlgorithm,
-} from "./core/vault.types";
+} from "../core/vault.types";
 import LoginFields from "./forms/LoginFields";
 import CardFields from "./forms/CardFields";
 import NoteFields from "./forms/NoteFields";

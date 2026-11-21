@@ -11,8 +11,11 @@ import {
 } from "antd";
 import { ReloadOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
-import { VAULT_AUDIT_EVENT_TYPES, vaultAuditEventText } from "@/audit/lexicon";
-import { parseAuditDetail } from "@/audit/detail";
+import {
+  VAULT_AUDIT_EVENT_TYPES,
+  vaultAuditEventText,
+} from "../../core/audit/vaultEvents";
+import { parseAuditDetail } from "../../core/audit/parseDetail";
 import {
   vaultErrorCode,
   vaultErrorMessage,

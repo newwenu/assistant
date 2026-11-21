@@ -2,7 +2,7 @@ import { useState, useCallback } from "react";
 import { Button, Space, Input } from "antd";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useTranslation } from "react-i18next";
-import { mascotAssetUrl, isLocalAssetUrl } from "@/chat/attachment/paths";
+import { mascotAssetUrl, isLocalAssetUrl } from "@/mascot/core/assetUrl";
 import { settingService } from "../../../services/settingService";
 import type { SettingFieldProps } from "../../core/types/fieldSchema";
 import { useSettingMessage } from "../useSettingMessage";

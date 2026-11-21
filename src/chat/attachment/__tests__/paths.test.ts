@@ -24,6 +24,11 @@ async function loadPaths() {
   return import("../paths");
 }
 
+async function loadMascotAssetUrl() {
+  vi.resetModules();
+  return import("@/mascot/core/assetUrl");
+}
+
 const DIRS = {
   attachmentsDir: "/data/app/attachments",
   mascotAssetsDir: "/data/app/mascot-assets",
@@ -43,34 +48,13 @@ describe("attachment paths", () => {
     expect(getAssetDirs).toHaveBeenCalledTimes(1);
   });
 
-  it("builds the mascot url from get_asset_dirs and appends version", async () => {
-    const { mascotAssetUrl } = await loadPaths();
-    await expect(mascotAssetUrl("rive/custom.riv")).resolves.toBe(
-      "asset:///data/app/mascot-assets/rive/custom.riv",
-    );
-    await expect(mascotAssetUrl("rive/custom.riv", 1700)).resolves.toBe(
-      "asset:///data/app/mascot-assets/rive/custom.riv?v=1700",
-    );
-  });
-
   it("caches the directory lookup across both helpers", async () => {
-    const { attachmentUrl, mascotAssetUrl } = await loadPaths();
+    vi.resetModules();
+    const { attachmentUrl } = await import("../paths");
+    const { mascotAssetUrl } = await import("@/mascot/core/assetUrl");
     await attachmentUrl("abc.png");
     await mascotAssetUrl("gif/custom.gif");
     expect(getAssetDirs).toHaveBeenCalledTimes(1);
-  });
-
-  it("recognizes only local asset urls", async () => {
-    const { isLocalAssetUrl } = await loadPaths();
-    expect(
-      isLocalAssetUrl(
-        "http://asset.localhost/C%3A%5Cdata%5Cmascot-assets%5Crive%5Ccustom.riv",
-      ),
-    ).toBe(true);
-    expect(isLocalAssetUrl("asset://localhost/data/app/a.riv")).toBe(true);
-    expect(isLocalAssetUrl("https://example.com/a.riv")).toBe(false);
-    expect(isLocalAssetUrl("/mascot.riv")).toBe(false);
-    expect(isLocalAssetUrl("")).toBe(false);
   });
 
   it("retries the lookup after a failure instead of caching the error", async () => {
@@ -94,5 +78,42 @@ describe("attachment paths", () => {
     const { openAttachmentFile } = await loadPaths();
     await expect(openAttachmentFile("")).resolves.toBe(false);
     expect(openAttachment).not.toHaveBeenCalled();
+  });
+});
+
+describe("mascot asset url", () => {
+  beforeEach(() => {
+    getAssetDirs.mockReset();
+    getAssetDirs.mockResolvedValue(DIRS);
+  });
+
+  it("builds the mascot url from get_asset_dirs and appends version", async () => {
+    const { mascotAssetUrl } = await loadMascotAssetUrl();
+    await expect(mascotAssetUrl("rive/custom.riv")).resolves.toBe(
+      "asset:///data/app/mascot-assets/rive/custom.riv",
+    );
+    await expect(mascotAssetUrl("rive/custom.riv", 1700)).resolves.toBe(
+      "asset:///data/app/mascot-assets/rive/custom.riv?v=1700",
+    );
+  });
+
+  it("recognizes only local asset urls", async () => {
+    const { isLocalAssetUrl } = await loadMascotAssetUrl();
+    expect(
+      isLocalAssetUrl(
+        "http://asset.localhost/C%3A%5Cdata%5Cmascot-assets%5Crive%5Ccustom.riv",
+      ),
+    ).toBe(true);
+    expect(isLocalAssetUrl("asset://localhost/data/app/a.riv")).toBe(true);
+    expect(isLocalAssetUrl("https://example.com/a.riv")).toBe(false);
+    expect(isLocalAssetUrl("/mascot.riv")).toBe(false);
+    expect(isLocalAssetUrl("")).toBe(false);
+  });
+
+  it("caches the directory lookup across repeated lookups", async () => {
+    const { mascotAssetUrl } = await loadMascotAssetUrl();
+    await mascotAssetUrl("rive/a.riv");
+    await mascotAssetUrl("rive/b.riv", 42);
+    expect(getAssetDirs).toHaveBeenCalledTimes(1);
   });
 });

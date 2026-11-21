@@ -2,7 +2,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 import type { RiveManifestDto } from "@/types/protocol.contract";
-import { isLocalAssetUrl } from "@/chat/attachment/paths";
+import { isLocalAssetUrl } from "@/mascot/core/assetUrl";
 import { settingService } from "@/services/settingService";
 import { createLogger } from "@/services/system/logger";
 import { SettingEvent } from "@/types/events";

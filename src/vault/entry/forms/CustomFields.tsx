@@ -1,8 +1,8 @@
 import { Input, Switch, Button, Divider } from "antd";
 import { PlusOutlined, MinusCircleOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
-import type { CustomFieldInput } from "../core/vault.types";
-import styles from "../vault.module.css";
+import type { CustomFieldInput } from "../../core/vault.types";
+import styles from "../../vault.module.css";
 
 interface CustomFieldsProps {
   customFields: CustomFieldInput[];

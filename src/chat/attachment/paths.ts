@@ -1,23 +1,5 @@
-import { convertFileSrc } from "@tauri-apps/api/core";
-import { join } from "@tauri-apps/api/path";
-import type { AssetDirsDto } from "@/types/protocol.contract";
+import { assetDirs, assetUrl } from "@/services/desktop/assetDirs";
 import { storageService } from "@/services/desktop/storageService";
-
-let assetDirsPromise: Promise<AssetDirsDto> | null = null;
-
-async function assetDirs(): Promise<AssetDirsDto> {
-  if (!assetDirsPromise) {
-    assetDirsPromise = storageService.getAssetDirs().catch((e: unknown) => {
-      assetDirsPromise = null;
-      throw e;
-    });
-  }
-  return assetDirsPromise;
-}
-
-async function assetUrl(baseDir: string, name: string): Promise<string> {
-  return convertFileSrc(await join(baseDir, name));
-}
 
 /**
  * 附件文件在 asset 作用域内的 URL。`id` 由 `import_attachment` 返回，
@@ -26,33 +8,6 @@ async function assetUrl(baseDir: string, name: string): Promise<string> {
 export async function attachmentUrl(id: string): Promise<string> {
   const dirs = await assetDirs();
   return assetUrl(dirs.attachmentsDir, id);
-}
-
-/**
- * 桌宠素材 URL。`relPath` 由 `install_mascot_asset` 返回（相对素材根），
- * `version` 用于刷新缓存。
- */
-export async function mascotAssetUrl(
-  relPath: string,
-  version?: number,
-): Promise<string> {
-  const dirs = await assetDirs();
-  const url = await assetUrl(dirs.mascotAssetsDir, relPath);
-  return version === undefined ? url : `${url}?v=${version}`;
-}
-
-/**
- * `src` 是否指向本地素材文件（`convertFileSrc` 产物），而非远端 URL。
- * 伴生声明只属于安装进本地素材目录的那份文件，手填的远端 URL 不能套用本地声明。
- * Windows 为 `http://asset.localhost/<encoded>`，其它平台为 `asset://localhost/<encoded>`。
- */
-export function isLocalAssetUrl(src: string): boolean {
-  const lower = src.toLowerCase();
-  return (
-    lower.startsWith("http://asset.localhost/") ||
-    lower.startsWith("https://asset.localhost/") ||
-    lower.startsWith("asset://")
-  );
 }
 
 /**

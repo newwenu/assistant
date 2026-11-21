@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { Alert, Descriptions, Form, Input, Typography } from "antd";
 import { useTranslation } from "react-i18next";
-import { useVaultStore } from "../core/vaultStore";
-import type { SshKeyMeta } from "../core/vault.types";
+import { useVaultStore } from "../../core/vaultStore";
+import type { SshKeyMeta } from "../../core/vault.types";
 
 interface SshKeyFieldsProps {
   privateKey: string;

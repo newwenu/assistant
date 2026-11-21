@@ -1,6 +1,6 @@
 import { Tag, Tooltip, Typography } from "antd";
 import { useTranslation } from "react-i18next";
-import { permissionAuditOutcomeText } from "@/audit/lexicon";
+import { permissionAuditOutcomeText } from "./permissionOutcomes";
 import type { PermissionAuditEntry } from "@/services/tool/permissionService";
 
 import {

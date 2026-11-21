@@ -13,8 +13,8 @@ import { useVaultAutoLock } from "./core/hooks/useVaultAutoLock";
 import VaultUnlock from "./VaultUnlock";
 import VaultList from "./VaultList";
 import VaultStatusBar from "./VaultStatusBar";
-import VaultEntryDrawer from "./VaultEntryDrawer";
-import VaultEntryDetail from "./detail/VaultEntryDetail";
+import VaultEntryDrawer from "./entry/VaultEntryDrawer";
+import VaultEntryDetail from "./entry/VaultEntryDetail";
 import VaultSettings from "./settings/VaultSettings";
 import styles from "./vault.module.css";
 

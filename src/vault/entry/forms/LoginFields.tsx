@@ -15,7 +15,7 @@ import {
   generatePassword,
   generatePassphrase,
 } from "@/tools/password-generator/password-generator.service";
-import styles from "../vault.module.css";
+import styles from "../../vault.module.css";
 
 type PasswordGenMode = "random" | "passphrase";
 

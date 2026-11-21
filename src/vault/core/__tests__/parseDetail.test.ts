@@ -4,7 +4,7 @@ import {
   DETAIL_CLOSED_TAGS,
   DETAIL_EXPORT_FORMATS,
   parseAuditDetail,
-} from "../detail";
+} from "../audit/parseDetail";
 
 const ENTRY_ID = "3f2a9c1e-0b6d-4f8a-9d3e-5c7b1a2e4f60";
 const OTHER_ID = "8c4d1e2f-3a5b-4c6d-8e9f-0a1b2c3d4e5f";
