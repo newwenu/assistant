@@ -17,12 +17,12 @@ type GroupKey = `orphan` | `conv-${string}`;
 
 const ORPHAN_GROUP_KEY: GroupKey = "orphan";
 
-interface AttachmentSectionProps {
+interface AttachmentBlockProps {
   breakdown: StorageBreakdownDto;
   onDelete: (ids: string[]) => Promise<AttachmentDeleteResultDto>;
 }
 
-export const AttachmentSection: React.FC<AttachmentSectionProps> = ({
+export const AttachmentBlock: React.FC<AttachmentBlockProps> = ({
   breakdown,
   onDelete,
 }) => {

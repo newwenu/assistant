@@ -6,19 +6,19 @@ import type {
   StorageReclaimResultDto,
 } from "@/types/protocol.contract";
 import { formatBytes } from "@/utils/formatBytes";
-import { actionText, entryNameText, reclaimErrorCodeText } from "./lexicon";
+import { actionText, cleanupErrorCodeText, entryNameText } from "./lexicon";
 
-export type ReclaimPhase = "idle" | "planning" | "confirming" | "executing";
+export type CleanupPhase = "idle" | "planning" | "confirming" | "executing";
 
-export interface ReclaimState {
-  phase: ReclaimPhase;
+export interface CleanupState {
+  phase: CleanupPhase;
   key: string | null;
   action: StorageReclaimActionDto | null;
   plan: StorageReclaimPlanEntryDto | null;
   typedKey: string;
 }
 
-export type ReclaimEvent =
+export type CleanupEvent =
   | { type: "request"; key: string; action: StorageReclaimActionDto }
   | { type: "planned"; entry: StorageReclaimPlanEntryDto }
   | { type: "typed"; value: string }
@@ -27,7 +27,7 @@ export type ReclaimEvent =
   | { type: "succeeded" }
   | { type: "cancel" };
 
-export const INITIAL_RECLAIM_STATE: ReclaimState = {
+export const INITIAL_CLEANUP_STATE: CleanupState = {
   phase: "idle",
   key: null,
   action: null,
@@ -35,10 +35,10 @@ export const INITIAL_RECLAIM_STATE: ReclaimState = {
   typedKey: "",
 };
 
-export function reclaimReducer(
-  state: ReclaimState,
-  event: ReclaimEvent,
-): ReclaimState {
+export function cleanupReducer(
+  state: CleanupState,
+  event: CleanupEvent,
+): CleanupState {
   switch (event.type) {
     case "request":
       if (state.phase !== "idle") return state;
@@ -66,45 +66,45 @@ export function reclaimReducer(
       if (state.phase === "idle") return state;
       return event.keepDialogOpen
         ? { ...state, phase: "confirming", typedKey: "" }
-        : INITIAL_RECLAIM_STATE;
+        : INITIAL_CLEANUP_STATE;
     case "succeeded":
     case "cancel":
       if (state.phase === "executing" && event.type === "cancel") return state;
-      return INITIAL_RECLAIM_STATE;
+      return INITIAL_CLEANUP_STATE;
     default:
       return state;
   }
 }
 
-export function dialogOpen(state: ReclaimState): boolean {
+export function dialogOpen(state: CleanupState): boolean {
   if (state.phase === "confirming") return true;
   return state.phase === "executing" && state.plan?.confirmation !== "none";
 }
 
-export function canExecute(state: ReclaimState): boolean {
+export function canExecute(state: CleanupState): boolean {
   if (state.phase !== "confirming" || state.plan === null) return false;
   if (state.plan.confirmation !== "strongConfirm") return true;
   return state.typedKey === state.plan.key;
 }
 
-export type ReclaimStage = "plan" | "execute";
+export type CleanupStage = "plan" | "execute";
 
-export interface ReclaimErrorView {
+export interface CleanupErrorView {
   messageKey: I18nPath;
   detail: string | null;
   keepDialogOpen: boolean;
 }
 
 const PLAN_ERROR_KEYS = {
-  busy: "settings.storage.reclaim.error.busy",
-  planExpired: "settings.storage.reclaim.error.plan_expired",
-  planNotFound: "settings.storage.reclaim.error.plan_not_found",
-  entryNotAllowed: "settings.storage.reclaim.error.not_allowed",
+  busy: "settings.storage.cleanup.error.busy",
+  planExpired: "settings.storage.cleanup.error.plan_expired",
+  planNotFound: "settings.storage.cleanup.error.plan_not_found",
+  entryNotAllowed: "settings.storage.cleanup.error.not_allowed",
 } as const satisfies Record<string, I18nPath>;
 
 const EXECUTE_ERROR_KEYS = {
   ...PLAN_ERROR_KEYS,
-  confirmationRequired: "settings.storage.reclaim.error.confirmation_required",
+  confirmationRequired: "settings.storage.cleanup.error.confirmation_required",
 } as const satisfies Record<string, I18nPath>;
 
 export function errorCodeOf(raw: unknown): string | null {
@@ -134,10 +134,10 @@ function lookupErrorKey(
     : undefined;
 }
 
-export function reclaimErrorView(
-  stage: ReclaimStage,
+export function cleanupErrorView(
+  stage: CleanupStage,
   raw: unknown,
-): ReclaimErrorView {
+): CleanupErrorView {
   const code = errorCodeOf(raw);
   const keys = stage === "plan" ? PLAN_ERROR_KEYS : EXECUTE_ERROR_KEYS;
   const key = code === null ? undefined : lookupErrorKey(keys, code);
@@ -152,41 +152,41 @@ export function reclaimErrorView(
 
   if (stage === "plan") {
     return {
-      messageKey: "settings.storage.reclaim.error.plan_failed",
+      messageKey: "settings.storage.cleanup.error.plan_failed",
       detail: errorDetailOf(raw),
       keepDialogOpen: false,
     };
   }
 
   return {
-    messageKey: "settings.storage.reclaim.error.execute_failed",
+    messageKey: "settings.storage.cleanup.error.execute_failed",
     detail: errorDetailOf(raw),
     keepDialogOpen: false,
   };
 }
 
-export type ReclaimNoticeKind = "success" | "warning" | "error" | "info";
+export type CleanupNoticeKind = "success" | "warning" | "error" | "info";
 
-export interface ReclaimResultNotice {
-  kind: ReclaimNoticeKind;
+export interface CleanupResultNotice {
+  kind: CleanupNoticeKind;
   text: string;
   detail: string | null;
 }
 
 function failureDetail(entry: StorageReclaimEntryResultDto): string | null {
   const first = entry.errors[0];
-  return first === undefined ? null : reclaimErrorCodeText(first.code);
+  return first === undefined ? null : cleanupErrorCodeText(first.code);
 }
 
-export function reclaimResultNotice(
+export function cleanupResultNotice(
   result: StorageReclaimResultDto,
-): ReclaimResultNotice {
+): CleanupResultNotice {
   const entry = result.entries[0];
   if (entry === undefined) {
-    console.warn("[storage] reclaim result carries no entry");
+    console.warn("[storage] cleanup result carries no entry");
     return {
       kind: "error",
-      text: translateKey("settings.storage.reclaim.result.failed"),
+      text: translateKey("settings.storage.cleanup.result.failed"),
       detail: null,
     };
   }
@@ -195,7 +195,7 @@ export function reclaimResultNotice(
     case "done":
       return {
         kind: "success",
-        text: translateKey("settings.storage.reclaim.result.done", {
+        text: translateKey("settings.storage.cleanup.result.done", {
           count: entry.removedCount,
           size: formatBytes(entry.removedBytes),
         }),
@@ -204,7 +204,7 @@ export function reclaimResultNotice(
     case "partial":
       return {
         kind: "warning",
-        text: translateKey("settings.storage.reclaim.result.partial", {
+        text: translateKey("settings.storage.cleanup.result.partial", {
           count: entry.removedCount,
           size: formatBytes(entry.removedBytes),
           failed: entry.failedCount,
@@ -214,45 +214,45 @@ export function reclaimResultNotice(
     case "failed":
       return {
         kind: "error",
-        text: translateKey("settings.storage.reclaim.result.failed"),
+        text: translateKey("settings.storage.cleanup.result.failed"),
         detail: failureDetail(entry),
       };
     case "skipped":
       return {
         kind: "info",
-        text: translateKey("settings.storage.reclaim.result.skipped"),
+        text: translateKey("settings.storage.cleanup.result.skipped"),
         detail: null,
       };
     case "notEligible":
       console.warn(
-        "[storage] reclaim returned notEligible for a planned entry",
+        "[storage] cleanup returned notEligible for a planned entry",
       );
       return {
         kind: "error",
-        text: translateKey("settings.storage.reclaim.error.not_allowed"),
+        text: translateKey("settings.storage.cleanup.error.not_allowed"),
         detail: null,
       };
     default: {
       const status: string = entry.status;
-      console.warn(`[storage] unknown reclaim status: "${status}"`);
+      console.warn(`[storage] unknown cleanup status: "${status}"`);
       return {
         kind: "error",
-        text: translateKey("settings.storage.reclaim.result.failed"),
+        text: translateKey("settings.storage.cleanup.result.failed"),
         detail: null,
       };
     }
   }
 }
 
-export function dialogTitle(state: ReclaimState): string {
+export function dialogTitle(state: CleanupState): string {
   if (state.plan === null) return "";
   const name = entryNameText(state.plan.key);
   return state.plan.confirmation === "strongConfirm"
-    ? translateKey("settings.storage.reclaim.strong.title", { entry: name })
-    : translateKey("settings.storage.reclaim.dialog.title", { entry: name });
+    ? translateKey("settings.storage.cleanup.strong.title", { entry: name })
+    : translateKey("settings.storage.cleanup.dialog.title", { entry: name });
 }
 
-export function dialogBody(state: ReclaimState): string {
+export function dialogBody(state: CleanupState): string {
   if (state.plan === null) return "";
   const action = actionText(state.plan.action);
   const dash = translateKey("settings.storage.common.bytes_unknown");
@@ -264,13 +264,13 @@ export function dialogBody(state: ReclaimState): string {
       : formatBytes(state.plan.expectedBytes);
 
   return state.plan.confirmation === "strongConfirm"
-    ? translateKey("settings.storage.reclaim.strong.body", {
+    ? translateKey("settings.storage.cleanup.strong.body", {
         action,
         count,
         size,
         key: state.plan.key,
       })
-    : translateKey("settings.storage.reclaim.dialog.body", {
+    : translateKey("settings.storage.cleanup.dialog.body", {
         action,
         count,
         size,

@@ -43,7 +43,7 @@ describe("条目行视图模型", () => {
     expect(view.countText ?? "").toContain("3");
   });
 
-  it("不可回收四态：按钮禁用且带原因文案", () => {
+  it("清理按钮：不可清理时禁用且带原因文案", () => {
     const cases = [
       { eligibility: "notEligible", reason: "orphan" },
       { eligibility: "locked", reason: "locked" },
@@ -59,11 +59,10 @@ describe("条目行视图模型", () => {
           }),
         }),
       );
-      expect(view.action.kind).toBe("button");
-      if (view.action.kind !== "button") throw new Error("unreachable");
-      expect(view.action.disabled).toBe(true);
-      expect(view.action.tooltip).toContain(reasonText(item.reason));
-      expect(view.eligibility.secondLine).toBe(reasonText(item.reason));
+      expect(view.cleanup.kind).toBe("button");
+      if (view.cleanup.kind !== "button") throw new Error("unreachable");
+      expect(view.cleanup.disabled).toBe(true);
+      expect(view.cleanup.tooltip).toContain(reasonText(item.reason));
     }
 
     const notImplemented = entryRowView(
@@ -72,15 +71,15 @@ describe("条目行视图模型", () => {
           action: "sweepExpired",
           eligibility: "notImplemented",
           reason: "noReclaimApi",
-          note: "清理入口在下一版提供",
+          note: "暂未提供清理入口",
         }),
       }),
     );
-    expect(notImplemented.action.kind).toBe("button");
-    if (notImplemented.action.kind !== "button") throw new Error("unreachable");
-    expect(notImplemented.action.disabled).toBe(true);
-    expect(notImplemented.eligibility.secondLine).toBe("清理入口在下一版提供");
-    expect(notImplemented.action.tooltip).toContain("清理入口在下一版提供");
+    expect(notImplemented.cleanup.kind).toBe("button");
+    if (notImplemented.cleanup.kind !== "button")
+      throw new Error("unreachable");
+    expect(notImplemented.cleanup.disabled).toBe(true);
+    expect(notImplemented.cleanup.tooltip).toContain("暂未提供清理入口");
   });
 
   it("ownerManaged 显示纯文本，不出现按钮", () => {
@@ -93,28 +92,28 @@ describe("条目行视图模型", () => {
         }),
       }),
     );
-    expect(view.action.kind).toBe("text");
-    if (view.action.kind !== "text") throw new Error("unreachable");
-    expect(view.action.text.length).toBeGreaterThan(0);
+    expect(view.cleanup.kind).toBe("text");
+    if (view.cleanup.kind !== "text") throw new Error("unreachable");
+    expect(view.cleanup.text.length).toBeGreaterThan(0);
   });
 
-  it("action 为 none 时动作列没有入口", () => {
+  it("action 为 none 时清理列没有入口", () => {
     const view = entryRowView(
       makeEntry({
         reclaim: makeReclaim({ action: "none", eligibility: "notEligible" }),
       }),
     );
-    expect(view.action.kind).toBe("none");
+    expect(view.cleanup.kind).toBe("none");
   });
 
-  it("eligible 但 action 为 none 时降级为不可点并告警", () => {
+  it("eligible 但 action 为 none 时降级为无入口并告警", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const view = entryRowView(
       makeEntry({
         reclaim: makeReclaim({ action: "none", eligibility: "eligible" }),
       }),
     );
-    expect(view.action.kind).toBe("none");
+    expect(view.cleanup.kind).toBe("none");
     expect(warn).toHaveBeenCalledTimes(1);
     warn.mockRestore();
   });
@@ -129,26 +128,33 @@ describe("条目行视图模型", () => {
         }),
       }),
     );
-    expect(view.action.kind).toBe("button");
-    if (view.action.kind !== "button") throw new Error("unreachable");
-    expect(view.action.disabled).toBe(false);
-    expect(view.action.strongConfirm).toBe(true);
+    expect(view.cleanup.kind).toBe("button");
+    if (view.cleanup.kind !== "button") throw new Error("unreachable");
+    expect(view.cleanup.disabled).toBe(false);
+    expect(view.cleanup.strongConfirm).toBe(true);
   });
 
-  it("可用性徽标按枚举着色", () => {
+  it("可用性只在异常时出现角标，missing 与 available 不加角标", () => {
     expect(
-      entryRowView(makeEntry({ availability: "available" })).availability.tone,
-    ).toBe("neutral");
+      entryRowView(makeEntry({ availability: "available" })).availabilityBadge,
+    ).toBeNull();
     expect(
-      entryRowView(makeEntry({ availability: "locked" })).availability.tone,
-    ).toBe("warning");
-    expect(
-      entryRowView(makeEntry({ availability: "unreadable" })).availability.tone,
-    ).toBe("error");
-    expect(
-      entryRowView(makeEntry({ availability: "notImplemented" })).availability
-        .tone,
-    ).toBe("info");
+      entryRowView(makeEntry({ availability: "missing" })).availabilityBadge,
+    ).toBeNull();
+
+    const locked = entryRowView(
+      makeEntry({ availability: "locked", availabilityReason: "EACCES" }),
+    );
+    expect(locked.availabilityBadge?.tone).toBe("warning");
+    expect(locked.availabilityBadge?.reason).toBe("EACCES");
+
+    const unreadable = entryRowView(makeEntry({ availability: "unreadable" }));
+    expect(unreadable.availabilityBadge?.tone).toBe("error");
+
+    const notImplemented = entryRowView(
+      makeEntry({ availability: "notImplemented" }),
+    );
+    expect(notImplemented.availabilityBadge?.tone).toBe("neutral");
   });
 
   it("策略 chip 不因保留策略禁用而误显示天数", () => {
@@ -165,14 +171,14 @@ describe("条目行视图模型", () => {
 });
 
 describe("条目详情视图模型", () => {
-  it("详情固定六项，id 与 key 同列", () => {
+  it("详情固定六项，首项为 key 原文", () => {
     const detail = entryDetailView(makeEntry({ key: "tool-results" }));
     expect(detail.items).toHaveLength(6);
-    expect(detail.items[0].value).toBe("E3 / tool-results");
+    expect(detail.items[0].value).toBe("tool-results");
     expect(detail.items[0].mono).toBe(true);
   });
 
-  it("时间与可回收为空时显示占位符", () => {
+  it("时间与可清理为空时显示占位符", () => {
     const detail = entryDetailView(
       makeEntry({ oldestAt: null, newestAt: null }),
     );
@@ -198,5 +204,16 @@ describe("条目详情视图模型", () => {
     );
     expect(detail.availabilityReason).toBe("EACCES");
     expect(detail.note).toBe("owner offline");
+  });
+
+  it("failClosed 不参与详情与策略 chip", () => {
+    const detail = entryDetailView(
+      makeEntry({
+        reclaim: makeReclaim({ policy: makePolicy({ failClosed: true }) }),
+      }),
+    );
+    expect(detail.chips).toEqual([]);
+    const texts = detail.items.map((item) => item.value);
+    expect(texts.join("")).not.toContain("failClosed");
   });
 });

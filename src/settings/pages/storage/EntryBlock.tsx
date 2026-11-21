@@ -6,35 +6,35 @@ import type {
 } from "@/types/protocol.contract";
 import { entryRowView } from "./entryView";
 import { EntryTable } from "./EntryTable";
-import { ReclaimDialog } from "./ReclaimDialog";
-import { useReclaim } from "./useReclaim";
+import { CleanupDialog } from "./CleanupDialog";
+import { useCleanup } from "./useCleanup";
 
-interface EntrySectionProps {
+interface EntryBlockProps {
   entries: StorageEntryDto[];
-  onReclaimed: () => void;
+  onFinished: () => void;
 }
 
-export const EntrySection: React.FC<EntrySectionProps> = ({
+export const EntryBlock: React.FC<EntryBlockProps> = ({
   entries,
-  onReclaimed,
+  onFinished,
 }) => {
   const { t } = useTranslation();
-  const reclaim = useReclaim(onReclaimed);
+  const cleanup = useCleanup(onFinished);
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
 
   const rows = useMemo(() => entries.map(entryRowView), [entries]);
-  const reclaimBusy =
-    reclaim.state.phase === "planning" || reclaim.state.phase === "executing";
+  const cleanupBusy =
+    cleanup.state.phase === "planning" || cleanup.state.phase === "executing";
 
   const toggleDetail = useCallback((key: string) => {
     setExpandedKey((prev) => (prev === key ? null : key));
   }, []);
 
-  const requestReclaim = useCallback(
+  const requestCleanup = useCallback(
     (key: string, action: StorageReclaimActionDto) => {
-      reclaim.requestReclaim(key, action);
+      cleanup.requestCleanup(key, action);
     },
-    [reclaim],
+    [cleanup],
   );
 
   return (
@@ -54,18 +54,18 @@ export const EntrySection: React.FC<EntrySectionProps> = ({
         rows={rows}
         entries={entries}
         expandedKey={expandedKey}
-        reclaimBusy={reclaimBusy}
+        cleanupBusy={cleanupBusy}
         onToggleDetail={toggleDetail}
-        onReclaim={requestReclaim}
+        onCleanup={requestCleanup}
       />
 
-      <ReclaimDialog
-        open={reclaim.dialogOpen}
-        state={reclaim.state}
-        canExecute={reclaim.canExecute}
-        onConfirm={reclaim.confirm}
-        onCancel={reclaim.cancel}
-        onTypedKey={reclaim.setTypedKey}
+      <CleanupDialog
+        open={cleanup.dialogOpen}
+        state={cleanup.state}
+        canExecute={cleanup.canExecute}
+        onConfirm={cleanup.confirm}
+        onCancel={cleanup.cancel}
+        onTypedKey={cleanup.setTypedKey}
       />
     </section>
   );

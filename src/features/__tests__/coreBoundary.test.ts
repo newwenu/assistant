@@ -88,11 +88,9 @@ const FEATURE_FOOTPRINT_ALLOWLIST: Record<string, FootprintAllowance[]> = {
     {
       file: "src/settings/pages/storage/lexicon.ts",
       reason:
-        "`security/vault` 是盘上目录名（条目 key 为对外契约，改名等于改磁盘格式），前端条目名称 / ID 表必须逐字登记该 key",
+        "`security/vault` 是盘上目录名（条目 key 为对外契约，改名等于改磁盘格式），前端条目名称表必须逐字登记该 key",
       markers: [
-        '"security/vault",',
-        '"security/vault": "E9",',
-        '"security/vault": "settings.storage.entries.names.e9",',
+        '"security/vault": "settings.storage.entries.names.security_vault",',
       ],
     },
   ],

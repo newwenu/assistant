@@ -354,12 +354,12 @@
       "title": "Storage Manager",
       "toolbar": {
         "refresh": "Refresh",
-        "sampled_at": "Sampled at {{time}}",
-        "byte_basis": "Basis: file length",
-        "refresh_failed": "Refresh failed; showing previous data"
+        "sampled_at": "Measured at {{time}}",
+        "byte_basis": "Measured as file size",
+        "refresh_failed": "Refresh failed; showing the previous data"
       },
       "common": {
-        "load_failed": "Failed to load storage data",
+        "load_failed": "Failed to load storage information",
         "retry": "Retry",
         "bytes_unknown": "—",
         "count_value": "{{count}} items",
@@ -367,7 +367,7 @@
       },
       "attachments": {
         "title": "Attachments",
-        "hint": "Grouped by conversation; deletion removes only the selected files",
+        "hint": "Grouped by conversation; deleting removes only the files you selected",
         "delete_selected": "Delete selected ({{count}})",
         "confirm_delete": {
           "title": "Delete the selected attachments?",
@@ -384,200 +384,191 @@
         "orphan_group": "Attachments without a conversation"
       },
       "entries": {
-        "title": "Monitored entries",
-        "hint": "Entries are observed by their owners; reclaimable amounts come from the plan. Reclaim here is separate from attachment deletion above",
-        "provided_by": "Provided by {{owner}}",
-        "details": "Details",
-        "hide_details": "Hide",
+        "title": "Cleanup by storage item",
+        "hint": "Each item is measured by the module that owns it; Cleanup only removes files that can be safely deleted within that item. To delete specific attachments, select them in Attachments above",
+        "provided_by": "Measured by {{owner}}",
+        "attachment_orphans": "{{count}} items without a conversation · {{size}}; to delete them one by one, select them in Attachments above",
+        "cleanup_button": "Cleanup",
         "columns": {
-          "name": "Entry",
-          "size": "Size / count",
-          "availability": "Availability",
-          "eligibility": "Eligibility",
-          "policy": "Policy",
-          "action": "Action"
+          "name": "Item",
+          "size": "Size / items",
+          "policy": "Cleanup rule",
+          "cleanup": "Action"
         },
         "names": {
-          "e1": "Attachments",
-          "e2": "Attachment derived cache",
-          "e3": "Tool results",
-          "e4": "Tool index cache",
-          "e5": "Mascot assets",
-          "e6": "Main database",
-          "e7": "Security database",
-          "e8": "Security backups",
-          "e9": "Vault",
-          "e10": "Recovery temp",
-          "e11": "Audit log",
-          "e12": "Runtime logs",
-          "e13": "Crash reports"
+          "attachments": "Attachment files",
+          "attachments_derived": "Attachment preview cache",
+          "tool_results": "Tool result files",
+          "tool_index": "Tool index cache",
+          "mascot_assets": "Mascot assets",
+          "assistant_db": "Main database",
+          "security_security_db": "Security database",
+          "security_backups": "Security database backups",
+          "security_vault": "Vault",
+          "security_recovery": "Vault recovery temp files",
+          "security_audit": "Security audit log",
+          "logs": "Runtime logs",
+          "crashes": "Crash reports"
         },
-        "domains": {
-          "attachments": "Attachments",
-          "tools": "Tools",
-          "mascot": "Mascot",
-          "database": "Database",
-          "security": "Security",
-          "diagnostics": "Logs & diagnostics",
-          "other": "Other"
+        "groups": {
+          "security": "Security-related"
         },
         "availability": {
-          "available": "Available",
-          "missing": "Not present",
+          "available": "Normal",
+          "missing": "Not found",
           "locked": "Locked",
-          "unreadable": "Unreadable",
-          "unavailable": "Unavailable",
-          "notImplemented": "Not implemented",
-          "noReportYet": "No data yet",
-          "staleReport": "Stale data"
+          "unreadable": "Cannot read",
+          "unavailable": "Temporarily unavailable",
+          "notImplemented": "Not supported yet",
+          "noReportYet": "No measurement yet",
+          "staleReport": "Data is out of date"
         },
         "eligibility": {
-          "eligible": "Reclaimable",
-          "notEligible": "Not reclaimable",
+          "eligible": "Can be cleaned up",
+          "notEligible": "Cannot be cleaned up",
           "locked": "Locked",
-          "ownerManaged": "Owner managed",
-          "notImplemented": "Not implemented"
+          "ownerManaged": "Managed automatically",
+          "auto_managed": "Managed automatically",
+          "notImplemented": "Cleanup not supported yet"
         },
         "reason": {
-          "orphan": "Outside the reference set",
-          "expired": "Older than retention",
-          "overLimit": "Over the count limit",
-          "derivedCache": "Rebuildable cache",
-          "transient": "Transient artifact",
-          "referenced": "Still referenced",
-          "userData": "User data",
-          "businessData": "Business data",
-          "replayRisk": "Deleting breaks historical replay",
-          "locked": "Protected",
-          "noStats": "No stats entry point",
-          "noReclaimApi": "No reclaim API",
-          "externalOwner": "Managed by an external owner",
-          "policyDisabled": "Retention policy disabled",
-          "unknown": "Criteria unavailable"
+          "orphan": "No longer referenced anywhere",
+          "expired": "Past the retention period",
+          "overLimit": "Above the item limit",
+          "derivedCache": "Cache that can be regenerated",
+          "transient": "Temporary file",
+          "referenced": "Still in use",
+          "userData": "Your personal data",
+          "businessData": "Application data",
+          "replayRisk": "History may not be restorable after deletion",
+          "locked": "File is in use or protected",
+          "noStats": "Size cannot be measured right now",
+          "noReclaimApi": "One-click cleanup not available yet",
+          "externalOwner": "Managed automatically by another module",
+          "policyDisabled": "Automatic cleanup is off",
+          "unknown": "Reason unknown"
         },
         "action": {
-          "none": "No reclaim action",
-          "deleteOrphans": "Delete orphans",
+          "none": "No cleanup available",
+          "deleteOrphans": "Remove unreferenced files",
           "deleteSelected": "Delete selected",
-          "sweepExpired": "Sweep expired",
-          "pruneToLimit": "Prune to limit",
-          "rebuildCache": "Rebuild cache",
-          "rotate": "Auto rotate"
+          "sweepExpired": "Remove expired files",
+          "pruneToLimit": "Remove old files above the limit",
+          "rebuildCache": "Regenerate cache",
+          "rotate": "Rotate old files automatically"
         },
         "policy": {
           "source": {
-            "config": "Config policy",
-            "constant": "Constant policy",
-            "owner": "Owner managed",
-            "none": "No policy"
+            "config": "Follows settings",
+            "constant": "Fixed rule",
+            "owner": "Managed automatically",
+            "none": "No automatic cleanup rule"
           },
-          "retention": "Retain {{days}} days",
-          "retention_disabled": "Retention disabled",
-          "keep_count": "Keep {{count}}",
-          "max_bytes": "Entry cap {{size}}",
-          "auto_active": "Auto-run active"
+          "retention": "Keep for {{days}} days",
+          "retention_disabled": "Automatic cleanup is off",
+          "keep_count": "Keep at most {{count}}",
+          "max_bytes": "At most {{size}}",
+          "auto_active": "Automatic cleanup on"
         },
         "facts": {
-          "layer": "Layer",
+          "layer": "Location",
           "oldest": "Oldest {{time}}",
           "newest": "Newest {{time}}",
-          "reclaimable": "Reclaimable {{count}} items / {{size}}",
-          "effective_since": "Effective since {{time}}",
-          "mutable": "Mutable",
-          "fail_closed": "Fail-closed",
-          "includes_derived": "Includes derived cache",
-          "counts_self_logs": "Counts own-process logs",
-          "availability_reason": "Availability reason",
-          "note": "Note"
+          "reclaimable": "Cleanable: {{count}} items / {{size}}",
+          "effective_since": "Rule active since {{time}}",
+          "mutable": "Can be changed",
+          "includes_derived": "Includes cache that can be regenerated",
+          "counts_self_logs": "Includes logs from this app",
+          "availability_reason": "Status detail",
+          "note": "Additional note"
         },
         "layer": {
           "data": "Data directory",
           "local": "Local directory"
-        },
-        "reclaim_button": "Reclaim"
+        }
       },
-      "reclaim": {
-        "planning": "Preparing plan…",
-        "executing": "Reclaiming…",
-        "ok": "Reclaim",
+      "cleanup": {
+        "planning": "Preparing cleanup…",
+        "executing": "Cleaning up…",
+        "ok": "Run cleanup",
         "cancel": "Cancel",
         "dialog": {
-          "title": "Reclaim \"{{entry}}\"?",
-          "body": "Action: {{action}}; about {{count}} items, {{size}}.",
-          "key_hint": "Entry key: {{key}}",
+          "title": "Clean up \"{{entry}}\"?",
+          "body": "Will run: {{action}}; about {{count}} items, {{size}}.",
+          "key_hint": "Identifier: {{key}}",
           "irreversible": "This cannot be undone."
         },
         "strong": {
-          "title": "Reclaim high-risk entry \"{{entry}}\"?",
-          "body": "Action: {{action}}; about {{count}} items, {{size}}. Type the entry key \"{{key}}\" to confirm.",
+          "title": "Clean up high-risk storage item \"{{entry}}\"?",
+          "body": "Will run: {{action}}; about {{count}} items, {{size}}. Type \"{{key}}\" to confirm.",
           "placeholder": "Type {{key}}",
-          "mismatch": "Input does not match; reclaim is blocked"
+          "mismatch": "Input does not match; cannot continue"
         },
         "error": {
-          "busy": "Another reclaim is running; please retry later",
-          "plan_expired": "The plan expired; please retry",
-          "plan_not_found": "The plan was not found; please retry",
-          "not_allowed": "This entry cannot be reclaimed now",
-          "confirmation_required": "Confirmation is required",
-          "plan_failed": "Failed to prepare the plan; please retry",
-          "execute_failed": "Reclaim failed: {{error}}"
+          "busy": "Another cleanup is running; try again later",
+          "plan_expired": "Cleanup details expired; please start again",
+          "plan_not_found": "Cleanup details are no longer valid; please start again",
+          "not_allowed": "This storage item cannot be cleaned up right now",
+          "confirmation_required": "Please confirm before cleaning up",
+          "plan_failed": "Could not get cleanup details; please retry",
+          "execute_failed": "Cleanup failed: {{error}}"
         },
         "error_code": {
           "permissionDenied": "Permission denied",
-          "io": "I/O error",
-          "ownerUnavailable": "Owner unavailable",
-          "policyDisabled": "Retention policy disabled",
-          "locked": "Busy or locked",
+          "io": "Read/write failed",
+          "ownerUnavailable": "The module responsible is unavailable",
+          "policyDisabled": "Automatic cleanup is off",
+          "locked": "File is in use or protected",
           "unknown": "Unknown reason"
         },
         "result": {
-          "done": "Reclaimed {{count}} items, freed {{size}}",
-          "partial": "Partially done: removed {{count}} items, freed {{size}}, {{failed}} failed",
-          "failed": "Reclaim failed",
-          "skipped": "Nothing to reclaim (possibly just referenced)"
+          "done": "Cleaned up {{count}} items, freed {{size}}",
+          "partial": "Partly done: cleaned {{count}} items, freed {{size}}, {{failed}} failed",
+          "failed": "Cleanup failed",
+          "skipped": "Nothing to clean up (it may have been used again)"
         }
       },
       "residual": {
-        "title": "Reconciliation residual",
+        "title": "Unregistered usage",
         "read_only": "Read-only",
-        "hint": "Parts of managed roots not registered by any entry; excluded from all totals",
+        "hint": "Parts of the managed folders that are not yet counted by the list above, including small amounts inside registered folders that were not counted; not included in the total above",
         "scan": "Scan",
-        "scanning": "Scanning",
-        "rescan": "Rescan",
+        "scanning": "Scanning…",
+        "rescan": "Scan again",
         "retry_scan": "Retry scan",
         "status": {
           "neverRun": "Not scanned yet",
-          "running": "Scanning",
-          "fresh": "Last scanned: {{time}}",
-          "stale": "Last scanned: {{time}} (may be stale)",
-          "failed": "Scan failed: {{time}}"
+          "running": "Scanning…",
+          "fresh": "Last scan: {{time}}",
+          "stale": "Last scan: {{time}} (may be out of date)",
+          "failed": "Last scan failed ({{time}})"
         },
         "notice": {
-          "failed_keep_last": "Scan failed; numbers below are from the last successful scan",
-          "partial": "The bounded scan is incomplete; numbers below are lower bounds",
-          "truncated_more": "{{count}} more uncovered nodes",
-          "over_registered": "Registered bytes exceed on-disk bytes; the two measurements disagree",
-          "empty": "No residual nodes to show",
-          "scan_failed": "Failed to start the scan: {{error}}"
+          "failed_keep_last": "Scan failed; the numbers below are from the last successful scan",
+          "partial": "Only part of the folders was scanned; the numbers below may be lower than reality",
+          "truncated_more": "{{count}} more folders were not scanned",
+          "over_registered": "The recorded size is larger than the actual usage; the two measurements may disagree",
+          "empty": "Nothing unregistered to show",
+          "scan_failed": "Scan failed: {{error}}"
         },
         "columns": {
           "name": "Name",
-          "class": "Class",
-          "scope": "Scope",
-          "scan": "Scanned",
-          "declared": "Registered",
-          "residual": "Residual"
+          "class": "Type",
+          "scope": "Location",
+          "scan": "Scanned size",
+          "declared": "Recorded",
+          "residual": "Not counted"
         },
         "class": {
-          "declared": "Registered",
-          "optionalNotMounted": "Optional capability not mounted",
+          "declared": "Registered · not counted",
+          "optionalNotMounted": "Optional feature not enabled",
           "companion": "Companion files",
-          "ignored": "Known ignored",
+          "ignored": "Ignored",
           "unregistered": "Unregistered"
         },
         "totals": {
           "unregistered": "Unregistered total: {{count}} items, {{size}}",
-          "hint": "Not included in any page total"
+          "hint": "Not included in the total above"
         },
         "children": {
           "more": "{{count}} more not shown"

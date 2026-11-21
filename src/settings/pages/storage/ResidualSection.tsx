@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { App, Button } from "antd";
-import { ScanOutlined } from "@ant-design/icons";
+import { SyncOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import type {
   StorageInventoryDto,
@@ -97,7 +97,7 @@ export const ResidualSection: React.FC<ResidualSectionProps> = ({
           </span>
           <Button
             size="small"
-            icon={<ScanOutlined />}
+            icon={<SyncOutlined />}
             loading={busy}
             disabled={busy}
             onClick={() => {

@@ -333,12 +333,12 @@
       "title": "存储管理器",
       "toolbar": {
         "refresh": "刷新",
-        "sampled_at": "采样于 {{time}}",
-        "byte_basis": "口径：文件长度",
-        "refresh_failed": "刷新失败，以下为上次数据"
+        "sampled_at": "统计时间：{{time}}",
+        "byte_basis": "统计方式：按文件大小",
+        "refresh_failed": "刷新失败，以下显示上次的数据"
       },
       "common": {
-        "load_failed": "加载存储数据失败",
+        "load_failed": "加载存储信息失败",
         "retry": "重试",
         "bytes_unknown": "—",
         "count_value": "{{count}} 项",
@@ -346,7 +346,7 @@
       },
       "attachments": {
         "title": "附件明细",
-        "hint": "按对话分组；删除只移除选中的附件文件",
+        "hint": "按对话分组；删除只移除你勾选的文件",
         "delete_selected": "删除选中（{{count}}）",
         "confirm_delete": {
           "title": "删除选中的附件？",
@@ -363,203 +363,194 @@
         "orphan_group": "无关联对话的附件"
       },
       "entries": {
-        "title": "资源监视条目",
-        "hint": "条目由各自的 owner 提供观测；可回收量以计划为准，页面不做推算；此处的回收与上方附件删除是两条独立入口",
-        "provided_by": "由 {{owner}} 提供",
-        "details": "详情",
-        "hide_details": "收起",
+        "title": "按存储项清理",
+        "hint": "每一项占用都由负责它的系统模块统计；「清理」只删除这一项里可以安全移除的文件。要删除具体附件，请在上方「附件明细」中勾选",
+        "provided_by": "统计来源：{{owner}}",
+        "attachment_orphans": "无关联对话 {{count}} 项 · {{size}}；要逐个删除，请在上方「附件明细」勾选",
+        "cleanup_button": "清理",
         "columns": {
-          "name": "条目",
-          "size": "占用 / 条数",
-          "availability": "可用性",
-          "eligibility": "回收资格",
-          "policy": "策略",
-          "action": "动作"
+          "name": "存储项",
+          "size": "占用 / 数量",
+          "policy": "清理规则",
+          "cleanup": "操作"
         },
         "names": {
-          "e1": "附件",
-          "e2": "附件派生缓存",
-          "e3": "工具结果",
-          "e4": "工具索引缓存",
-          "e5": "形象素材",
-          "e6": "主数据库",
-          "e7": "安全库",
-          "e8": "安全库备份",
-          "e9": "保险库",
-          "e10": "恢复临时区",
-          "e11": "审计日志",
-          "e12": "运行日志",
-          "e13": "崩溃报告"
+          "attachments": "附件文件",
+          "attachments_derived": "附件预览缓存",
+          "tool_results": "工具结果文件",
+          "tool_index": "工具索引缓存",
+          "mascot_assets": "形象素材",
+          "assistant_db": "主数据库",
+          "security_security_db": "安全数据库",
+          "security_backups": "安全数据库备份",
+          "security_vault": "保险库",
+          "security_recovery": "保险库恢复临时文件",
+          "security_audit": "安全审计日志",
+          "logs": "运行日志",
+          "crashes": "崩溃报告"
         },
-        "domains": {
-          "attachments": "附件",
-          "tools": "工具",
-          "mascot": "素材",
-          "database": "数据库",
-          "security": "安全域",
-          "diagnostics": "日志与诊断",
-          "other": "其他"
+        "groups": {
+          "security": "安全相关"
         },
         "availability": {
-          "available": "可用",
+          "available": "正常",
           "missing": "不存在",
           "locked": "已锁定",
-          "unreadable": "不可读",
-          "unavailable": "不可用",
-          "notImplemented": "未实现",
-          "noReportYet": "暂无数据",
-          "staleReport": "数据过期"
+          "unreadable": "无法读取",
+          "unavailable": "暂时不可用",
+          "notImplemented": "暂不支持",
+          "noReportYet": "暂无统计",
+          "staleReport": "数据已过期"
         },
         "eligibility": {
-          "eligible": "可回收",
-          "notEligible": "当前不可回收",
+          "eligible": "可清理",
+          "notEligible": "不可清理",
           "locked": "已锁定",
-          "ownerManaged": "由 owner 管理",
-          "notImplemented": "未实现"
+          "ownerManaged": "由系统自动管理",
+          "auto_managed": "由系统自动管理",
+          "notImplemented": "暂不支持清理"
         },
         "reason": {
-          "orphan": "引用集合之外",
-          "expired": "早于保留期",
-          "overLimit": "超过数量上限",
-          "derivedCache": "可重建缓存",
-          "transient": "瞬态产物",
-          "referenced": "仍被引用",
-          "userData": "用户数据",
-          "businessData": "业务数据",
-          "replayRisk": "删除会让历史回放定位失效",
-          "locked": "受保护",
-          "noStats": "缺统计入口",
-          "noReclaimApi": "缺回收入口",
-          "externalOwner": "由外部 owner 管理",
-          "policyDisabled": "保留策略已禁用",
-          "unknown": "判据不可得"
+          "orphan": "已不再被任何记录引用",
+          "expired": "已超过保留期限",
+          "overLimit": "已超出数量上限",
+          "derivedCache": "可以重新生成的缓存",
+          "transient": "临时文件",
+          "referenced": "仍在使用中",
+          "userData": "你的个人数据",
+          "businessData": "应用业务数据",
+          "replayRisk": "删除后历史记录可能无法还原",
+          "locked": "文件被占用或受保护",
+          "noStats": "暂时无法统计大小",
+          "noReclaimApi": "暂时无法一键清理",
+          "externalOwner": "由其他模块自动管理",
+          "policyDisabled": "自动清理规则已关闭",
+          "unknown": "无法判断原因"
         },
         "action": {
-          "none": "不可回收",
-          "deleteOrphans": "删除孤儿",
-          "deleteSelected": "删除选中",
-          "sweepExpired": "清理过期",
-          "pruneToLimit": "裁剪到上限",
-          "rebuildCache": "重建缓存",
-          "rotate": "自动轮转"
+          "none": "不可清理",
+          "deleteOrphans": "清理无引用的文件",
+          "deleteSelected": "删除选中项",
+          "sweepExpired": "清理过期文件",
+          "pruneToLimit": "清理超出上限的旧文件",
+          "rebuildCache": "重新生成缓存",
+          "rotate": "自动轮换旧文件"
         },
         "policy": {
           "source": {
-            "config": "配置策略",
-            "constant": "常量策略",
-            "owner": "由 owner 管理",
-            "none": "无策略"
+            "config": "按设置",
+            "constant": "固定规则",
+            "owner": "由系统自动管理",
+            "none": "无自动清理规则"
           },
           "retention": "保留 {{days}} 天",
-          "retention_disabled": "保留策略已禁用",
-          "keep_count": "保留 {{count}} 份",
-          "max_bytes": "条目上限 {{size}}",
-          "auto_active": "已自动执行"
+          "retention_disabled": "自动清理已关闭",
+          "keep_count": "最多保留 {{count}} 份",
+          "max_bytes": "最多占用 {{size}}",
+          "auto_active": "已自动清理"
         },
         "facts": {
-          "layer": "层",
+          "layer": "所在位置",
           "oldest": "最早 {{time}}",
           "newest": "最近 {{time}}",
-          "reclaimable": "可回收 {{count}} 项 / {{size}}",
-          "effective_since": "生效自 {{time}}",
-          "mutable": "可修改",
-          "fail_closed": "读不到即不删",
-          "includes_derived": "含派生缓存",
-          "counts_self_logs": "统计本进程日志",
-          "availability_reason": "可用性说明",
-          "note": "备注"
+          "reclaimable": "可清理 {{count}} 项 / {{size}}",
+          "effective_since": "规则生效于 {{time}}",
+          "mutable": "可手动修改",
+          "includes_derived": "包含可重新生成的缓存",
+          "counts_self_logs": "包含当前程序的日志",
+          "availability_reason": "状态说明",
+          "note": "补充说明"
         },
         "layer": {
           "data": "数据目录",
           "local": "本地目录"
-        },
-        "reclaim_button": "回收"
+        }
       },
-      "reclaim": {
-        "planning": "正在生成计划…",
-        "executing": "正在回收…",
-        "ok": "执行回收",
+      "cleanup": {
+        "planning": "正在准备清理…",
+        "executing": "正在清理…",
+        "ok": "执行清理",
         "cancel": "取消",
         "dialog": {
-          "title": "回收「{{entry}}」？",
-          "body": "动作：{{action}}；预计 {{count}} 项，{{size}}。",
-          "key_hint": "条目 key：{{key}}",
-          "irreversible": "此操作不可撤销。"
+          "title": "清理「{{entry}}」？",
+          "body": "将执行：{{action}}；预计处理 {{count}} 项，{{size}}。",
+          "key_hint": "识别码：{{key}}",
+          "irreversible": "此操作无法撤销。"
         },
         "strong": {
-          "title": "回收高风险条目「{{entry}}」？",
-          "body": "动作：{{action}}；预计 {{count}} 项，{{size}}。请输入条目 key「{{key}}」以确认。",
+          "title": "清理高风险存储项「{{entry}}」？",
+          "body": "将执行：{{action}}；预计处理 {{count}} 项，{{size}}。请输入「{{key}}」以确认。",
           "placeholder": "输入 {{key}}",
-          "mismatch": "输入不匹配，无法执行回收"
+          "mismatch": "输入不一致，无法继续"
         },
         "error": {
-          "busy": "另一项回收正在进行，请稍后重试",
-          "plan_expired": "回收计划已过期，请重试",
-          "plan_not_found": "回收计划不存在，请重试",
-          "not_allowed": "该条目当前不允许回收",
-          "confirmation_required": "需要确认后才能执行",
-          "plan_failed": "获取回收计划失败，请重试",
-          "execute_failed": "回收执行失败：{{error}}"
+          "busy": "另一项清理正在进行，请稍后再试",
+          "plan_expired": "清理信息已过期，请重新开始",
+          "plan_not_found": "清理信息已失效，请重新开始",
+          "not_allowed": "该存储项当前不能清理",
+          "confirmation_required": "需要确认后才能清理",
+          "plan_failed": "无法获取清理信息，请重试",
+          "execute_failed": "清理失败：{{error}}"
         },
         "error_code": {
-          "permissionDenied": "权限不足",
+          "permissionDenied": "没有权限",
           "io": "读写失败",
-          "ownerUnavailable": "owner 不可用",
-          "policyDisabled": "保留策略已禁用",
-          "locked": "被占用或锁定",
+          "ownerUnavailable": "负责该项的模块暂时不可用",
+          "policyDisabled": "自动清理规则已关闭",
+          "locked": "文件被占用或受保护",
           "unknown": "未知原因"
         },
         "result": {
-          "done": "已回收 {{count}} 项，释放 {{size}}",
-          "partial": "部分完成：删除 {{count}} 项，释放 {{size}}，失败 {{failed}} 项",
-          "failed": "回收失败",
-          "skipped": "没有可回收的内容（可能刚被引用）"
+          "done": "已清理 {{count}} 项，释放 {{size}}",
+          "partial": "部分完成：已清理 {{count}} 项，释放 {{size}}，失败 {{failed}} 项",
+          "failed": "清理失败",
+          "skipped": "没有可清理的内容（可能刚被重新使用）"
         }
       },
       "residual": {
-        "title": "对账余量",
+        "title": "未登记占用",
         "read_only": "只读",
-        "hint": "列出受管根目录中未被条目登记的部分，不参与任何合计",
+        "hint": "受管目录中还没被上方存储项统计的部分，含已登记目录里未计入的少量文件；不计入上方合计",
         "scan": "扫描",
-        "scanning": "扫描中",
+        "scanning": "正在扫描",
         "rescan": "重新扫描",
         "retry_scan": "重试扫描",
         "status": {
           "neverRun": "尚未扫描",
-          "running": "扫描中",
+          "running": "正在扫描",
           "fresh": "上次扫描：{{time}}",
-          "stale": "上次扫描：{{time}}（可能过期）",
-          "failed": "扫描失败：{{time}}"
+          "stale": "上次扫描：{{time}}（可能已过期）",
+          "failed": "上次扫描失败（{{time}}）"
         },
         "notice": {
-          "failed_keep_last": "扫描失败，以下为上次成功扫描的数字",
-          "partial": "有界扫描未覆盖完，以下数字是下界",
-          "truncated_more": "另有 {{count}} 个未覆盖节点",
-          "over_registered": "登记值大于盘上实际值，可能是统计口径不一致",
-          "empty": "没有需要展示的余量节点",
-          "scan_failed": "触发扫描失败：{{error}}"
+          "failed_keep_last": "扫描失败，下面显示的是上次成功扫描的数据",
+          "partial": "只扫描了一部分目录，下面显示的数字可能偏小",
+          "truncated_more": "还有 {{count}} 个目录没有扫描",
+          "over_registered": "记录的大小比实际占用还大，可能是统计方式不一致",
+          "empty": "没有需要显示的未登记占用",
+          "scan_failed": "扫描失败：{{error}}"
         },
         "columns": {
           "name": "名称",
           "class": "类别",
-          "scope": "范围",
-          "scan": "扫描",
-          "declared": "登记",
-          "residual": "余量"
+          "scope": "所在位置",
+          "scan": "扫描大小",
+          "declared": "已记录",
+          "residual": "未计入"
         },
         "class": {
-          "declared": "已登记",
-          "optionalNotMounted": "可选能力未装配",
-          "companion": "伴生文件",
-          "ignored": "已知忽略",
+          "declared": "已登记·未计入",
+          "optionalNotMounted": "可选功能未启用",
+          "companion": "附属文件",
+          "ignored": "已忽略",
           "unregistered": "未登记"
         },
         "totals": {
           "unregistered": "未登记合计：{{count}} 项，{{size}}",
-          "hint": "不计入页面任何合计"
+          "hint": "不计入上方合计"
         },
         "children": {
-          "more": "另有 {{count}} 项未展开"
+          "more": "还有 {{count}} 项未展开"
         }
       }
     },

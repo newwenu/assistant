@@ -38,42 +38,32 @@ const RESIDUAL_COLUMN_MIN_PX = {
 } as const satisfies Record<(typeof RESIDUAL_COLUMN_ORDER)[number], number>;
 
 const RESIDUAL_GRID_TEMPLATE = [
-  `minmax(${RESIDUAL_COLUMN_MIN_PX.name}px, 1.6fr)`,
-  `${RESIDUAL_COLUMN_MIN_PX.class}px`,
-  `${RESIDUAL_COLUMN_MIN_PX.scope}px`,
-  `${RESIDUAL_COLUMN_MIN_PX.scan}px`,
-  `${RESIDUAL_COLUMN_MIN_PX.declared}px`,
-  `${RESIDUAL_COLUMN_MIN_PX.residual}px`,
+  "minmax(0, 1.6fr)",
+  `minmax(0, ${RESIDUAL_COLUMN_MIN_PX.class}px)`,
+  `minmax(0, ${RESIDUAL_COLUMN_MIN_PX.scope}px)`,
+  `minmax(0, ${RESIDUAL_COLUMN_MIN_PX.scan}px)`,
+  `minmax(0, ${RESIDUAL_COLUMN_MIN_PX.declared}px)`,
+  `minmax(0, ${RESIDUAL_COLUMN_MIN_PX.residual}px)`,
 ].join(" ");
 
 const RESIDUAL_ROW_GAP_PX = 12;
 
 const RESIDUAL_ROW_PADDING_X_PX = 12;
 
-const RESIDUAL_TABLE_MIN_WIDTH =
-  RESIDUAL_COLUMN_ORDER.reduce(
-    (sum, key) => sum + RESIDUAL_COLUMN_MIN_PX[key],
-    0,
-  ) +
-  RESIDUAL_ROW_GAP_PX * (RESIDUAL_COLUMN_ORDER.length - 1) +
-  RESIDUAL_ROW_PADDING_X_PX * 2;
-
 type ResidualTableVars = React.CSSProperties &
-  Record<
-    | "--storage-residual-min-width"
-    | "--storage-residual-gap"
-    | "--storage-residual-pad-x",
-    string
-  >;
+  Record<"--storage-residual-gap" | "--storage-residual-pad-x", string>;
 
 const RESIDUAL_TABLE_VARS: ResidualTableVars = {
-  "--storage-residual-min-width": `${RESIDUAL_TABLE_MIN_WIDTH}px`,
   "--storage-residual-gap": `${RESIDUAL_ROW_GAP_PX}px`,
   "--storage-residual-pad-x": `${RESIDUAL_ROW_PADDING_X_PX}px`,
 };
 
 interface ResidualTableProps {
   view: ResidualViewModel;
+}
+
+function residualChildrenDomId(name: string): string {
+  return `storage-residual-children-${name.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
 }
 
 export const ResidualTable: React.FC<ResidualTableProps> = ({ view }) => {
@@ -97,6 +87,18 @@ export const ResidualTable: React.FC<ResidualTableProps> = ({ view }) => {
 
   const renderRow = (row: ResidualRowView): React.ReactNode => {
     const open = isOpen(row);
+    const childrenId = residualChildrenDomId(row.name);
+    const nameNode = row.overRegistered ? (
+      <Tooltip
+        title={t("settings.storage.residual.notice.over_registered")}
+        mouseEnterDelay={0.3}
+      >
+        <span className="storage-residual-node">{row.name}</span>
+      </Tooltip>
+    ) : (
+      <span className="storage-residual-node">{row.name}</span>
+    );
+
     return (
       <div key={row.name} className="storage-residual-item">
         <div
@@ -111,24 +113,21 @@ export const ResidualTable: React.FC<ResidualTableProps> = ({ view }) => {
             {row.expandable ? (
               <button
                 type="button"
-                className="storage-residual-expand"
+                className="storage-residual-name-toggle"
                 aria-expanded={open}
+                aria-controls={childrenId}
                 onClick={() => toggleRow(row)}
               >
-                {open ? <DownOutlined /> : <RightOutlined />}
+                <span className="storage-residual-expand" aria-hidden="true">
+                  {open ? <DownOutlined /> : <RightOutlined />}
+                </span>
+                {nameNode}
               </button>
             ) : (
-              <span className="storage-residual-expand-spacer" />
-            )}
-            {row.overRegistered ? (
-              <Tooltip
-                title={t("settings.storage.residual.notice.over_registered")}
-                mouseEnterDelay={0.3}
-              >
-                <span className="storage-residual-node">{row.name}</span>
-              </Tooltip>
-            ) : (
-              <span className="storage-residual-node">{row.name}</span>
+              <>
+                <span className="storage-residual-expand-spacer" />
+                {nameNode}
+              </>
             )}
           </div>
 
@@ -153,26 +152,37 @@ export const ResidualTable: React.FC<ResidualTableProps> = ({ view }) => {
           </div>
         </div>
 
-        {open && (
-          <div className="storage-residual-children">
-            {row.children.map((child, index) => (
-              <div
-                key={`${index}-${child.name}`}
-                className="storage-residual-child"
-              >
-                <span className="storage-residual-child-name">
-                  {child.name}
-                </span>
-                <span className="storage-residual-child-value is-num">
-                  {child.text}
-                </span>
+        {row.expandable && (
+          <div
+            id={childrenId}
+            className={
+              open
+                ? "storage-residual-children-wrap is-open"
+                : "storage-residual-children-wrap"
+            }
+          >
+            <div className="storage-residual-children-inner">
+              <div className="storage-residual-children">
+                {row.children.map((child, index) => (
+                  <div
+                    key={`${index}-${child.name}`}
+                    className="storage-residual-child"
+                  >
+                    <span className="storage-residual-child-name">
+                      {child.name}
+                    </span>
+                    <span className="storage-residual-child-value is-num">
+                      {child.text}
+                    </span>
+                  </div>
+                ))}
+                {row.childrenMoreText !== null && (
+                  <div className="storage-residual-child is-more">
+                    {row.childrenMoreText}
+                  </div>
+                )}
               </div>
-            ))}
-            {row.childrenMoreText !== null && (
-              <div className="storage-residual-child is-more">
-                {row.childrenMoreText}
-              </div>
-            )}
+            </div>
           </div>
         )}
       </div>

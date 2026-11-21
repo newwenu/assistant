@@ -1,101 +1,83 @@
 import type { I18nPath } from "@/i18n";
-import { entryIdText } from "./lexicon";
 
-export type EntryColumnKey =
-  "name" | "size" | "availability" | "eligibility" | "policy" | "action";
+export type EntryColumnKey = "name" | "size" | "policy" | "cleanup";
 
 export const ENTRY_COLUMN_ORDER: readonly EntryColumnKey[] = [
   "name",
   "size",
-  "availability",
-  "eligibility",
   "policy",
-  "action",
+  "cleanup",
 ];
 
-export const ENTRY_COLUMN_MIN_PX = {
-  name: 220,
-  size: 120,
-  availability: 120,
-  eligibility: 176,
-  policy: 152,
-  action: 88,
-} as const satisfies Record<EntryColumnKey, number>;
-
 export const ENTRY_COLUMN_WIDTHS = {
-  name: `minmax(${ENTRY_COLUMN_MIN_PX.name}px, 1.4fr)`,
-  size: `${ENTRY_COLUMN_MIN_PX.size}px`,
-  availability: `${ENTRY_COLUMN_MIN_PX.availability}px`,
-  eligibility: `${ENTRY_COLUMN_MIN_PX.eligibility}px`,
-  policy: `${ENTRY_COLUMN_MIN_PX.policy}px`,
-  action: `${ENTRY_COLUMN_MIN_PX.action}px`,
+  name: "minmax(160px, 1.6fr)",
+  size: "minmax(90px, 0.7fr)",
+  policy: "minmax(180px, 2.2fr)",
+  cleanup: "minmax(88px, 0.6fr)",
 } as const satisfies Record<EntryColumnKey, string>;
 
 export const ENTRY_GRID_TEMPLATE = ENTRY_COLUMN_ORDER.map(
   (key) => ENTRY_COLUMN_WIDTHS[key],
 ).join(" ");
 
-export const ENTRY_ROW_GAP_PX = 12;
+export const ENTRY_ROW_GAP_PX = 16;
 
 export const ENTRY_ROW_PADDING_X_PX = 12;
-
-export const ENTRY_TABLE_MIN_WIDTH =
-  ENTRY_COLUMN_ORDER.reduce((sum, key) => sum + ENTRY_COLUMN_MIN_PX[key], 0) +
-  ENTRY_ROW_GAP_PX * (ENTRY_COLUMN_ORDER.length - 1) +
-  ENTRY_ROW_PADDING_X_PX * 2;
 
 export const ENTRY_COLUMN_LABEL_KEYS = {
   name: "settings.storage.entries.columns.name",
   size: "settings.storage.entries.columns.size",
-  availability: "settings.storage.entries.columns.availability",
-  eligibility: "settings.storage.entries.columns.eligibility",
   policy: "settings.storage.entries.columns.policy",
-  action: "settings.storage.entries.columns.action",
+  cleanup: "settings.storage.entries.columns.cleanup",
 } as const satisfies Record<EntryColumnKey, I18nPath>;
 
-export type EntryDomain =
-  | "attachments"
-  | "tools"
-  | "mascot"
-  | "database"
-  | "security"
-  | "diagnostics"
-  | "other";
+export function groupOfKey(key: string): string {
+  const slash = key.indexOf("/");
+  return slash === -1 ? key : key.slice(0, slash);
+}
 
-export const ENTRY_DOMAIN_ORDER: readonly Exclude<EntryDomain, "other">[] = [
-  "attachments",
-  "tools",
-  "mascot",
-  "database",
-  "security",
-  "diagnostics",
-];
+export const COLLAPSIBLE_GROUPS = ["security"] as const;
 
-export const ENTRY_DOMAIN_IDS = {
-  attachments: ["E1", "E2"],
-  tools: ["E3", "E4"],
-  mascot: ["E5"],
-  database: ["E6"],
-  security: ["E7", "E8", "E9", "E10", "E11"],
-  diagnostics: ["E12", "E13"],
-} as const satisfies Record<Exclude<EntryDomain, "other">, readonly string[]>;
+type CollapsibleGroup = (typeof COLLAPSIBLE_GROUPS)[number];
 
-export const ENTRY_DOMAIN_LABEL_KEYS = {
-  attachments: "settings.storage.entries.domains.attachments",
-  tools: "settings.storage.entries.domains.tools",
-  mascot: "settings.storage.entries.domains.mascot",
-  database: "settings.storage.entries.domains.database",
-  security: "settings.storage.entries.domains.security",
-  diagnostics: "settings.storage.entries.domains.diagnostics",
-  other: "settings.storage.entries.domains.other",
-} as const satisfies Record<EntryDomain, I18nPath>;
+export function collapsibleGroupOf(key: string): CollapsibleGroup | null {
+  const prefix = groupOfKey(key);
+  return COLLAPSIBLE_GROUPS.includes(prefix as CollapsibleGroup)
+    ? (prefix as CollapsibleGroup)
+    : null;
+}
 
-export function domainOfKey(key: string): EntryDomain {
-  const id = entryIdText(key);
-  if (id === null) return "other";
-  for (const domain of ENTRY_DOMAIN_ORDER) {
-    const ids: readonly string[] = ENTRY_DOMAIN_IDS[domain];
-    if (ids.includes(id)) return domain;
+export interface EntryBlockRows<T> {
+  group: CollapsibleGroup | null;
+  rows: T[];
+}
+
+export function buildBlocks<T extends { key: string }>(
+  rows: readonly T[],
+): EntryBlockRows<T>[] {
+  const blocks: EntryBlockRows<T>[] = [];
+  const groupBlocks = new Map<CollapsibleGroup, EntryBlockRows<T>>();
+
+  for (const row of rows) {
+    const group = collapsibleGroupOf(row.key);
+    if (group === null) {
+      blocks.push({ group: null, rows: [row] });
+      continue;
+    }
+
+    const existing = groupBlocks.get(group);
+    if (existing !== undefined) {
+      existing.rows.push(row);
+      continue;
+    }
+
+    groupBlocks.set(group, { group, rows: [row] });
   }
-  return "other";
+
+  for (const group of COLLAPSIBLE_GROUPS) {
+    const block = groupBlocks.get(group);
+    if (block !== undefined) blocks.push(block);
+  }
+
+  return blocks;
 }

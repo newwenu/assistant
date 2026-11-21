@@ -4,7 +4,6 @@ import { bytesOrDash, countText, timeText, type TagTone } from "./format";
 import {
   availabilityText,
   eligibilityText,
-  entryIdText,
   entryNameText,
   layerText,
   policyChips,
@@ -14,7 +13,7 @@ import {
 
 export type { TagTone } from "./format";
 
-export type EntryActionView =
+export type CleanupActionView =
   | {
       kind: "button";
       disabled: boolean;
@@ -24,25 +23,19 @@ export type EntryActionView =
   | { kind: "text"; text: string }
   | { kind: "none" };
 
+export interface EntryAvailabilityBadge {
+  tone: TagTone;
+  reason: string;
+}
+
 export interface EntryRowView {
   key: string;
-  id: string | null;
   name: string;
-  nameIsFallback: boolean;
   sizeText: string;
   countText: string | null;
-  availability: {
-    text: string;
-    tone: TagTone;
-    reason: string | null;
-  };
-  eligibility: {
-    text: string;
-    tone: TagTone;
-    secondLine: string | null;
-  };
+  availabilityBadge: EntryAvailabilityBadge | null;
   policyChips: string[];
-  action: EntryActionView;
+  cleanup: CleanupActionView;
 }
 
 export interface EntryDetailItem {
@@ -58,44 +51,38 @@ export interface EntryDetailView {
   note: string | null;
 }
 
-const AVAILABILITY_TONES = {
-  available: "neutral",
-  missing: "neutral",
+const ABNORMAL_AVAILABILITY_TONES = {
   locked: "warning",
+  staleReport: "warning",
   unreadable: "error",
   unavailable: "error",
-  notImplemented: "info",
+  notImplemented: "neutral",
   noReportYet: "neutral",
-  staleReport: "warning",
 } as const satisfies Record<string, TagTone>;
 
-const ELIGIBILITY_TONES = {
-  eligible: "success",
-  notEligible: "neutral",
-  locked: "warning",
-  ownerManaged: "info",
-  notImplemented: "info",
-} as const satisfies Record<string, TagTone>;
-
-function toneOf(
-  tones: Readonly<Record<string, TagTone>>,
-  value: string,
-): TagTone {
-  return Object.prototype.hasOwnProperty.call(tones, value)
-    ? tones[value]
-    : "neutral";
+function badgeTone(availability: string): TagTone | null {
+  return Object.prototype.hasOwnProperty.call(
+    ABNORMAL_AVAILABILITY_TONES,
+    availability,
+  )
+    ? ABNORMAL_AVAILABILITY_TONES[
+        availability as keyof typeof ABNORMAL_AVAILABILITY_TONES
+      ]
+    : null;
 }
 
-function eligibilitySecondLine(entry: StorageEntryDto): string | null {
-  const reclaim = entry.reclaim;
-  if (reclaim.eligibility === "notImplemented" && reclaim.note !== null) {
-    return reclaim.note;
-  }
-  if (reclaim.reason !== null) return reasonText(reclaim.reason);
-  return null;
+function availabilityBadge(
+  entry: StorageEntryDto,
+): EntryAvailabilityBadge | null {
+  const tone = badgeTone(entry.availability);
+  if (tone === null) return null;
+  return {
+    tone,
+    reason: entry.availabilityReason ?? availabilityText(entry.availability),
+  };
 }
 
-function actionView(entry: StorageEntryDto): EntryActionView {
+function cleanupView(entry: StorageEntryDto): CleanupActionView {
   const reclaim = entry.reclaim;
 
   if (reclaim.action === "none") {
@@ -117,7 +104,10 @@ function actionView(entry: StorageEntryDto): EntryActionView {
   }
 
   if (reclaim.eligibility === "ownerManaged") {
-    return { kind: "text", text: eligibilityText("ownerManaged") };
+    return {
+      kind: "text",
+      text: translateKey("settings.storage.entries.eligibility.auto_managed"),
+    };
   }
 
   const reason =
@@ -136,26 +126,15 @@ function actionView(entry: StorageEntryDto): EntryActionView {
 }
 
 export function entryRowView(entry: StorageEntryDto): EntryRowView {
-  const id = entryIdText(entry.key);
+  const name = entryNameText(entry.key);
   return {
     key: entry.key,
-    id,
-    name: entryNameText(entry.key),
-    nameIsFallback: id === null,
+    name,
     sizeText: bytesOrDash(entry.bytes),
     countText: entry.bytes === null ? null : countText(entry.count),
-    availability: {
-      text: availabilityText(entry.availability),
-      tone: toneOf(AVAILABILITY_TONES, entry.availability),
-      reason: entry.availabilityReason,
-    },
-    eligibility: {
-      text: eligibilityText(entry.reclaim.eligibility),
-      tone: toneOf(ELIGIBILITY_TONES, entry.reclaim.eligibility),
-      secondLine: eligibilitySecondLine(entry),
-    },
+    availabilityBadge: availabilityBadge(entry),
     policyChips: policyChips(entry.reclaim.policy, entry.reclaim.autoActive),
-    action: actionView(entry),
+    cleanup: cleanupView(entry),
   };
 }
 
@@ -202,18 +181,14 @@ function policyText(entry: StorageEntryDto): string {
   if (policy.mutable) {
     parts.push(translateKey("settings.storage.entries.facts.mutable"));
   }
-  if (policy.failClosed) {
-    parts.push(translateKey("settings.storage.entries.facts.fail_closed"));
-  }
   return parts.join(" · ");
 }
 
 export function entryDetailView(entry: StorageEntryDto): EntryDetailView {
-  const id = entryIdText(entry.key);
   const items: EntryDetailItem[] = [
     {
       label: null,
-      value: id === null ? entry.key : `${id} / ${entry.key}`,
+      value: entry.key,
       mono: true,
     },
     {

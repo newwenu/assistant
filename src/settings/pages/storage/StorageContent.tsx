@@ -2,8 +2,8 @@ import React from "react";
 import { Button, Empty, Spin } from "antd";
 import { useTranslation } from "react-i18next";
 import { SettingsPageShell } from "../../shared/layout/SettingsPageShell";
-import { AttachmentSection } from "./AttachmentSection";
-import { EntrySection } from "./EntrySection";
+import { AttachmentBlock } from "./AttachmentBlock";
+import { EntryBlock } from "./EntryBlock";
 import { ResidualSection } from "./ResidualSection";
 import { SnapshotToolbar } from "./SnapshotToolbar";
 import { useStorageSnapshot } from "./useStorageSnapshot";
@@ -51,15 +51,12 @@ export const StorageContent: React.FC = () => {
         onRefresh={snapshot.refresh}
       />
 
-      <AttachmentSection
+      <AttachmentBlock
         breakdown={breakdown}
         onDelete={snapshot.deleteAttachments}
       />
 
-      <EntrySection
-        entries={breakdown.entries}
-        onReclaimed={snapshot.refresh}
-      />
+      <EntryBlock entries={breakdown.entries} onFinished={snapshot.refresh} />
 
       <ResidualSection
         inventory={breakdown.inventory}

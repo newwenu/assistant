@@ -2,56 +2,6 @@ import { translateKey, type I18nPath } from "@/i18n";
 import type { ReclaimPolicyDto } from "@/types/protocol.contract";
 import { formatBytes } from "@/utils/formatBytes";
 
-export const ENTRY_KEYS = [
-  "attachments",
-  "attachments/derived",
-  "tool-results",
-  "tool-index",
-  "mascot-assets",
-  "assistant.db",
-  "security/security.db",
-  "security/backups",
-  "security/vault",
-  "security/recovery",
-  "security/audit",
-  "logs",
-  "crashes",
-] as const;
-
-export type EntryKey = (typeof ENTRY_KEYS)[number];
-
-const ENTRY_IDS = {
-  attachments: "E1",
-  "attachments/derived": "E2",
-  "tool-results": "E3",
-  "tool-index": "E4",
-  "mascot-assets": "E5",
-  "assistant.db": "E6",
-  "security/security.db": "E7",
-  "security/backups": "E8",
-  "security/vault": "E9",
-  "security/recovery": "E10",
-  "security/audit": "E11",
-  logs: "E12",
-  crashes: "E13",
-} as const satisfies Record<EntryKey, string>;
-
-const ENTRY_NAME_KEYS = {
-  attachments: "settings.storage.entries.names.e1",
-  "attachments/derived": "settings.storage.entries.names.e2",
-  "tool-results": "settings.storage.entries.names.e3",
-  "tool-index": "settings.storage.entries.names.e4",
-  "mascot-assets": "settings.storage.entries.names.e5",
-  "assistant.db": "settings.storage.entries.names.e6",
-  "security/security.db": "settings.storage.entries.names.e7",
-  "security/backups": "settings.storage.entries.names.e8",
-  "security/vault": "settings.storage.entries.names.e9",
-  "security/recovery": "settings.storage.entries.names.e10",
-  "security/audit": "settings.storage.entries.names.e11",
-  logs: "settings.storage.entries.names.e12",
-  crashes: "settings.storage.entries.names.e13",
-} as const satisfies Record<EntryKey, I18nPath>;
-
 const AVAILABILITY_KEYS = {
   available: "settings.storage.entries.availability.available",
   missing: "settings.storage.entries.availability.missing",
@@ -120,13 +70,33 @@ const LAYER_KEYS = {
 } as const satisfies Record<string, I18nPath>;
 
 const ERROR_CODE_KEYS = {
-  permissionDenied: "settings.storage.reclaim.error_code.permissionDenied",
-  io: "settings.storage.reclaim.error_code.io",
-  ownerUnavailable: "settings.storage.reclaim.error_code.ownerUnavailable",
-  policyDisabled: "settings.storage.reclaim.error_code.policyDisabled",
-  locked: "settings.storage.reclaim.error_code.locked",
-  unknown: "settings.storage.reclaim.error_code.unknown",
+  permissionDenied: "settings.storage.cleanup.error_code.permissionDenied",
+  io: "settings.storage.cleanup.error_code.io",
+  ownerUnavailable: "settings.storage.cleanup.error_code.ownerUnavailable",
+  policyDisabled: "settings.storage.cleanup.error_code.policyDisabled",
+  locked: "settings.storage.cleanup.error_code.locked",
+  unknown: "settings.storage.cleanup.error_code.unknown",
 } as const satisfies Record<string, I18nPath>;
+
+const ENTRY_NAME_KEYS: Readonly<Record<string, I18nPath>> = {
+  attachments: "settings.storage.entries.names.attachments",
+  "attachments/derived": "settings.storage.entries.names.attachments_derived",
+  "tool-results": "settings.storage.entries.names.tool_results",
+  "tool-index": "settings.storage.entries.names.tool_index",
+  "mascot-assets": "settings.storage.entries.names.mascot_assets",
+  "assistant.db": "settings.storage.entries.names.assistant_db",
+  "security/security.db": "settings.storage.entries.names.security_security_db",
+  "security/backups": "settings.storage.entries.names.security_backups",
+  "security/vault": "settings.storage.entries.names.security_vault",
+  "security/recovery": "settings.storage.entries.names.security_recovery",
+  "security/audit": "settings.storage.entries.names.security_audit",
+  logs: "settings.storage.entries.names.logs",
+  crashes: "settings.storage.entries.names.crashes",
+};
+
+const GROUP_NAME_KEYS: Readonly<Record<string, I18nPath>> = {
+  security: "settings.storage.entries.groups.security",
+};
 
 function lookupKey(
   keys: Readonly<Record<string, I18nPath>>,
@@ -150,19 +120,20 @@ function textOf(
   return translateKey(key);
 }
 
-export function entryIdText(key: string): string | null {
-  return Object.prototype.hasOwnProperty.call(ENTRY_IDS, key)
-    ? ENTRY_IDS[key as EntryKey]
-    : null;
+function optionalTextOf(
+  keys: Readonly<Record<string, I18nPath>>,
+  value: string,
+): string {
+  const key = lookupKey(keys, value);
+  return key === undefined ? value : translateKey(key);
 }
 
 export function entryNameText(key: string): string {
-  const id = entryIdText(key);
-  if (id === null) {
-    console.warn(`[storage] unknown entry key: "${key}"`);
-    return key;
-  }
-  return translateKey(ENTRY_NAME_KEYS[key as EntryKey]);
+  return optionalTextOf(ENTRY_NAME_KEYS, key);
+}
+
+export function groupNameText(group: string): string {
+  return optionalTextOf(GROUP_NAME_KEYS, group);
 }
 
 export function availabilityText(value: string): string {
@@ -174,11 +145,11 @@ export function eligibilityText(value: string): string {
 }
 
 export function reasonText(value: string): string {
-  return textOf(REASON_KEYS, value, "reclaim reason");
+  return textOf(REASON_KEYS, value, "cleanup reason");
 }
 
 export function actionText(value: string): string {
-  return textOf(ACTION_KEYS, value, "reclaim action");
+  return textOf(ACTION_KEYS, value, "cleanup action");
 }
 
 export function policySourceText(value: string): string {
@@ -193,8 +164,8 @@ export function layerText(value: string): string {
   return textOf(LAYER_KEYS, value, "layer");
 }
 
-export function reclaimErrorCodeText(value: string): string {
-  return textOf(ERROR_CODE_KEYS, value, "reclaim error code");
+export function cleanupErrorCodeText(value: string): string {
+  return textOf(ERROR_CODE_KEYS, value, "cleanup error code");
 }
 
 export function policyChips(

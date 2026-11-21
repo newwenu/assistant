@@ -1,18 +1,18 @@
 import React, { useEffect, useRef } from "react";
 import { Alert, Button, Input, Modal } from "antd";
 import { useTranslation } from "react-i18next";
-import { dialogBody, dialogTitle, type ReclaimState } from "./reclaimFlow";
+import { dialogBody, dialogTitle, type CleanupState } from "./cleanupFlow";
 
-interface ReclaimDialogProps {
+interface CleanupDialogProps {
   open: boolean;
-  state: ReclaimState;
+  state: CleanupState;
   canExecute: boolean;
   onConfirm: () => void;
   onCancel: () => void;
   onTypedKey: (value: string) => void;
 }
 
-export const ReclaimDialog: React.FC<ReclaimDialogProps> = ({
+export const CleanupDialog: React.FC<CleanupDialogProps> = ({
   open,
   state,
   canExecute,
@@ -56,7 +56,7 @@ export const ReclaimDialog: React.FC<ReclaimDialogProps> = ({
       keyboard={!executing}
       footer={[
         <Button key="cancel" disabled={executing} onClick={onCancel}>
-          {t("settings.storage.reclaim.cancel")}
+          {t("settings.storage.cleanup.cancel")}
         </Button>,
         <Button
           key="ok"
@@ -67,27 +67,27 @@ export const ReclaimDialog: React.FC<ReclaimDialogProps> = ({
           onClick={onConfirm}
         >
           {executing
-            ? t("settings.storage.reclaim.executing")
-            : t("settings.storage.reclaim.ok")}
+            ? t("settings.storage.cleanup.executing")
+            : t("settings.storage.cleanup.ok")}
         </Button>,
       ]}
     >
-      <p className="storage-reclaim-body">{dialogBody(state)}</p>
+      <p className="storage-cleanup-body">{dialogBody(state)}</p>
 
       {plan !== null && (
-        <p className="storage-reclaim-key">
-          {t("settings.storage.reclaim.dialog.key_hint", { key: plan.key })}
+        <p className="storage-cleanup-key">
+          {t("settings.storage.cleanup.dialog.key_hint", { key: plan.key })}
         </p>
       )}
 
       {strong && plan !== null && (
-        <div className="storage-reclaim-input">
+        <div className="storage-cleanup-input">
           <Input
             value={state.typedKey}
             autoFocus
             disabled={executing}
             status={mismatch ? "error" : undefined}
-            placeholder={t("settings.storage.reclaim.strong.placeholder", {
+            placeholder={t("settings.storage.cleanup.strong.placeholder", {
               key: plan.key,
             })}
             onChange={(event) => onTypedKey(event.target.value)}
@@ -96,8 +96,8 @@ export const ReclaimDialog: React.FC<ReclaimDialogProps> = ({
             }}
           />
           {mismatch && (
-            <span className="storage-reclaim-mismatch">
-              {t("settings.storage.reclaim.strong.mismatch")}
+            <span className="storage-cleanup-mismatch">
+              {t("settings.storage.cleanup.strong.mismatch")}
             </span>
           )}
         </div>
@@ -106,7 +106,7 @@ export const ReclaimDialog: React.FC<ReclaimDialogProps> = ({
       <Alert
         type="warning"
         showIcon
-        title={t("settings.storage.reclaim.dialog.irreversible")}
+        title={t("settings.storage.cleanup.dialog.irreversible")}
       />
     </Modal>
   );

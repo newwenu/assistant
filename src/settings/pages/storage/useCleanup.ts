@@ -7,47 +7,47 @@ import type {
   StorageReclaimPlanEntryDto,
 } from "@/types/protocol.contract";
 import {
-  INITIAL_RECLAIM_STATE,
+  INITIAL_CLEANUP_STATE,
   canExecute as canExecuteState,
+  cleanupErrorView,
+  cleanupReducer,
+  cleanupResultNotice,
   dialogOpen as dialogOpenState,
-  reclaimErrorView,
-  reclaimReducer,
-  reclaimResultNotice,
-  type ReclaimErrorView,
-  type ReclaimResultNotice,
-  type ReclaimState,
-} from "./reclaimFlow";
+  type CleanupErrorView,
+  type CleanupResultNotice,
+  type CleanupState,
+} from "./cleanupFlow";
 
-export interface ReclaimHandle {
-  state: ReclaimState;
+export interface CleanupHandle {
+  state: CleanupState;
   dialogOpen: boolean;
   canExecute: boolean;
-  requestReclaim: (key: string, action: StorageReclaimActionDto) => void;
+  requestCleanup: (key: string, action: StorageReclaimActionDto) => void;
   confirm: () => void;
   cancel: () => void;
   setTypedKey: (value: string) => void;
 }
 
-const PLAN_FAILED_VIEW: ReclaimErrorView = {
-  messageKey: "settings.storage.reclaim.error.plan_failed",
+const PLAN_FAILED_VIEW: CleanupErrorView = {
+  messageKey: "settings.storage.cleanup.error.plan_failed",
   detail: null,
   keepDialogOpen: false,
 };
 
-function noticeText(notice: ReclaimResultNotice): string {
+function noticeText(notice: CleanupResultNotice): string {
   return notice.detail === null
     ? notice.text
     : `${notice.text} · ${notice.detail}`;
 }
 
-export function useReclaim(onFinished: () => void): ReclaimHandle {
-  const [state, dispatch] = useReducer(reclaimReducer, INITIAL_RECLAIM_STATE);
+export function useCleanup(onFinished: () => void): CleanupHandle {
+  const [state, dispatch] = useReducer(cleanupReducer, INITIAL_CLEANUP_STATE);
   const { message } = App.useApp();
   const planIdRef = useRef<string | null>(null);
   const activeRef = useRef(false);
 
   const showError = useCallback(
-    (view: ReclaimErrorView): void => {
+    (view: CleanupErrorView): void => {
       const detail = view.detail;
       message.error(
         detail === null
@@ -59,7 +59,7 @@ export function useReclaim(onFinished: () => void): ReclaimHandle {
   );
 
   const showNotice = useCallback(
-    (notice: ReclaimResultNotice): void => {
+    (notice: CleanupResultNotice): void => {
       const text = noticeText(notice);
       switch (notice.kind) {
         case "success":
@@ -90,9 +90,9 @@ export function useReclaim(onFinished: () => void): ReclaimHandle {
           true,
         );
         dispatch({ type: "succeeded" });
-        showNotice(reclaimResultNotice(result));
+        showNotice(cleanupResultNotice(result));
       } catch (raw) {
-        const view = reclaimErrorView("execute", raw);
+        const view = cleanupErrorView("execute", raw);
         showError(view);
         dispatch({
           type: "failed",
@@ -107,7 +107,7 @@ export function useReclaim(onFinished: () => void): ReclaimHandle {
     [onFinished, showError, showNotice],
   );
 
-  const requestReclaim = useCallback(
+  const requestCleanup = useCallback(
     (key: string, action: StorageReclaimActionDto): void => {
       if (activeRef.current) return;
       activeRef.current = true;
@@ -126,7 +126,7 @@ export function useReclaim(onFinished: () => void): ReclaimHandle {
           }
         } catch (raw) {
           activeRef.current = false;
-          showError(reclaimErrorView("plan", raw));
+          showError(cleanupErrorView("plan", raw));
           dispatch({ type: "failed", keepDialogOpen: false });
           return;
         }
@@ -171,7 +171,7 @@ export function useReclaim(onFinished: () => void): ReclaimHandle {
     state,
     dialogOpen: dialogOpenState(state),
     canExecute: canExecuteState(state),
-    requestReclaim,
+    requestCleanup,
     confirm,
     cancel,
     setTypedKey,
