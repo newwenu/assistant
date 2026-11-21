@@ -4,9 +4,9 @@
 |---|---|
 | 状态 | 草案（现状事实已核实，待排期） |
 | 日期 | 2026-11-20 |
-| 事实来源 | `docs/analysis/error-swallowing-analysis.md`（检索快照与分组分析） |
+| 事实来源 | `docs/achievement/error-swallowing-analysis.md`（检索快照与分组分析；已移至待归档目录） |
 | 判定依据 | `docs/analysis/PROJECT-DESIGN-GUIDELINES.md` §4「错误处理」 |
-| 相邻规格 | `docs/store/I64-storage-vault-integration-audit-spec.md`（其 EXP-4 的配置 fail-open 议题不在本规格范围，见 OQ-2） |
+| 相邻规格 | `docs/achievement/I64-storage-vault-integration-audit-spec.md`（其 EXP-4 的配置 fail-open 议题不在本规格范围，见 OQ-2；已移至待归档目录） |
 | 影响范围 | `src/`、`src-tauri/`、`eslint.config.ts`、`scripts/check.mjs`、新增 `scripts/check-error-swallow.mjs` |
 | 契约影响 | `VaultErrorCode` 扩展，需 `npm run contract:gen` 并提交 `src/vault/core/contract/vault.contract.ts` |
 | 前端影响 | Store 新增错误状态字段、失败提示与新增 i18n 键 |
@@ -43,12 +43,12 @@
 | P0-1 流式落库 `let _ = db_tx.send` | 缺口 | `cmd/chat/stream.rs` 已不存在；改为 adapter 模式（`kernel/turn/persist.rs`、`event_sink.rs`、`message_store.rs`），`persist_terminal` 返回 `Result` 且内容写失败也要写终态 | 失效，关闭 |
 | P0-2 32 处 `let _ = audit_log` | 缺口 | `audit/jsonl.rs` 的 `log_dual` 返回 `()`，内部对 DB/JSONL 失败仅 `warn`；调用方已不再丢弃返回值 | 基本失效，仅剩 1 处（T1） |
 | P0-3 错误语义替换 | 缺口 | 仍存在，位置移到 `dto/convert/error.rs`（`Database`/`Io`/`Clipboard`/`AlreadyUnlocked`/`Other` 全部塌缩为 `Internal`） | 保留，拆为 T2 |
-| P0-3 附带：`open_dek` AEAD 失败 → `InvalidPassword` | 缺口 | 仍在 `vault_crypto/mod.rs:131`；AEAD 失败在信息论上无法区分「密码错」与「密文损坏」 | 不可消除，改为 UI 文案补偿（T2-c） |
+| P0-3 附带：`open_dek` AEAD 失败 → `InvalidPassword` | 缺口 | 仍在 `vault_crypto/mod.rs:132`（长度不符的 `VaultCorrupted` 在 `:137`）；AEAD 失败在信息论上无法区分「密码错」与「密文损坏」 | 不可消除，改为 UI 文案补偿（T2-c） |
 | P1 前端静默吞没 5 处 | 缺口 | 5 处全部仍在 | 保留（T3） |
 | P1-3 `MessageBubble.tsx:76` 复制失败无反馈 | 缺口 | 已修复：`MessageActions.copyTextToClipboard` 返回布尔，`onCopy` 布尔约定决定是否显示「已复制」（I46 §4.2） | 失效，关闭 |
 | P2-1 `FileCard.tsx:19` / `ImageThumbnail.tsx:75` 裸 `console.warn` | 缺口 | 已不存在，`src/chat/message/` 下无 `console.*` | 失效，关闭 |
 | P1-4 剪贴板还原丢弃返回值 | 缺口 | 仍在 `clipboard_guard.rs:147/150`，分析中的 78/80 行号已过期 | 保留（T6） |
-| P1-5 分支定位 `.ok()` | 缺口 | 仍在 `tree_ops.rs:175/190` | 保留（T7） |
+| P1-5 分支定位 `.ok()` | 缺口 | 仍在 `tree_ops.rs:162/171-172/175/186-187/190`；另 `:123` 的 `unwrap_or(false)` 会把「查询失败」误判为「分支不存在」并改写指针（静默数据损坏） | 保留（T7） |
 | P1-9 settingsStore / SettingsGroup 仅 `log.error` | 缺口 | 仍在；且 `useSettingMessage` 已提供未被使用的 `showFailed()` | 保留（T5） |
 | P1-10 落库失败日志缺上下文 | 缺口 | 仍在：`kernel/turn/runner.rs:140` 为 `log::error!("terminal persist failed: {err}")`，未带会话 / 消息 id | 保留（T1c） |
 | 其余 P1/P2 | 缺口 | 行号漂移，结论成立 | 保留，§5 重列 |
@@ -57,7 +57,7 @@
 
 ## 2 分类与判定口径
 
-- 吞没分类（S1–S6）、后果等级（P0–P3）、吞没与降级的判定原则：唯一来源为 `docs/analysis/error-swallowing-analysis.md` §1.2 / §1.3 / §1.4，本规格不复制。
+- 吞没分类（S1–S6）、后果等级（P0–P3）、吞没与降级的判定原则：唯一来源为 `docs/achievement/error-swallowing-analysis.md` §1.2 / §1.3 / §1.4（待归档目录），本规格不复制。
 - 本规格在执行层面把 §1.4 展开为四条可操作口径（D1）：
 
 | 路径性质 | 失败处理要求 |
@@ -80,15 +80,15 @@
 | N3 | `src/chat/core/chatUtils.ts:66` | token 用量拉取 `.catch(() => {})`，无日志无反馈 |
 | N4 | `src/history/detail/HistoryBranchRow.tsx:82` | 复制记录 JSON 到剪贴板失败 `.catch(() => {})`，用户主动动作无反馈 |
 | N5 | `src/chat/ConversationView.tsx:95` | `void prefetchAttachmentLimits().catch(() => {})`，附件限制预取失败静默 |
-| N6 | `src/settings/pages/storage/`：`entryView.ts:103`、`reclaimFlow.ts:186/227/237`、`residualView.ts:181`、`lexicon.ts:147/162` | 7 处裸 `console.warn`（枚举未知值兜底，属防御分支但违反硬规则 2） |
-| N7 | `src/services/stream/transport.ts:175` | `console.debug` 由 `import.meta.env.DEV` 门控（折叠器观测，可接受但应走 logger） |
+| N6 | `src/settings/pages/storage/`：`entryView.ts:90`、`cleanupFlow.ts:186/227/237`、`residualView.ts:181`、`lexicon.ts:117` | 6 处裸 `console.warn`（枚举未知值兜底，属防御分支但违反硬规则 2；`reclaimFlow.ts` 已重命名为 `cleanupFlow.ts`） |
+| N7 | `src/services/stream/transport.ts:175` | 1 处 `console.debug` 由 `import.meta.env.DEV` 门控（折叠器观测，可接受但应走 logger）；分析文档的「7 处」把本条并入 N6，两者级别不同 |
 | N8 | `src/stores/toolStore.ts:71/94/112/122/133` | 5 处收藏 / 最近使用失败走 `log.debug`，默认生产级别（WARN）不可见 |
 | N9 | `src/stores/historyStore.ts`（`selectConversation` / `refreshMessages` / `loadConversations`） | 失败仅 `log.error`，无错误状态字段，UI 与「空列表」不可区分 |
 | N10 | `src/stores/settingsStore.ts`（`loadConf`） | 失败仅 `log.error`，设置页继续展示默认值，用户无感 |
 | N11 | `src/stores/providerStore.ts`（`loadProviders`） | 失败仅 `log.error`，provider 列表退化为空 |
 | N12 | `src/vault/core/slices/vaultSyncSlice.ts`（6 个 `load*` 读取动作：config / remoteStatus / readyness / conflicts / pendingRemovals / lastTime） | 失败仅 `log.error`；`remoteStatus` / `syncConflicts` 被置空，`syncConfig` / `pendingRemovals` / `syncLastAt` 保留旧值，均无失败标记（写动作 `saveSyncConfig` 已走 `failWith`，不受影响） |
 | N12b | `src/vault/core/slices/vaultSyncSlice.ts:487/508/516/525`（`sshListAgent` / `sshCheckAgentRunning` / `sshParseKey` / `sshKeyMeta`） | 失败仅 `log.error`：前两者状态保持旧值（首次调用则为空列表 / `undefined`），后两者 `return null` 把「解析失败」与「无结果」压成同一返回 |
-| N13 | `src/settings/shared/sections/SettingsGroup.tsx:118-119`、`:138-139` | 两处写失败（`handleChange` / `handleIntermediateChangeComplete`）仅 `log.error("patch failed for ${def.key}")`；同文件的 `useSettingMessage` 已提供 `showFailed(raw, key?)` 但未调用；`optimisticConfUpdate` 无回滚，失败后界面仍显示未落库的值 |
+| N13 | `src/settings/shared/sections/SettingsGroup.tsx:119`、`:139` | 两处写失败（`handleChange` / `handleIntermediateChangeComplete`）仅 `log.error("patch failed for ${def.key}")`；同文件的 `useSettingMessage` 已提供 `showFailed(raw, key?)` 但未调用；`optimisticConfUpdate` 无回滚，失败后界面仍显示未落库的值 |
 | N14 | `eslint.config.ts` | 无 `no-console`、无 `.catch(() => {})` 的 `no-restricted-syntax` 选择器；`no-empty` 由 `js.configs.recommended` 提供（块内含注释即通过），门禁实际为零 |
 
 ### 3.2 Rust
@@ -96,19 +96,19 @@
 | # | 位置 | 事实 |
 |---|---|---|
 | N15 | `src-tauri/crates/assistant-vault/src/security_db/biometric_ops.rs:151` | `let _ = state.with_conn(log_dual);` 丢弃审计连接失败（全仓唯一残留的 `audit_log` 丢弃点） |
-| N16 | `src-tauri/crates/assistant-vault/src/dto/convert/error.rs:9/16/20/21/38` | `AlreadyUnlocked`/`Database`/`Clipboard`/`Io`/`Other` 一律映射为 `VaultErrorCode::Internal`，前端无法区分 DB 故障与逻辑 bug |
-| N17 | `src-tauri/crates/assistant-crypto/src/vault_crypto/mod.rs:131` | AEAD 解密失败统一 `InvalidPassword`；长度不符则 `VaultCorrupted` |
-| N18 | `src-tauri/crates/assistant-security/src/clipboard_guard.rs:129/147/150` | 后台线程 `let _ = thread::spawn`（句柄丢弃，P3）+ `let _ = backend.write` / `let _ = backend.clear`（还原失败无痕迹） |
-| N19 | `src-tauri/crates/assistant-storage/src/conversations/tree_ops.rs:175/190` | `find_new_active_leaf` 用 `.ok()` 把查询错误降级为 `None`，「无分支」与「查询失败」不可区分 |
+| N16 | `src-tauri/crates/assistant-vault/src/dto/convert/error.rs:10/16/20/21/38` | `AlreadyUnlocked`/`Database`/`Clipboard`/`Io`/`Other` 一律映射为 `VaultErrorCode::Internal`，前端无法区分 DB 故障与逻辑 bug |
+| N17 | `src-tauri/crates/assistant-crypto/src/vault_crypto/mod.rs:132` | `open_dek` 的 AEAD 解密失败统一映射 `InvalidPassword`（`:132`）；长度不符则 `VaultCorrupted`（`:137`） |
+| N18 | `src-tauri/crates/assistant-security/src/clipboard_guard.rs:129/147/150` | 后台线程 `let _ = thread::spawn`（句柄丢弃，P3）+ `let _ = backend.write`（`:147`）/ `let _ = backend.clear`（`:150`）（还原失败无痕迹） |
+| N19 | `src-tauri/crates/assistant-storage/src/conversations/tree_ops.rs:162/171-172/175/186-187/190`，另 `:123` | `find_new_active_leaf` 用 `.ok()` / `.unwrap_or(false)` 把查询错误降级为 `None` / `false`，「无分支」与「查询失败」不可区分；`:123` 的 `still_exists` 判空会把查询失败当成「分支已不存在」，进而把 `active_branch_id` 置 NULL（静默数据损坏） |
 | N20 | `src-tauri/crates/assistant-sync/src/git_sync/remote.rs:138` | `let _ = git::git_config_branch_set_remote(...)`，写 remote 失败静默 |
 | N21 | `src-tauri/src/tray.rs:110/113/127/131/135/150` | 6 处 `let _ = window::show_or_create(...)`，唤起窗口失败无日志 |
-| N22 | `src-tauri/src/setup.rs:218-220`、`:231` | `AppConf::load()` 失败直接 `return`（全局快捷键整体不注册且无日志）；`let _ = gs.unregister_all()` |
-| N23 | `src-tauri/crates/assistant-crash/src/crash_dump.rs:122/136` | `let _ = fs::write(&log_path, ...)`，崩溃路径写日志失败无输出（`prepare_dir` 失败已 `eprintln!`） |
+| N22 | `src-tauri/src/setup.rs:218-220`、`:230` | `AppConf::load()` 失败直接 `return`（全局快捷键整体不注册且无日志）；`let _ = gs.unregister_all()` 在 `:230` |
+| N23 | `src-tauri/crates/assistant-crash/src/crash_dump.rs:140/154` | `let _ = fs::write(&log_path, ...)`，崩溃路径写日志失败无输出（`prepare_dir` 失败已 `eprintln!`） |
 | N24 | `src-tauri/crates/assistant-providers/src/openai/discovery.rs:16/49` | 条目被跳过时逐条 `continue`，无计数、无汇总，全部跳过时表现为「模型清单为空」 |
 | N25 | `src-tauri/crates/assistant-agent/src/kernel/turn/runner.rs:140` | 终态落库失败 `log::error!("terminal persist failed: {err}")`，未带 `conversation_id` / `message_id`，无法定位是哪条消息 |
 | N26 | `src-tauri/src/cmd/compaction.rs:390-392`、`:403` | 压缩收尾：`let Ok(conn) = get_db_conn(...) else { return }` 无日志直接返回；`update_message_content` 用 `let _ =` 丢弃结果（同函数内 token usage 写入失败已 `log::error`，风格不一致） |
 | N27 | `src-tauri/src/menu.rs:15`、`src-tauri/src/window.rs:216` | 菜单项 / 内部流程唤起主窗口失败无日志（与 N21 同类，分析未覆盖） |
-| N28 | `src-tauri/src/cmd/app.rs:17/23`、`src-tauri/src/window.rs:573`、`src-tauri/src/setup.rs:338`、`src-tauri/src/cmd/orb.rs:119/124/129/161/204` | 退出与拖拽过程中的窗口几何 / Orb 位置 / 配置落盘失败静默（偏好丢失，用户下次启动才发现） |
+| N28 | `src-tauri/src/cmd/app.rs:17/23`、`src-tauri/src/window.rs:573`、`src-tauri/src/setup.rs:337`、`src-tauri/src/cmd/orb.rs:119/124/128/129/161/185/197/204` | 退出与拖拽过程中的窗口几何 / Orb 位置 / 配置落盘失败静默（偏好丢失，用户下次启动才发现）；`setup.rs` 另有 `:187/:191`（`window::toggle`）与 `:274/:276/:288/:333`（`set_position`），`window.rs` 另有 `:210/:568/:579/:588`，同类处理 |
 
 ### 3.3 全仓 `let _ =` 落点概览（不逐条列举）
 
@@ -191,7 +191,7 @@
 | `vaultLifecycleSlice.ts:272` | `.catch((e) => log.warn("autoLock failed", e))`；不重复置 `error`（`lock` 内部已置，避免二次提示） | 由 `lock` 内部状态承载 |
 | `chatStorePorts.ts:227` | `.catch((e) => log.warn("incrementGeneration failed", convId, e))` | 否（一致性副作用） |
 | `chatUtils.ts:66` | `.catch((e) => log.warn("fetchTokenUsage failed", conversationId, e))`；本文件目前无 logger，需新增 `createLogger("chatUtils")` | 否（展示型降级） |
-| `HistoryBranchRow.tsx:82` | 改为 `navigator.clipboard.writeText(recordJson).then(...).catch(...)`：失败 `toast.error(t("common.actions.copy_failed"))` + `log.warn`，成功复用 `common.actions.copied`（两键均已存在）。注意本文件 `message` 已是行数据变量，antd 提示须另取名（`const { message: toast } = App.useApp()`），并新增 `createLogger("history")`。**不**引入 `@/chat/message/MessageActions`（跨域耦合且会带入 UI 组件依赖） | 是（用户主动动作） |
+| `HistoryBranchRow.tsx:82` | 改为 `navigator.clipboard.writeText(recordJson).then(...).catch(...)`：失败 `toast.error(t("common.actions.copy_failed"))` + `log.warn`，成功复用 `common.actions.copied`（两键均已存在）。注意本文件 `message` 已是行数据变量，antd 提示须另取名（`const { message: toast } = App.useApp()`），并新增 `createLogger("historyBranchRow")`。**不**引入 `@/chat/message/MessageActions`（跨域耦合且会带入 UI 组件依赖） | 是（用户主动动作） |
 | `ConversationView.tsx:95` | `.catch((e) => log.debug("prefetchAttachmentLimits failed", e))` | 否（预取） |
 
 验收：V2；日志必须带会话 id / 消息 id 或组件上下文（如 `[storage] key`）。
@@ -233,7 +233,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 位置 | `src-tauri/crates/assistant-storage/src/conversations/tree_ops.rs:175/190` |
+| 位置 | `src-tauri/crates/assistant-storage/src/conversations/tree_ops.rs:162/171-172/175/186-187/190`（`find_new_active_leaf` 内 5 处），另 `:123`（删除路径 `still_exists`） |
 | 要求 | `find_new_active_leaf` 返回 `Result<Option<String>>`，内部 3 处 `.ok().flatten()` 与 2 处 `.unwrap_or(false)` 一并改为 `?`；查询错误向上传播为 `CommandError`；仅「确实无分支」返回 `Ok(None)` 并写 NULL。删除路径上不得因查询失败而把 `active_branch_id` 置空（当前 `.unwrap_or(false)` 会把「查询失败」误判成「分支已不存在」进而改写指针，必须一并修） |
 | 验收 | V5：无 `.ok()` 用于分支定位；新增单测覆盖「查询失败」与「无分支」两条路径行为不同 |
 
@@ -270,7 +270,7 @@
 | 项 | 内容 |
 |---|---|
 | 位置 | 见 N6 / N7 |
-| 要求（前端） | storage 页 7 处改为 `createLogger("storage")` 的 `warn`；`transport.ts:175` 改为 `log.debug`，但**保留** `import.meta.env.DEV` 门控（该处是逐 delta 的热路径，模板串含 `JSON.stringify`，logger 的参数是即时求值的，去掉门控会在生产环境白做字符串拼接） |
+| 要求（前端） | storage 页 6 处 `console.warn`（`entryView.ts:90`、`cleanupFlow.ts:186/227/237`、`lexicon.ts:117`、`residualView.ts:181`）改为 `createLogger("storage")` 的 `warn`；`transport.ts:175` 改为 `log.debug`，但**保留** `import.meta.env.DEV` 门控（该处是逐 delta 的热路径，模板串含 `JSON.stringify`，logger 的参数是即时求值的，去掉门控会在生产环境白做字符串拼接） |
 | 要求（门禁） | `eslint.config.ts` 新增：<br>1. `no-console: "error"`，作用域 `src/**/*.ts`、`src/**/*.tsx`；在其后追加一个 `files: ["src/services/system/logger.ts"], rules: { "no-console": "off" }` 的块（ESLint 后置块覆盖前置块，顺序不能反）；<br>2. `no-restricted-syntax` 增加两条选择器：`CallExpression[callee.property.name="catch"] > ArrowFunctionExpression[body.type="BlockStatement"][body.body.length=0]`（`.catch(() => {})`）与 `CallExpression[callee.property.name="catch"] > ArrowFunctionExpression[body.type="Literal"][body.raw="null"]`（`.catch(() => null)`），消息统一为「禁止静默吞没：至少 `log.warn`，确属容错写 `best-effort:` 注释」；<br>3. 空 `catch {}` 由 `js.configs.recommended` 已启用的 `no-empty` 覆盖，不再额外开 `no-empty-function`（会误伤合法空回调，如 `onClick: () => {}`） |
 | 实现注意 | 现有配置共 5 处声明 `no-restricted-syntax`（`src/**` 1 处、`BARREL_DOMAINS` 展开后 3 处、`INDEX_FILE_GUARD` 1 处），ESLint 对同一文件的规则数组是**整体覆盖**而非合并，因此吞没选择器必须抽成共享常量（如 `SWALLOW_SELECTORS`）并 `...` 展开进每一处，否则 `src/history/**`、`src/mascot/**`、`src/vault/**` 与所有 `index.ts` 会因被后置块覆盖而漏检 |
 | 边界 | 测试目录当前无 `console.*`，无需豁免（现有 `**/__tests__/**` 的 `ignores` 只作用于 `no-deprecated` 那一个块，不构成全局豁免，勿误用）；`scripts/**` 不受前端规则影响；storage 页的纯函数模块可直接 `createLogger`（logger 在非 Tauri 环境自动降级为 console 输出，无需 mock）；空 `catch {}` 由已启用的 `no-empty` 覆盖，必须写 `best-effort:` 注释说明 |
