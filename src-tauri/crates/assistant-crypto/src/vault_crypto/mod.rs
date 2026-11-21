@@ -121,6 +121,10 @@ pub fn open_dek(kek: &Kek, wrapped: &[u8], aad: &[u8]) -> Result<Dek, VaultError
     let cipher = Aes256Gcm::new_from_slice(kek.expose())
         .map_err(|e| VaultError::VaultCorrupted(format!("AES-256-GCM init failed: {}", e)))?;
     let nonce = AesNonce::from_slice(nonce_bytes);
+    // 解锁失败的判定歧义：GCM 解密失败无法区分「密码错误」与「密文损坏」，
+    // 这里一律映射 `InvalidPassword`；仅当解密成功但明文长度异常时才映射
+    // `VaultCorrupted`（见下方长度校验）。前端 `invalidPassword` 文案因此
+    // 同时覆盖 `InvalidPassword` 与 `VaultCorrupted` 两种可能。
     let plaintext = cipher
         .decrypt(
             nonce,

@@ -40,6 +40,10 @@ const ERROR_TEXT_KEYS = {
   repositoryContainsForbiddenFile:
     "vault.error.repositoryContainsForbiddenFile",
   historyDekUnavailable: "vault.error.historyDekUnavailable",
+  database: "vault.error.database",
+  io: "vault.error.io",
+  clipboard: "vault.error.clipboard",
+  alreadyUnlocked: "vault.error.alreadyUnlocked",
   internal: "vault.error.internal",
 } as const satisfies Record<VaultErrorCode, I18nPath>;
 

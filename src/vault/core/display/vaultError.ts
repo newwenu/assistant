@@ -42,6 +42,10 @@ const VAULT_ERROR_CODE_FLAGS = {
   vaultDekVersionBehind: true,
   repositoryContainsForbiddenFile: true,
   historyDekUnavailable: true,
+  database: true,
+  io: true,
+  clipboard: true,
+  alreadyUnlocked: true,
   internal: true,
 } as const satisfies Record<VaultErrorCode, true>;
 

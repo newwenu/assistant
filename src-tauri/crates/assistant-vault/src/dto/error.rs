@@ -41,6 +41,10 @@ pub enum VaultErrorCode {
     GitUnavailable,
     KeyMismatch,
     HistoryDecryptFailed,
+    Database,
+    Io,
+    Clipboard,
+    AlreadyUnlocked,
     Internal,
 }
 

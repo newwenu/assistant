@@ -555,6 +555,35 @@ fn vault_error_codes_match_frontend_array() {
 }
 
 #[test]
+fn precise_codes_are_not_collapsed_to_internal() {
+    assert_eq!(
+        VaultErrorDto::from(VaultError::Database("x".into())).code,
+        VaultErrorCode::Database
+    );
+    assert_eq!(
+        VaultErrorDto::from(VaultError::Io(std::io::Error::other("x"))).code,
+        VaultErrorCode::Io
+    );
+    assert_eq!(
+        VaultErrorDto::from(VaultError::Clipboard("x".into())).code,
+        VaultErrorCode::Clipboard
+    );
+    assert_eq!(
+        VaultErrorDto::from(VaultError::AlreadyUnlocked).code,
+        VaultErrorCode::AlreadyUnlocked
+    );
+
+    for code in [
+        VaultErrorCode::Database,
+        VaultErrorCode::Io,
+        VaultErrorCode::Clipboard,
+        VaultErrorCode::AlreadyUnlocked,
+    ] {
+        assert!(!code.is_retryable(), "{code:?} must not be retryable");
+    }
+}
+
+#[test]
 fn retryable_is_derived_from_code_only() {
     assert!(VaultErrorCode::RateLimited.is_retryable());
     assert!(VaultErrorCode::GitUnavailable.is_retryable());
@@ -584,7 +613,7 @@ fn error_message_does_not_carry_crypto_payload() {
     );
 
     let dto = VaultErrorDto::from(VaultError::Database("synthetic-db-path".into()));
-    assert_eq!(dto.code, VaultErrorCode::Internal);
+    assert_eq!(dto.code, VaultErrorCode::Database);
     assert!(
         !dto.message.contains("synthetic-db-path"),
         "Database payload must not reach the wire"
