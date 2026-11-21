@@ -558,4 +558,4 @@ M3 不在本文验收范围内，本文只固定准入条件。
 | I46 紧凑消息格式设计（已归档） | `compact` 信封仍是工具结果渲染的唯一事实源；本文 §4.3 面板内不重复渲染工具卡片，`compact` 投影仍由气泡承载 |
 | I40-history-message-tree-spec（已归档） | 树构建 / 折叠 / 轨道色的基线；本文不改变其语义，只在 `flattenHistoryRows` 输出上追加派生字段 |
 | I50 运行时审计规格（已归档） | 相邻但**不通用**：审计记录安全事件（`security_audit_log` / `permission_audit`），本文记录会话内容；禁止把本文的元数据行当作审计来源，也禁止把审计事件塞进历史页 |
-| [I38 Agent 阶段总纲](./I38-agent-roadmap.md) | 本文不进阶段门禁；`turn` 坐标的前置条件（I46 S1/S2 已落地）已满足 |
+| [I38 Agent 阶段总纲](../../store/I38-agent-roadmap.md) | 本文不进阶段门禁；`turn` 坐标的前置条件（I46 S1/S2 已落地）已满足 |

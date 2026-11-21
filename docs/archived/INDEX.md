@@ -10,8 +10,8 @@
 |---|---|---|
 | [agent/](./agent/) | Agent 运行时、工具框架与 MCP、Agent Loop、审批、压缩与节点布局、身份与能力事实、运行时审计、沙箱与代码规模审计、Turn 观测面、长行读取与超级工具、工具三阶段状态 | 69 |
 | [vault/](./vault/) | 密码箱：密钥体系、条目加密、同步、审计、生物识别、恢复与 IPC 契约 | 36 |
-| [chat/](./chat/) | 对话与消息链路：服务拆分、流事件、历史、分支、重试、附件/多模态、截图提问、Token Usage | 33 |
-| [ui/](./ui/) | Orb、主窗口与 mini 模式、设置系统、i18n、Mascot、时钟与布局 | 35 |
+| [chat/](./chat/) | 对话与消息链路：服务拆分、流事件、历史、分支、重试、附件/多模态、截图提问、Token Usage | 35 |
+| [ui/](./ui/) | Orb、主窗口与 mini 模式、设置系统、i18n、Mascot、时钟与布局 | 36 |
 | [infra/](./infra/) | 编译与依赖、crate 架构、DTO 与协议、配置归属、命令层、日志、应用目录、拆分规划、横切分析 | 35 |
 
 ## 文档清单
@@ -131,7 +131,7 @@
 | [`I9-vault-sync-crypto-spec.md`](./vault/I9-vault-sync-crypto-spec.md) | achievement5 | I9 密码箱 — 仓库与同步完整性规格（S3） |
 | [`I9-vault-v15-tasklist.md`](./vault/I9-vault-v15-tasklist.md) | achievement5 | I9 — 密码箱 v1.5 任务清单 |
 
-### chat/ (33)
+### chat/ (35)
 
 | 文档 | 原批次 | 标题 |
 |---|---|---|
@@ -141,6 +141,8 @@
 | [`I2-history-tasklist.md`](./chat/I2-history-tasklist.md) | achievement | I2-History — 聊天消息历史管理 任务清单 |
 | [`I2-spec.md`](./chat/I2-spec.md) | achievement | I2 — Orb AI 对话 规格说明 |
 | [`I2-tasklist.md`](./chat/I2-tasklist.md) | achievement | I2 — Orb AI 对话 任务清单 |
+| [`I51-history-detail-inspector-spec.md`](./chat/I51-history-detail-inspector-spec.md) | achievement | I51 — 历史页检视能力规格（身份口径 / 元数据 / 行内原文面板 / 导出） |
+| [`I51-history-detail-inspector-tasklist.md`](./chat/I51-history-detail-inspector-tasklist.md) | achievement | I51 — 历史页检视能力 任务清单 |
 | [`I13-chat-service-split-spec.md`](./chat/I13-chat-service-split-spec.md) | achievement1 | I13 — Chat 服务层分离 规格说明 |
 | [`I13-chat-split-ext-spec.md`](./chat/I13-chat-split-ext-spec.md) | achievement1 | I13-Ext — Chat Store 职责细粒度拆分 规格说明 |
 | [`I13-chat-split-ext-tasklist.md`](./chat/I13-chat-split-ext-tasklist.md) | achievement1 | I13-Ext — Chat Store 职责细粒度拆分 任务清单 |
@@ -169,10 +171,11 @@
 | [`I40-history-message-tree-spec.md`](./chat/I40-history-message-tree-spec.md) | achievement4 | I40 — 主窗口历史消息树渲染规格 |
 | [`I35-screenshot-qa-spec.md`](./chat/I35-screenshot-qa-spec.md) | achievement10 | I35 — 截屏提问规格（rev11 已实现；§11.3 手动验收待执行） |
 
-### ui/ (35)
+### ui/ (36)
 
 | 文档 | 原批次 | 标题 |
 |---|---|---|
+| [`CLOCK-NOTES-REFERENCE-ANALYSIS.md`](./ui/CLOCK-NOTES-REFERENCE-ANALYSIS.md) | achievement | 时钟与便签：工具化可行性分析 |
 | [`I1-orb-no-clickthrough-spec.md`](./ui/I1-orb-no-clickthrough-spec.md) | achievement | I1-orb-no-clickthrough — 移除 Orb 自动穿透轮询 规格说明 |
 | [`I1-orb-no-clickthrough-tasklist.md`](./ui/I1-orb-no-clickthrough-tasklist.md) | achievement | I1-orb-no-clickthrough — 移除 Orb 点击穿透 任务清单 |
 | [`I1-spec.md`](./ui/I1-spec.md) | achievement | I1 — Orb 悬浮球 规格说明 |
