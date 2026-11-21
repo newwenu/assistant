@@ -3,6 +3,7 @@ pub mod base;
 pub mod capability;
 pub mod client;
 pub mod diagnostics;
+mod dto_bridge;
 pub mod gemini;
 pub mod model_catalog;
 pub mod openai;

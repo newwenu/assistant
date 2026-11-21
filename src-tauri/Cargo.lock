@@ -210,6 +210,7 @@ dependencies = [
 name = "assistant-agent"
 version = "0.1.0"
 dependencies = [
+ "assistant-protocol",
  "assistant-providers",
  "assistant-storage",
  "async-trait",
@@ -240,6 +241,7 @@ dependencies = [
  "assistant-crypto",
  "assistant-i18n",
  "assistant-orb",
+ "assistant-protocol",
  "assistant-providers",
  "assistant-security",
  "assistant-storage",
@@ -272,7 +274,6 @@ dependencies = [
  "tempfile",
  "tokio",
  "tokio-util",
- "ts-rs",
  "uuid",
  "windows",
  "xcap",
@@ -282,6 +283,7 @@ dependencies = [
 name = "assistant-config"
 version = "0.1.0"
 dependencies = [
+ "assistant-protocol",
  "dirs 7.0.0",
  "log",
  "proptest",
@@ -340,9 +342,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "assistant-protocol"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "ts-rs",
+]
+
+[[package]]
 name = "assistant-providers"
 version = "0.1.0"
 dependencies = [
+ "assistant-protocol",
  "async-stream",
  "bytes",
  "eventsource-stream",
@@ -380,6 +392,7 @@ dependencies = [
 name = "assistant-storage"
 version = "0.1.0"
 dependencies = [
+ "assistant-protocol",
  "base64 0.23.1",
  "chrono",
  "hex",
@@ -409,6 +422,7 @@ dependencies = [
 name = "assistant-tools"
 version = "0.1.0"
 dependencies = [
+ "assistant-protocol",
  "async-trait",
  "chardetng",
  "dashmap",

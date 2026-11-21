@@ -6,7 +6,7 @@ use crate::protocol::{AgentModeDto, AgentModeInputDto, ConversationToolConfigDto
 use assistant_storage::agent_modes::{self, AgentModeRow};
 
 fn row_to_dto(row: &AgentModeRow) -> AgentModeDto {
-    AgentModeDto::from_row(row)
+    AgentModeDto::from(row)
 }
 
 /// 头像三态（I43 §3.5）：缺省 / `null` 沿用现值；`""` 清除为 `NULL`；非空覆盖。
@@ -53,7 +53,7 @@ pub fn save_agent_mode(app: AppHandle, mode: AgentModeInputDto) -> Result<(), St
         None if is_new => ConversationToolConfigDto::default(),
         None => existing
             .as_ref()
-            .map(|m| AgentModeDto::from_row(m).tool_config)
+            .map(|m| AgentModeDto::from(m).tool_config)
             .unwrap_or_default(),
     };
     let tool_config_json = Some(serde_json::to_string(&tool_config).map_err(|e| e.to_string())?);

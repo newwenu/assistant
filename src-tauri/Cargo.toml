@@ -9,6 +9,7 @@ default-run = "assistant-app"
 [workspace]
 resolver = "2"
 members = [
+    "crates/assistant-protocol",
     "crates/assistant-config",
     "crates/assistant-orb",
     "crates/assistant-providers",
@@ -32,6 +33,8 @@ publish = false
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# 协议 DTO 的 TS 契约生成；serde-json-impl 用于 serde_json::Value 字段
+ts-rs = { version = "12", features = ["serde-json-impl", "no-serde-warnings"] }
 # 仅用于 amend() 收集被忽略的未知键（不写字段白名单，见 compat-tech-debt-audit-1 C3）
 serde_ignored = "0.1"
 log = "0.4"
@@ -91,6 +94,7 @@ proptest = "1"
 crash-handler = "0.6"
 minidump-writer = "0.10"
 
+assistant-protocol = { path = "crates/assistant-protocol" }
 assistant-config = { path = "crates/assistant-config" }
 assistant-orb = { path = "crates/assistant-orb" }
 assistant-providers = { path = "crates/assistant-providers" }
@@ -162,8 +166,6 @@ path = "tests/fixtures/dev_mcp_server.rs"
 [dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }
-# 协议 DTO 的 TS 契约生成；serde-json-impl 用于 OsTool 的 serde_json::Value 字段
-ts-rs = { version = "12", features = ["serde-json-impl", "no-serde-warnings"] }
 log = { workspace = true }
 tauri = { workspace = true }
 tauri-plugin-opener = { workspace = true }
@@ -189,6 +191,7 @@ image = { workspace = true }
 # 预览 JPEG 内联为 data URL，全程不落盘
 base64 = { workspace = true }
 
+assistant-protocol = { workspace = true }
 assistant-config = { workspace = true }
 assistant-orb = { workspace = true }
 assistant-providers = { workspace = true }

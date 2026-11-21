@@ -414,11 +414,11 @@ retryable 错误**不做自动重试**——重试由用户点击触发（`retry
 
 ## 7. 项目目录
 
-> Rust 后端结构择优参考 BongoCat 的 workspace 多 crate 架构（编译隔离 + API 边界强制 + 独立测试），按我们的领域划分为 1 个根包 + 12 个 workspace crate，远少于 BongoCat 的 20 个。ChatGPT 的 core 模块组织（cmd/conf/constant/setup/window）融入 `assistant-app` 根包。Tauri 2 CLI 要求二进制包位于 `src-tauri/` 根目录（`Cargo.toml` 同时包含 `[package]` 和 `[workspace]`），因此 `assistant-app` 作为根包而非子 crate。
+> Rust 后端结构择优参考 BongoCat 的 workspace 多 crate 架构（编译隔离 + API 边界强制 + 独立测试），按我们的领域划分为 1 个根包 + 13 个 workspace crate，远少于 BongoCat 的 20 个。ChatGPT 的 core 模块组织（cmd/conf/constant/setup/window）融入 `assistant-app` 根包。Tauri 2 CLI 要求二进制包位于 `src-tauri/` 根目录（`Cargo.toml` 同时包含 `[package]` 和 `[workspace]`），因此 `assistant-app` 作为根包而非子 crate。
 
 ```
 assistant/
-├── src-tauri/                     # Rust 后端（Cargo workspace，根包 assistant-app + 12 个成员 crate）
+├── src-tauri/                     # Rust 后端（Cargo workspace，根包 assistant-app + 13 个成员 crate）
 │   ├── src/                       # 根包（Tauri 集成层）
 │   │   ├── main.rs                # 入口（windows_subsystem → assistant_app::run()）
 │   │   ├── lib.rs                 # Builder + plugins + setup + invoke_handler
@@ -444,7 +444,7 @@ assistant/
 │   │   │   ├── tool.rs
 │   │   │   ├── config.rs
 │   │   │   └── vault/             # 保险库命令（解锁/CRUD/同步/SSH/恢复密钥）
-│   │   ├── protocol/              # 前后端 DTO 契约源（dto/ + events.rs）
+│   │   ├── protocol/              # 协议垫片：`pub use assistant_protocol as dto` + events.rs（事件名与 Tauri 窗口常量）
 │   │   ├── clock.rs               # 时钟后端状态
 │   │   ├── lifecycle.rs           # 应用生命周期
 │   │   ├── menu.rs                # 原生菜单
@@ -455,6 +455,7 @@ assistant/
 │   │   └── window.rs              # 窗口管理（创建/展开/收起/设置）
 │   ├── crates/
 │   │   ├── assistant-config/      # AppConf / OrbConf / MascotConf / VaultConf + 原子写
+│   │   ├── assistant-protocol/    # 前后端 wire 契约叶子 crate：165 个 DTO + `ts-rs` 生成；依赖白名单仅 serde / serde_json / ts-rs
 │   │   ├── assistant-orb/         # hover.rs（悬停隐藏）/ placement.rs（多屏约束）
 │   │   ├── assistant-providers/   # openai（Chat + Responses）/ anthropic / gemini（含 Code Assist）
 │   │   ├── assistant-agent/       # kernel（turn 状态机 / 端口 / 流消费）+ agent（RoundExecutor / tool_call 累积器 / 阶梯 / 中间件）+ chat 侧（compaction / prompt_builder / multimodal）

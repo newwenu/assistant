@@ -2,7 +2,7 @@
 
 | 项 | 值 |
 |---|---|
-| 更新日期 | 2026-11-17 |
+| 更新日期 | 2026-11-21 |
 | 数据来源 | 规模、文件数、模块清单由 `scripts/probe-structure.mjs` 生成；依赖数与依赖边由 `cargo metadata` 生成；编译耗时与依赖闭包取自 `docs/store/compile-time-attribution.md` |
 | 关联文档 | `docs/store/compile-time-attribution.md`（编译耗时归属实测）、`docs/CODE-STRUCTURE.md`（前后端目录现状）、`docs/ARCHITECTURE.md`（组件职责） |
 | 历史决策 | crate-architecture-analysis（已归档，施工记录，不再维护） |
@@ -29,14 +29,15 @@
 
 | 组成部分 | 文件数 | 非空行 | 说明 |
 |---|---|---|---|
-| 主 app（`src/`） | 116 | 16,799 | Tauri 命令层、协议层、初始化 |
-| 12 个子 crate | 338 | 55,385 | 业务与基础设施 |
-| **合计** | **454** | **72,184** | |
+| 主 app（`src/`） | 109 | 20,043 | Tauri 命令层、`protocol` 垫片、初始化 |
+| 13 个子 crate | 389 | 68,815 | 业务与基础设施（含 DTO 叶子 crate `assistant-protocol`） |
+| **合计** | **498** | **88,858** | |
 
-### 1.2 workspace 成员（12 个）
+### 1.2 workspace 成员（13 个）
 
 ```
 crates/assistant-config
+crates/assistant-protocol
 crates/assistant-orb
 crates/assistant-providers
 crates/assistant-agent
@@ -60,17 +61,19 @@ assistant-app  (根包, src/)
 ├── assistant-i18n          无内部依赖
 ├── assistant-crypto        无内部依赖
 ├── assistant-orb           无内部依赖（唯一依赖 tauri 的子 crate）
-├── assistant-tools         无内部依赖
-├── assistant-storage       无内部依赖
+├── assistant-tools         无内部依赖 ──→ assistant-protocol
+├── assistant-storage       无内部依赖 ──→ assistant-protocol
 ├── assistant-crash         无内部依赖
-├── assistant-providers     无内部依赖
+├── assistant-providers     无内部依赖 ──→ assistant-protocol
 ├── assistant-sync      ──→ （无内部依赖，被 vault 依赖）
 ├── assistant-security  ──→ assistant-crypto
-├── assistant-agent     ──→ assistant-providers, assistant-storage
+├── assistant-agent     ──→ assistant-providers, assistant-storage, assistant-protocol
 └── assistant-vault     ──→ assistant-crypto, assistant-sync, assistant-config
 ```
 
-内部依赖边共 **6 条**（不含主 app）：
+`assistant-protocol` 是**叶子 crate**（只依赖 `serde` / `serde_json` / `ts-rs`），被 app 与 5 个域 crate（agent / tools / storage / providers / config）依赖。
+
+内部依赖边共 **11 条**（不含主 app）：
 
 | 边 | 性质 |
 |---|---|
@@ -80,12 +83,17 @@ assistant-app  (根包, src/)
 | `assistant-vault → assistant-config` | vault 配置组复用 `ConfGroup` 机制层 |
 | `assistant-agent → assistant-providers` | agent 调用 provider 发起请求 |
 | `assistant-agent → assistant-storage` | agent 读写会话与工具历史 |
+| `assistant-agent → assistant-protocol` | agent 域类型 → wire DTO 桥接（`dto_bridge.rs`） |
+| `assistant-tools → assistant-protocol` | 同上 |
+| `assistant-storage → assistant-protocol` | 同上 |
+| `assistant-providers → assistant-protocol` | 同上 |
+| `assistant-config → assistant-protocol` | 同上 |
 
-其余 6 个 crate（config / i18n / crypto / orb / tools / storage / crash / sync 中的 8 个，除 config 与 sync 被 vault 依赖外）为叶子节点。**没有环，也没有跨层回指。**
+其余 6 个 crate（config / i18n / crypto / orb / tools / storage / crash / sync 中的 8 个，除 config 与 sync 被 vault 依赖外）为叶子节点；`protocol` 为纯叶子节点。**没有环，也没有跨层回指。**
 
 #### 可选依赖与 feature 门控
 
-主 app 对 12 个子 crate 全部声明，但其中 **3 个是 `optional = true`**，由单一 feature 激活：
+主 app 对 13 个子 crate 全部声明，但其中 **3 个是 `optional = true`**，由单一 feature 激活：
 
 ```toml
 [features]
@@ -101,6 +109,7 @@ vault = ["dep:assistant-vault", "dep:assistant-sync", "dep:assistant-security"]
 
 | crate | 上游消费者 | 数量 |
 |---|---|---|
+| `assistant-protocol` | app / agent / tools / storage / providers / config | 6 |
 | `assistant-crypto` | app / security / vault | 3 |
 | `assistant-config` | app / vault | 2 |
 | `assistant-providers` | app / agent | 2 |
@@ -115,6 +124,7 @@ vault = ["dep:assistant-vault", "dep:assistant-sync", "dep:assistant-security"]
 
 | 层 | crate | 特征 |
 |---|---|---|
+| 契约层 | protocol | 纯 wire 类型 + `ts-rs` 生成，零业务语义、零 tauri |
 | 基础设施层 | config / i18n / crypto / storage / crash / tools | 无业务语义，可被任意上层复用 |
 | 能力层 | providers / orb / sync | 单一外部能力封装 |
 | 领域层 | agent / security / vault | 含业务规则，内部可再分模块 |
@@ -283,6 +293,23 @@ vault 的安全外围：剪贴板守卫、防截屏、锁屏/休眠监听、SSH 
 
 三个平台专属依赖段是 vault 独有的：主 app 不声明 `core-foundation` / `security-framework` / `libsecret`。
 
+### 2.13 assistant-protocol
+
+| 项 | 值 |
+|---|---|
+| 行数 / 文件 | 2,145 / 24（`lib.rs` + 17 个域 DTO 文件 + `chat/` 6 文件） |
+| 直接依赖 | 3（`serde` `serde_json` `ts-rs`，白名单即全部） |
+| 内部依赖 | 无（叶子节点，`cargo tree -p assistant-protocol` 不含任何 `assistant-*`） |
+| 类型规模 | 165 个 `pub struct` / `pub enum`（wire 契约全集） |
+| 集成测试 | `protocol_bindings`（生成 `src/types/protocol.contract.ts`）、`no_internal_deps`（G1/G2/G4 门禁） |
+| 模块 | `agent` `agent_mode` `branch` `clock` `config` `error` `mascot` `mcp` `orb` `os_tool` `provider` `screenshot` `shortcut` `storage` `theme` `window` `workspace`；`chat`（`content` `conversation` `event` `message` `usage`） |
+
+原 `src-tauri/src/protocol/dto/` 的 24 文件整体迁入（迁移前 2,969 非空行），**60 条 `impl From`（59 条来自 dto 目录 + 1 条原在 app `cmd/mcp.rs`）+ 1 个固有方法改造（`AgentModeDto::from_row` → `impl From<&AgentModeRow>`）按孤儿规则拆到各 owner crate 的 `dto_bridge.rs`**（agent 24 / tools 16 / storage 9 / providers 8 / config 4，其中 tools 含 2 条反向桥接 `Dto → 领域类型`），crate 内因此不再有任何跨 crate 引用。本 crate 只保留 DTO 固有方法（如 `MessageStatusDto::from_db`、`CommandErrorCodeDto::is_retryable`）与 2 条无内部依赖的 `From<&str>`。
+
+主 app 的 `src/protocol/mod.rs` 仅剩垫片：`pub use assistant_protocol as dto;` + `pub use assistant_protocol::*;` + `events` 子模块，因此 app 侧 51 个引用文件零改动。
+
+**判据命中**：① 多消费者——5 个域 crate + app 共 6 个消费者；② 可脱 tauri 独立测试——`cargo test -p assistant-protocol` 不起 tauri；③ 编译隔离——依赖闭包仅 `serde` / `serde_json` / `ts-rs` 及其 proc-macro；④ 独立领域且 >300 行——2,145 行纯 wire 契约。**四条全中**。
+
 ---
 
 ## 3. 横向事实汇总
@@ -291,18 +318,19 @@ vault 的安全外围：剪贴板守卫、防截屏、锁屏/休眠监听、SSH 
 
 | 排名 | crate | 非空行 | 文件数 |
 |---|---|---|---|
-| 1 | assistant-tools | 17,499 | 97 |
-| 2 | assistant-vault | 9,808 | 62 |
-| 3 | assistant-providers | 9,300 | 47 |
-| 4 | assistant-agent | 7,948 | 45 |
-| 5 | assistant-storage | 4,036 | 21 |
-| 6 | assistant-security | 2,771 | 27 |
-| 7 | assistant-sync | 1,489 | 17 |
-| 8 | assistant-crypto | 1,071 | 6 |
-| 9 | assistant-config | 753 | 9 |
-| 10 | assistant-orb | 382 | 4 |
-| 11 | assistant-crash | 146 | 2 |
-| 12 | assistant-i18n | 124 | 1 |
+| 1 | assistant-tools | 26,286 | 119 |
+| 2 | assistant-vault | 10,114 | 63 |
+| 3 | assistant-providers | 9,422 | 48 |
+| 4 | assistant-agent | 9,294 | 47 |
+| 5 | assistant-storage | 4,569 | 22 |
+| 6 | assistant-security | 2,769 | 26 |
+| 7 | assistant-protocol | 2,145 | 24 |
+| 8 | assistant-sync | 1,490 | 17 |
+| 9 | assistant-crypto | 1,071 | 6 |
+| 10 | assistant-config | 821 | 10 |
+| 11 | assistant-orb | 382 | 4 |
+| 12 | assistant-crash | 328 | 2 |
+| 13 | assistant-i18n | 124 | 1 |
 
 ### 3.2 编译耗时（快照）
 
@@ -405,7 +433,7 @@ storage 与 vault 的 build.rs 内容一致，都服务于 `rusqlite`（SQLCiphe
 
 ### 4.5 `assistant-orb` 依赖 `tauri`
 
-12 个子 crate 中只有 orb 直接依赖 `tauri`，但耦合面仅 `placement.rs` 的一个取屏幕函数；纯计算部分已有测试覆盖，因此"可脱 tauri 测试"这一判据实际是**满足**的，不属于阻塞项。
+13 个子 crate 中只有 orb 直接依赖 `tauri`，但耦合面仅 `placement.rs` 的一个取屏幕函数；纯计算部分已有测试覆盖，因此"可脱 tauri 测试"这一判据实际是**满足**的，不属于阻塞项。
 
 ### 4.6 `windows` feature 面存在 9 个无引用项
 
@@ -439,12 +467,12 @@ workspace 段声明 22 个 `windows` feature，其中 9 个在四个消费方的
 | 存储分析逻辑 `cmd/storage.rs`（191） | → `assistant-storage` | ⬜ 未做。仍需先剥离 `AppHandle` 胶水，核心为 DB + `attachment_store` 调用 |
 | 会话工具函数 `cmd/conversation_utils.rs`（196） | → `assistant-storage` | ⬜ 未做。纯 DB 查询（2 处 `rusqlite` 引用），返回 storage 类型 |
 | Chat 消息插入 `cmd/chat/insert.rs`（569） | → `assistant-agent` | ⬜ 未做。前置条件仍在：3 处 `assistant_i18n::t()` 需先改为结构化错误 |
-| DTO / 协议类型 `protocol/dto/`（18 文件 2,112） | 有条件抽 `assistant-protocol` | ⬜ 结论：**维持不抽**。① 不命中（单消费者 app）；④ 形式命中（2.1k 行、自有 wire 类型体系），但抽出的收益只有边界清晰，成本是新增 crate 边界 + 该 crate 需再引入 `ts-rs`，零复用 |
+| DTO / 协议类型 `protocol/dto/`（迁移前 24 文件 2,969 非空行、165 DTO） | 抽 `assistant-protocol` | ✅ **已抽**（I62）：现为叶子 crate `crates/assistant-protocol`，2,145 非空行 / 24 文件，依赖白名单 `serde` / `serde_json` / `ts-rs`。四条判据迁移后全中（① 6 个消费者、② 可脱 tauri 独立测试、③ 编译隔离、④ 独立领域 >300 行），见 §2.13 |
 | API Key 掩码 `cmd/provider.rs`（246） | ❌ 留主 app | ❌ 结论不变。L1 解耦后主 app 直接调用 `assistant_crypto::api_key`，搬运无收益（单消费者，且 crypto 已是叶节点） |
 | Vault 编排辅助 `cmd/vault/mod.rs`（410） | ❌ 不搬运 | ❌ 不变。`AppConf` 读取 + `SshAgentState` 状态 + 领域调用的编排胶水，搬入会让 security 反向依赖 config 与 tauri |
 | `mascot_asset`（182） | ❌ 不抽 crate（命中 ⑤） | ❌ 不变 |
 
-> **DTO 现状补充（旧文此处已过期）**：`ts-rs` **已引入**——主 app `Cargo.toml` 声明 `ts-rs = { version = "12", features = ["serde-json-impl", "no-serde-warnings"] }`（注释即"协议 DTO 的 TS 契约生成"），`src/types/protocol.contract.ts` 由其生成并有 `src-tauri/tests/protocol_bindings.rs` 作为一致性门禁；vault 侧另有独立 `dto/` 体系（`ts-rs` 在 vault 自身声明）。因此"引入 ts-rs / typeshare"不再是前提条件，抽 `assistant-protocol` 的取舍已回到纯粹的 ①/④ 判断，见上表。
+> **DTO 补充（旧文此处已过期）**：`ts-rs` 已从主 app `Cargo.toml` 移除，提升为 workspace 依赖并被 `assistant-protocol` 独占声明；`src/types/protocol.contract.ts` 由该 crate 的集成测试 `tests/protocol_bindings.rs` 生成，一致性门禁同在该 crate。vault 侧仍是独立 `dto/` 体系（`ts-rs` 在 vault 自身声明）。契约生成已拆为三段：`contract:gen:vault` / `contract:gen:protocol` / `contract:gen:shortcuts`。
 
 ---
 

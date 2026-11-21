@@ -31,7 +31,7 @@ argon2 = { workspace = true }
 hkdf = { workspace = true }
 crc = { workspace = true }
 zxcvbn = { workspace = true }
-ts-rs = { version = "12", features = ["serde-json-impl"] }
+ts-rs = { workspace = true }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 keyring = { workspace = true }

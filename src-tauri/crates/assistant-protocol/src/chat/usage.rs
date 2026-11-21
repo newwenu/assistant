@@ -1,4 +1,3 @@
-use assistant_providers::types::chat_delta::TokenUsage;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -16,20 +15,6 @@ pub struct TokenUsageDto {
     pub reasoning_tokens: Option<u32>,
     #[serde(default)]
     pub context_window_tokens: Option<u32>,
-}
-
-impl From<TokenUsage> for TokenUsageDto {
-    fn from(u: TokenUsage) -> Self {
-        Self {
-            prompt_tokens: u.prompt_tokens,
-            completion_tokens: u.completion_tokens,
-            total_tokens: u.total_tokens,
-            cache_read_tokens: u.cache_read_tokens,
-            cache_write_tokens: u.cache_write_tokens,
-            reasoning_tokens: u.reasoning_tokens,
-            context_window_tokens: u.context_window_tokens,
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
@@ -97,50 +82,4 @@ pub struct TokenUsageSummaryDto {
     /// 无「具备缓存能力且上报缓存字段」的请求时缺省
     #[serde(default)]
     pub cache: Option<TokenUsageCacheDto>,
-}
-
-impl From<assistant_storage::token_usage::OccupancySummary> for TokenUsageOccupancyDto {
-    fn from(s: assistant_storage::token_usage::OccupancySummary) -> Self {
-        Self {
-            used_tokens: s.used_tokens,
-            completion_tokens: s.completion_tokens,
-            cache_read_tokens: s.cache_read_tokens,
-            cache_write_tokens: s.cache_write_tokens,
-            reasoning_tokens: s.reasoning_tokens,
-            context_window_tokens: s.context_window_tokens,
-            percentage: s.percentage,
-            estimated: s.estimated,
-            estimated_source: s.estimated.then_some(TokenUsageEstimatedSourceDto::Record),
-        }
-    }
-}
-
-impl From<assistant_storage::token_usage::CumulativeSummary> for TokenUsageCumulativeDto {
-    fn from(s: assistant_storage::token_usage::CumulativeSummary) -> Self {
-        Self {
-            total_tokens: s.total_tokens,
-            prompt_tokens: s.prompt_tokens,
-            completion_tokens: s.completion_tokens,
-        }
-    }
-}
-
-impl From<assistant_storage::token_usage::CacheStats> for TokenUsageCacheDto {
-    fn from(s: assistant_storage::token_usage::CacheStats) -> Self {
-        Self {
-            hit_tokens: s.hit_tokens,
-            denominator_tokens: s.denominator_tokens,
-            hit_rate: s.hit_rate(),
-        }
-    }
-}
-
-impl From<assistant_storage::token_usage::TokenUsageSummary> for TokenUsageSummaryDto {
-    fn from(s: assistant_storage::token_usage::TokenUsageSummary) -> Self {
-        Self {
-            occupancy: s.occupancy.into(),
-            cumulative: s.cumulative.map(Into::into),
-            cache: s.cache.map(Into::into),
-        }
-    }
 }

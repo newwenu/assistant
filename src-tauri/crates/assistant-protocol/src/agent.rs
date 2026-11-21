@@ -1,14 +1,3 @@
-use assistant_agent::agent::node_event::{
-    AfterIterationDetail, AfterToolDetail, AgentNode, AgentNodeDetail, AgentNodeEvent, BrakeDetail,
-    BrakeVerdict, BranchDetail, BudgetRemaining, BudgetSplitDetail, LadderDetail, MiddlewareAction,
-    MiddlewareVerdict, ModelDetail, NodeState, PersistDetail, PipelineDetail,
-};
-use assistant_agent::agent::round_executor::{ToolErrorClass, ToolStage};
-use assistant_agent::agent::tool_event::{CompactUnit, ToolCompact, ToolEventPayload};
-use assistant_tools::{
-    ApprovalContext, ApprovalExtension, ApprovalExtensionSeverity, ApprovalPreview, ApprovalReason,
-    BehaviorHints, PermissionIntent, ToolTier,
-};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -21,26 +10,6 @@ pub enum ToolTierDto {
     Sandbox,
     Os,
     External,
-}
-
-impl From<ToolTier> for ToolTierDto {
-    fn from(tier: ToolTier) -> Self {
-        match tier {
-            ToolTier::Sandbox => Self::Sandbox,
-            ToolTier::Os => Self::Os,
-            ToolTier::External => Self::External,
-        }
-    }
-}
-
-impl From<ToolTierDto> for ToolTier {
-    fn from(tier: ToolTierDto) -> Self {
-        match tier {
-            ToolTierDto::Sandbox => ToolTier::Sandbox,
-            ToolTierDto::Os => ToolTier::Os,
-            ToolTierDto::External => ToolTier::External,
-        }
-    }
 }
 
 /// 审批级别。`snake_case` 与 I38d §4.2 的 `'none' | 'dangerous_only' | 'all_os_tools'` 对齐。
@@ -61,16 +30,6 @@ impl From<&str> for ApprovalLevelDto {
             "none" => Self::None,
             "dangerous_only" => Self::DangerousOnly,
             _ => Self::AllOsTools,
-        }
-    }
-}
-
-impl From<ApprovalLevelDto> for assistant_tools::ApprovalLevel {
-    fn from(level: ApprovalLevelDto) -> Self {
-        match level {
-            ApprovalLevelDto::None => Self::None,
-            ApprovalLevelDto::DangerousOnly => Self::DangerousOnly,
-            ApprovalLevelDto::AllOsTools => Self::AllOsTools,
         }
     }
 }
@@ -115,18 +74,6 @@ pub struct ToolDescriptorDto {
     pub description: String,
     pub tier: ToolTierDto,
     pub companion_of: Option<String>,
-}
-
-impl From<assistant_tools::ToolDescriptor> for ToolDescriptorDto {
-    fn from(descriptor: assistant_tools::ToolDescriptor) -> Self {
-        Self {
-            id: descriptor.id,
-            name: descriptor.name,
-            description: descriptor.description,
-            tier: descriptor.tier.into(),
-            companion_of: descriptor.companion_of,
-        }
-    }
 }
 
 /// 工具结果的展示投影（wire 侧）：渲染与历史重载的唯一事实源（I46 compact §3.4）。
@@ -178,86 +125,6 @@ pub struct DocAnchorDto {
 pub struct DocLineRangeDto {
     pub start: u64,
     pub end: u64,
-}
-
-impl From<ToolCompact> for ToolResultCompactDto {
-    fn from(compact: ToolCompact) -> Self {
-        Self {
-            head: compact.head,
-            truncated: compact.truncated.map(|info| TruncatedDto {
-                unit: info.unit.into(),
-                returned: info.returned,
-                total: info.total,
-            }),
-            persisted: compact.persisted.map(|info| PersistedResultDto {
-                path: info.path,
-                bytes: info.bytes,
-            }),
-            error_kind: compact.error_kind.map(Into::into),
-            anchor: compact.anchor.map(|anchor| DocAnchorDto {
-                path: anchor.path,
-                ranges: anchor
-                    .ranges
-                    .into_iter()
-                    .map(|range| DocLineRangeDto {
-                        start: range.start,
-                        end: range.end,
-                    })
-                    .collect(),
-            }),
-        }
-    }
-}
-
-impl From<CompactUnit> for TruncatedUnitDto {
-    fn from(unit: CompactUnit) -> Self {
-        match unit {
-            CompactUnit::Lines => Self::Lines,
-            CompactUnit::Items => Self::Items,
-            CompactUnit::Bytes => Self::Bytes,
-            CompactUnit::Unknown => Self::Unknown,
-        }
-    }
-}
-
-impl From<assistant_tools::compact::TruncatedUnit> for TruncatedUnitDto {
-    fn from(unit: assistant_tools::compact::TruncatedUnit) -> Self {
-        match unit {
-            assistant_tools::compact::TruncatedUnit::Lines => Self::Lines,
-            assistant_tools::compact::TruncatedUnit::Items => Self::Items,
-            assistant_tools::compact::TruncatedUnit::Bytes => Self::Bytes,
-            assistant_tools::compact::TruncatedUnit::Unknown => Self::Unknown,
-        }
-    }
-}
-
-impl From<assistant_tools::compact::ToolResultCompact> for ToolResultCompactDto {
-    fn from(compact: assistant_tools::compact::ToolResultCompact) -> Self {
-        Self {
-            head: compact.head,
-            truncated: compact.truncated.map(|info| TruncatedDto {
-                unit: info.unit.into(),
-                returned: info.returned,
-                total: info.total,
-            }),
-            persisted: compact.persisted.map(|info| PersistedResultDto {
-                path: info.path,
-                bytes: info.bytes,
-            }),
-            error_kind: compact.error_kind.map(Into::into),
-            anchor: compact.anchor.map(|anchor| DocAnchorDto {
-                path: anchor.path,
-                ranges: anchor
-                    .ranges
-                    .into_iter()
-                    .map(|range| DocLineRangeDto {
-                        start: range.start,
-                        end: range.end,
-                    })
-                    .collect(),
-            }),
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
@@ -312,62 +179,12 @@ pub enum AgentToolCallPayloadDto {
     },
 }
 
-impl From<ToolErrorClass> for ToolErrorKindDto {
-    fn from(kind: ToolErrorClass) -> Self {
-        match kind {
-            ToolErrorClass::Business => Self::Business,
-            ToolErrorClass::Timeout => Self::Timeout,
-            ToolErrorClass::Cancelled => Self::Cancelled,
-            ToolErrorClass::Internal => Self::Internal,
-            ToolErrorClass::Denied => Self::Denied,
-        }
-    }
-}
-
-impl From<ToolEventPayload> for AgentToolCallPayloadDto {
-    fn from(payload: ToolEventPayload) -> Self {
-        match payload {
-            ToolEventPayload::Started { args_preview } => Self::Started { args_preview },
-            ToolEventPayload::ArgsDelta { delta } => Self::ArgsDelta { delta },
-            ToolEventPayload::Finished {
-                result,
-                confirmation_wait_ms,
-                compact,
-            } => Self::Finished {
-                result,
-                confirmation_wait_ms,
-                compact: compact.map(Into::into),
-            },
-            ToolEventPayload::Failed {
-                error,
-                error_kind,
-                confirmation_wait_ms,
-                compact,
-            } => Self::Failed {
-                error,
-                error_kind: error_kind.into(),
-                confirmation_wait_ms,
-                compact: compact.map(Into::into),
-            },
-        }
-    }
-}
-
 /// 权限意图（wire 侧）。与 `assistant_tools::PermissionIntent` 同形，内部类型不外泄到契约。
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PermissionIntentDto {
     pub action: String,
     pub resources: Vec<String>,
-}
-
-impl From<PermissionIntent> for PermissionIntentDto {
-    fn from(intent: PermissionIntent) -> Self {
-        Self {
-            action: intent.action,
-            resources: intent.resources,
-        }
-    }
 }
 
 /// 工具行为提示（wire 侧）：卡片据此回答「能不能撤销」。
@@ -377,16 +194,6 @@ pub struct ToolBehaviorDto {
     pub read_only: bool,
     pub destructive: bool,
     pub open_world: bool,
-}
-
-impl From<BehaviorHints> for ToolBehaviorDto {
-    fn from(hints: BehaviorHints) -> Self {
-        Self {
-            read_only: hints.read_only,
-            destructive: hints.destructive,
-            open_world: hints.open_world,
-        }
-    }
 }
 
 /// 审批辅助信息的唯一包裹。新增审批信息只在此扩展，不再加 `ToolApprovalRequestDto` 顶层字段。
@@ -420,16 +227,6 @@ pub struct ApprovalPreviewDto {
     pub estimated: bool,
 }
 
-impl From<ApprovalPreview> for ApprovalPreviewDto {
-    fn from(preview: ApprovalPreview) -> Self {
-        Self {
-            summary: preview.summary,
-            truncated: preview.truncated,
-            estimated: preview.estimated,
-        }
-    }
-}
-
 /// 开放检测结论：`kind` 开放、`severity` 封闭（仅用于着色）。
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -446,55 +243,6 @@ pub enum ApprovalExtensionSeverityDto {
     Info,
     Caution,
     Danger,
-}
-
-impl From<ApprovalExtensionSeverity> for ApprovalExtensionSeverityDto {
-    fn from(severity: ApprovalExtensionSeverity) -> Self {
-        match severity {
-            ApprovalExtensionSeverity::Info => Self::Info,
-            ApprovalExtensionSeverity::Caution => Self::Caution,
-            ApprovalExtensionSeverity::Danger => Self::Danger,
-        }
-    }
-}
-
-impl From<ApprovalExtension> for ApprovalExtensionDto {
-    fn from(extension: ApprovalExtension) -> Self {
-        Self {
-            kind: extension.kind,
-            label: extension.label,
-            value: extension.value,
-            severity: extension.severity.into(),
-        }
-    }
-}
-
-impl From<ApprovalReason> for ApprovalReasonDto {
-    fn from(reason: ApprovalReason) -> Self {
-        match reason {
-            ApprovalReason::DefaultPolicy { rule } => Self::DefaultPolicy { rule },
-            ApprovalReason::ApprovalLevel { level } => Self::ApprovalLevel {
-                level: ApprovalLevelDto::from(level.as_str()),
-            },
-            ApprovalReason::ProjectRule { action, resource } => {
-                Self::ProjectRule { action, resource }
-            }
-            ApprovalReason::TierCeiling { tier } => Self::TierCeiling { tier: tier.into() },
-            ApprovalReason::Advisor { rationale } => Self::Advisor { rationale },
-        }
-    }
-}
-
-impl From<ApprovalContext> for ApprovalContextDto {
-    fn from(context: ApprovalContext) -> Self {
-        Self {
-            tier: context.tier.into(),
-            behavior: context.behavior.into(),
-            reasons: context.reasons.into_iter().map(Into::into).collect(),
-            preview: context.preview.map(Into::into),
-            extensions: context.extensions.into_iter().map(Into::into).collect(),
-        }
-    }
 }
 
 /// 审批请求（`agent-tool-call` 的 `awaitingApproval` 载荷）。
@@ -672,25 +420,6 @@ pub enum AgentNodeDto {
     AfterIteration,
 }
 
-impl From<AgentNode> for AgentNodeDto {
-    fn from(node: AgentNode) -> Self {
-        match node {
-            AgentNode::Admit => Self::Admit,
-            AgentNode::Prepare => Self::Prepare,
-            AgentNode::Brake => Self::Brake,
-            AgentNode::Ladder => Self::Ladder,
-            AgentNode::Model => Self::Model,
-            AgentNode::PersistAssistant => Self::PersistAssistant,
-            AgentNode::Branch => Self::Branch,
-            AgentNode::BudgetSplit => Self::BudgetSplit,
-            AgentNode::Pipeline => Self::Pipeline,
-            AgentNode::AfterTool => Self::AfterTool,
-            AgentNode::PersistTools => Self::PersistTools,
-            AgentNode::AfterIteration => Self::AfterIteration,
-        }
-    }
-}
-
 /// 节点状态 7 值闭集（I55 §4.3）。后端只发 `running` / `waiting` / 三个终态。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "lowercase")]
@@ -704,20 +433,6 @@ pub enum NodeStateDto {
     Cancelled,
 }
 
-impl From<NodeState> for NodeStateDto {
-    fn from(state: NodeState) -> Self {
-        match state {
-            NodeState::Pending => Self::Pending,
-            NodeState::Running => Self::Running,
-            NodeState::Waiting => Self::Waiting,
-            NodeState::Finished => Self::Finished,
-            NodeState::Error => Self::Error,
-            NodeState::Skipped => Self::Skipped,
-            NodeState::Cancelled => Self::Cancelled,
-        }
-    }
-}
-
 /// 工具流水线阶段 5 值（复用内部 `ToolStage`，不新造枚举）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -729,18 +444,6 @@ pub enum PipelineStageDto {
     Persist,
 }
 
-impl From<ToolStage> for PipelineStageDto {
-    fn from(stage: ToolStage) -> Self {
-        match stage {
-            ToolStage::Find => Self::Find,
-            ToolStage::Validate => Self::Validate,
-            ToolStage::Gateway => Self::Gateway,
-            ToolStage::Execute => Self::Execute,
-            ToolStage::Persist => Self::Persist,
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "lowercase")]
 pub enum BrakeVerdictDto {
@@ -748,29 +451,11 @@ pub enum BrakeVerdictDto {
     Stop,
 }
 
-impl From<BrakeVerdict> for BrakeVerdictDto {
-    fn from(verdict: BrakeVerdict) -> Self {
-        match verdict {
-            BrakeVerdict::Continue => Self::Continue,
-            BrakeVerdict::Stop => Self::Stop,
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "lowercase")]
 pub enum MiddlewareActionDto {
     Continue,
     Stop,
-}
-
-impl From<MiddlewareAction> for MiddlewareActionDto {
-    fn from(action: MiddlewareAction) -> Self {
-        match action {
-            MiddlewareAction::Continue => Self::Continue,
-            MiddlewareAction::Stop => Self::Stop,
-        }
-    }
 }
 
 /// 剩余预算：每字段 `null` 表示「未配置」而非 0（I55 §4.4 末段）。
@@ -782,16 +467,6 @@ pub struct BudgetRemainingDto {
     pub remaining_wall_clock_ms: Option<u64>,
 }
 
-impl From<BudgetRemaining> for BudgetRemainingDto {
-    fn from(budget: BudgetRemaining) -> Self {
-        Self {
-            remaining_iterations: budget.remaining_iterations,
-            remaining_tool_calls: budget.remaining_tool_calls,
-            remaining_wall_clock_ms: budget.remaining_wall_clock_ms,
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct BrakeDetailDto {
@@ -800,32 +475,12 @@ pub struct BrakeDetailDto {
     pub budget: BudgetRemainingDto,
 }
 
-impl From<BrakeDetail> for BrakeDetailDto {
-    fn from(detail: BrakeDetail) -> Self {
-        Self {
-            verdict: detail.verdict.into(),
-            hook: detail.hook,
-            budget: detail.budget.into(),
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct LadderDetailDto {
     pub applied: Vec<String>,
     pub dropped_messages: Option<u32>,
     pub trimmed_chars: Option<u64>,
-}
-
-impl From<LadderDetail> for LadderDetailDto {
-    fn from(detail: LadderDetail) -> Self {
-        Self {
-            applied: detail.applied,
-            dropped_messages: detail.dropped_messages,
-            trimmed_chars: detail.trimmed_chars,
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -839,19 +494,6 @@ pub struct ModelDetailDto {
     pub tool_call_count: u32,
 }
 
-impl From<ModelDetail> for ModelDetailDto {
-    fn from(detail: ModelDetail) -> Self {
-        Self {
-            attempt: detail.attempt,
-            retry_reason: detail.retry_reason,
-            prompt_tokens: detail.prompt_tokens,
-            completion_tokens: detail.completion_tokens,
-            finish_reason: detail.finish_reason,
-            tool_call_count: detail.tool_call_count,
-        }
-    }
-}
-
 /// 工具流水线 detail：过程形态带阶段与序号，终态形态全 `null`（I55 §4.4）。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -863,34 +505,12 @@ pub struct PipelineDetailDto {
     pub tool_call_id: Option<String>,
 }
 
-impl From<PipelineDetail> for PipelineDetailDto {
-    fn from(detail: PipelineDetail) -> Self {
-        Self {
-            stage: detail.stage.map(Into::into),
-            index: detail.index,
-            total: detail.total,
-            tool_name: detail.tool_name,
-            tool_call_id: detail.tool_call_id,
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct BudgetSplitDetailDto {
     pub requested: u32,
     pub executed: u32,
     pub deferred: u32,
-}
-
-impl From<BudgetSplitDetail> for BudgetSplitDetailDto {
-    fn from(detail: BudgetSplitDetail) -> Self {
-        Self {
-            requested: detail.requested,
-            executed: detail.executed,
-            deferred: detail.deferred,
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -901,30 +521,11 @@ pub struct BranchDetailDto {
     pub tool_call_count: u32,
 }
 
-impl From<BranchDetail> for BranchDetailDto {
-    fn from(detail: BranchDetail) -> Self {
-        Self {
-            has_tool_calls: detail.has_tool_calls,
-            wrap_up: detail.wrap_up,
-            tool_call_count: detail.tool_call_count,
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct PersistDetailDto {
     pub rows: u32,
     pub message_ids: Vec<String>,
-}
-
-impl From<PersistDetail> for PersistDetailDto {
-    fn from(detail: PersistDetail) -> Self {
-        Self {
-            rows: detail.rows,
-            message_ids: detail.message_ids,
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -935,28 +536,10 @@ pub struct MiddlewareVerdictDto {
     pub reason: Option<String>,
 }
 
-impl From<MiddlewareVerdict> for MiddlewareVerdictDto {
-    fn from(verdict: MiddlewareVerdict) -> Self {
-        Self {
-            middleware: verdict.middleware,
-            action: verdict.action.into(),
-            reason: verdict.reason,
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct AfterToolDetailDto {
     pub verdicts: Vec<MiddlewareVerdictDto>,
-}
-
-impl From<AfterToolDetail> for AfterToolDetailDto {
-    fn from(detail: AfterToolDetail) -> Self {
-        Self {
-            verdicts: detail.verdicts.into_iter().map(Into::into).collect(),
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -964,15 +547,6 @@ impl From<AfterToolDetail> for AfterToolDetailDto {
 pub struct AfterIterationDetailDto {
     pub nudges: Vec<String>,
     pub next_iteration: u32,
-}
-
-impl From<AfterIterationDetail> for AfterIterationDetailDto {
-    fn from(detail: AfterIterationDetail) -> Self {
-        Self {
-            nudges: detail.nudges,
-            next_iteration: detail.next_iteration,
-        }
-    }
 }
 
 /// 按节点分派的 detail 闭集（I55 §4.4）：`admit` / `prepare` 无 detail。
@@ -988,22 +562,6 @@ pub enum AgentNodeDetailDto {
     Persist(PersistDetailDto),
     AfterTool(AfterToolDetailDto),
     AfterIteration(AfterIterationDetailDto),
-}
-
-impl From<AgentNodeDetail> for AgentNodeDetailDto {
-    fn from(detail: AgentNodeDetail) -> Self {
-        match detail {
-            AgentNodeDetail::Brake(detail) => Self::Brake(detail.into()),
-            AgentNodeDetail::Ladder(detail) => Self::Ladder(detail.into()),
-            AgentNodeDetail::Model(detail) => Self::Model(detail.into()),
-            AgentNodeDetail::Pipeline(detail) => Self::Pipeline(detail.into()),
-            AgentNodeDetail::BudgetSplit(detail) => Self::BudgetSplit(detail.into()),
-            AgentNodeDetail::Branch(detail) => Self::Branch(detail.into()),
-            AgentNodeDetail::Persist(detail) => Self::Persist(detail.into()),
-            AgentNodeDetail::AfterTool(detail) => Self::AfterTool(detail.into()),
-            AgentNodeDetail::AfterIteration(detail) => Self::AfterIteration(detail.into()),
-        }
-    }
 }
 
 /// 单条节点事件（I55 §4.2 全形）。
@@ -1022,22 +580,4 @@ pub struct AgentNodeEventDto {
     pub agent_id: String,
     pub parent_turn_id: Option<String>,
     pub detail: Option<AgentNodeDetailDto>,
-}
-
-impl From<AgentNodeEvent> for AgentNodeEventDto {
-    fn from(event: AgentNodeEvent) -> Self {
-        Self {
-            turn_id: event.turn_id,
-            conversation_id: event.conversation_id,
-            seq: event.seq,
-            node: event.node.into(),
-            iteration: event.iteration,
-            state: event.state.into(),
-            transition: event.transition,
-            at_ms: event.at_ms,
-            agent_id: event.agent_id,
-            parent_turn_id: event.parent_turn_id,
-            detail: event.detail.map(Into::into),
-        }
-    }
 }

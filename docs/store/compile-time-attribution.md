@@ -362,8 +362,21 @@ tauri-plugin-dialog       start=66.0s  dur=0.5s   end=66.4s
 3. **排除范围必须是 `vault + sync + security` 三件套**，不能只排 vault。security 在 L1 解耦后已无主功能消费者，单独留下只会白编译。
 4. **`assistant-crypto` 必须保留**，但建议做 crate 内 `vault-crypto` feature 切分，额外省约 8 ~ 10s。
 5. **`rusqlite` / `libsqlite3-sys` 省不掉**：`assistant-storage` 同样依赖 SQLCipher，这部分 10.3s 是主功能固定成本。
-6. **`ts-rs` / `ts-rs-macros`（6.1s）在可省清单内**，说明当前 ts-rs 类型生成仅服务于 vault DTO。若未来主功能也引入 ts-rs，这部分会自动变为共享依赖。
+6. **`ts-rs` / `ts-rs-macros`（6.1s）不在可省清单内**：ts-rs 已提升为 workspace 依赖，同时服务 `assistant-protocol`（app 侧 165 个 wire DTO → `src/types/protocol.contract.ts`）与 `assistant-vault`（vault 自有 `dto/` → `src/vault/core/contract/vault.contract.ts`），排除 vault 三件套后仍被 protocol 需要。旧表述「仅服务于 vault DTO」已过期（I62）。
 7. **验收必须实测 wall**：不要用本文的模拟值（剔除后 wall 差值恒为 0）作为收益承诺，它只证明了"终点不变"，不构成收益上限证明。
+
+### 契约生成实测 wall（`contract:gen` 三段口径）
+
+`npm run contract:gen` 已拆为三段独立任务，每段只编译并运行自己的 crate，互不牵连：
+
+| 段 | 命令（均前置 `cd src-tauri &&`） | 生成物 | 实测 wall（热 target） |
+|---|---|---|---|
+| vault | `cargo test -p assistant-vault --lib export_bindings` | `src/vault/core/contract/vault.contract.ts` | ~0.8s |
+| protocol | `cargo test -p assistant-protocol --test protocol_bindings` | `src/types/protocol.contract.ts` | ~0.6 ~ 0.9s |
+| shortcuts | `cargo test -p assistant-config --test shortcut_defaults_bindings` | `src/types/shortcutDefaults.generated.ts` | ~0.55s |
+| 合计 | `npm run contract:gen`（三段串行） | 三个产物 | ~2.1s |
+
+拆分收益：改 DTO 只重编 `assistant-protocol`（叶子 crate，依赖闭包仅 serde / serde_json / ts-rs），不再连带 app 全量重编；三段均可从仓库根直接执行。`npm run contract:verify` 在此基础上追加 `git diff --exit-code`，保证生成物字节稳定。
 
 ---
 

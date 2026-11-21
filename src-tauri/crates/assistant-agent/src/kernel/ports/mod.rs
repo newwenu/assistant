@@ -27,7 +27,7 @@ pub type ChatError = ProviderErrorPayload;
 /// 运行时事件。适配层负责映射为线事件名，内核不写字符串字面量。
 ///
 /// `Serialize` 只服务测试轨迹比对（`kernel_emit`），不承载 wire 契约：
-/// 线事件一律经 `protocol/dto` 投影。
+/// 线事件一律经 `assistant-protocol` 的 DTO 投影。
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase", tag = "kind")]
 pub enum TurnEvent {

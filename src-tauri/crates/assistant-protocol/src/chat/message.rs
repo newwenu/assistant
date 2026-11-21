@@ -1,4 +1,3 @@
-use assistant_storage::conversations::MessageRow;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -79,31 +78,6 @@ pub struct MessageDto {
     pub iteration: u32,
 }
 
-impl From<MessageRow> for MessageDto {
-    fn from(r: MessageRow) -> Self {
-        Self {
-            id: r.id,
-            conversation_id: r.conversation_id,
-            role: r.role,
-            content: r.content,
-            tokens: r.tokens,
-            timestamp: r.timestamp,
-            parent_id: r.parent_id,
-            is_pinned: r.is_pinned,
-            reasoning: r.reasoning,
-            sibling_index: r.sibling_index,
-            sibling_count: None,
-            provider_id: r.provider_id,
-            model_id: r.model_id,
-            mode_id: r.mode_id,
-            status: MessageStatusDto::from_db(&r.status),
-            tool_calls: Vec::new(),
-            turn_index: r.turn_index.and_then(|v| u32::try_from(v).ok()),
-            iteration: u32::try_from(r.iteration).unwrap_or(0),
-        }
-    }
-}
-
 /// 落库原文视图（I51 §6.1）：字段与 `MessageRow` 一一对应，`content` / `tool_calls_json`
 /// 均为未解析的存储原串，供历史详情页「原始来源」与 JSONL 导出使用。
 /// 输出专用 DTO，禁止作为任何命令入参。
@@ -133,30 +107,4 @@ pub struct MessageRecordDto {
     pub is_error: bool,
     pub turn_index: Option<u32>,
     pub iteration: u32,
-}
-
-impl From<MessageRow> for MessageRecordDto {
-    fn from(r: MessageRow) -> Self {
-        Self {
-            id: r.id,
-            conversation_id: r.conversation_id,
-            role: r.role,
-            content: r.content,
-            reasoning: r.reasoning,
-            tool_calls_json: r.tool_calls_json,
-            tokens: r.tokens,
-            timestamp: r.timestamp,
-            parent_id: r.parent_id,
-            sibling_index: r.sibling_index,
-            is_pinned: r.is_pinned,
-            provider_id: r.provider_id,
-            model_id: r.model_id,
-            mode_id: r.mode_id,
-            status: r.status,
-            tool_call_id: r.tool_call_id,
-            is_error: r.is_error,
-            turn_index: r.turn_index.and_then(|v| u32::try_from(v).ok()),
-            iteration: u32::try_from(r.iteration).unwrap_or(0),
-        }
-    }
 }

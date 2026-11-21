@@ -322,7 +322,7 @@ fn mode_row_without_tool_config(id: &str) -> AgentModeRow {
 
 #[test]
 fn agent_mode_tool_config_falls_back_to_contract_default() {
-    let dto = AgentModeDto::from_row(&mode_row_without_tool_config("builtin-agent"));
+    let dto = AgentModeDto::from(&mode_row_without_tool_config("builtin-agent"));
     assert_eq!(dto.tool_config, ConversationToolConfigDto::default());
 }
 

@@ -8,3 +8,4 @@ pub mod orb_conf;
 pub mod shortcut;
 
 pub use conf_group::{apply_patch, ConfGroup, LoadPolicy};
+mod dto_bridge;

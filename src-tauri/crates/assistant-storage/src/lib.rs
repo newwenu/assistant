@@ -12,3 +12,4 @@ pub mod workspaces;
 mod tools;
 
 pub use tools::{mcp_servers, tool_favorites, tool_history};
+mod dto_bridge;

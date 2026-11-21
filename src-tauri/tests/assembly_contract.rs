@@ -1601,19 +1601,24 @@ fn b12_plugin_commands_use_feature_prefix() {
 
 #[test]
 fn g5_domain_placement_relocations() {
-    let workspace_root = manifest_dir()
-        .parent()
-        .expect("src-tauri 有父目录")
-        .to_path_buf();
-    let crates_root = workspace_root.join("crates");
+    let crates_root = manifest_dir().join("crates");
 
     let mut problems = Vec::new();
 
-    if src_root().join("protocol/dto/settings.rs").exists() {
-        problems.push("protocol/dto/settings.rs 仍存在（应已按域拆为 5 个文件）".to_string());
+    if crates_root
+        .join("assistant-protocol/src/settings.rs")
+        .exists()
+    {
+        problems
+            .push("assistant-protocol/src/settings.rs 仍存在（应已按域拆为 5 个文件）".to_string());
     }
-    if !src_root().join("protocol/dto/window.rs").exists() {
-        problems.push("protocol/dto/window.rs 缺失（window 相关 DTO 应独立成文件）".to_string());
+    if !crates_root
+        .join("assistant-protocol/src/window.rs")
+        .exists()
+    {
+        problems.push(
+            "assistant-protocol/src/window.rs 缺失（window 相关 DTO 应独立成文件）".to_string(),
+        );
     }
 
     let audit_rs = read("cmd/vault/audit.rs");
@@ -1645,4 +1650,129 @@ fn g5_domain_placement_relocations() {
     }
 
     assert!(problems.is_empty(), "领域归属回流检查失败: {:?}", problems);
+}
+
+fn declared_type_names(dir: &Path) -> BTreeSet<String> {
+    let mut files = Vec::new();
+    if dir.is_dir() {
+        collect_rs_files(dir, &mut files);
+    }
+    let mut names = BTreeSet::new();
+    for file in files {
+        let text = fs::read_to_string(&file).expect("source file is readable");
+        for line in text.lines() {
+            let trimmed = line.trim();
+            for prefix in ["pub struct ", "pub enum ", "pub type "] {
+                let Some(rest) = trimmed.strip_prefix(prefix) else {
+                    continue;
+                };
+                let name = rest
+                    .split(|c: char| c.is_whitespace() || matches!(c, '{' | '(' | '<' | ';'))
+                    .next()
+                    .unwrap_or("");
+                if !name.is_empty() {
+                    names.insert(name.to_string());
+                }
+            }
+        }
+    }
+    names
+}
+
+fn type_last_segment(path: &str) -> String {
+    path.trim()
+        .trim_start_matches('&')
+        .trim()
+        .split("::")
+        .last()
+        .unwrap_or("")
+        .trim()
+        .to_string()
+}
+
+/// G6：DTO 桥接按 Rust 孤儿规则归属，双向校验「DTO 侧在 assistant-protocol、域类型侧在桥接所在 crate」。
+#[test]
+fn g6_dto_bridge_ownership_is_bidirectional() {
+    let crates_root = manifest_dir().join("crates");
+    let protocol_crate = "assistant-protocol";
+
+    let members = workspace_member_paths();
+    assert!(
+        members
+            .iter()
+            .any(|m| m == &format!("crates/{protocol_crate}")),
+        "Cargo.toml 的 [workspace] members 缺少 crates/{protocol_crate}（实际: {members:?}）"
+    );
+
+    let protocol_types = declared_type_names(&crates_root.join(protocol_crate).join("src"));
+
+    let mut problems = Vec::new();
+    let mut seen: BTreeSet<(String, String)> = BTreeSet::new();
+
+    for entry in fs::read_dir(&crates_root).expect("crates 目录可读") {
+        let dir = entry.expect("crate 目录可读").path();
+        if !dir.is_dir() {
+            continue;
+        }
+        let Some(crate_name) = dir.file_name().and_then(|n| n.to_str()).map(str::to_string) else {
+            continue;
+        };
+        let bridge = dir.join("src/dto_bridge.rs");
+        if !bridge.is_file() {
+            continue;
+        }
+        let own_types = declared_type_names(&dir.join("src"));
+        let text = fs::read_to_string(&bridge).expect("dto_bridge.rs 可读");
+
+        for line in text.lines() {
+            let trimmed = line.trim();
+            let Some(rest) = trimmed.strip_prefix("impl From<") else {
+                continue;
+            };
+            let Some((from, rest)) = rest.split_once("> for ") else {
+                continue;
+            };
+            let Some(to) = rest.split('{').next() else {
+                continue;
+            };
+            let from = type_last_segment(from);
+            let to = type_last_segment(to);
+
+            let from_is_dto = protocol_types.contains(&from);
+            let to_is_dto = protocol_types.contains(&to);
+
+            let domain = match (from_is_dto, to_is_dto) {
+                (true, true) => {
+                    problems.push(format!(
+                        "{crate_name}: impl From<{from}> for {to} 两侧都是 DTO（桥接应留在 assistant-protocol）"
+                    ));
+                    continue;
+                }
+                (false, false) => {
+                    problems.push(format!(
+                        "{crate_name}: impl From<{from}> for {to} 不含 assistant-protocol 声明的 DTO 侧"
+                    ));
+                    continue;
+                }
+                (true, false) => to.clone(),
+                (false, true) => from.clone(),
+            };
+
+            if !own_types.contains(&domain) {
+                problems.push(format!(
+                    "{crate_name}: 桥接域类型 {domain} 未在本 crate 声明（孤儿规则归属错误）"
+                ));
+            }
+            if !seen.insert((from.clone(), to.clone())) {
+                problems.push(format!(
+                    "{crate_name}: impl From<{from}> for {to} 重复归属（同一桥接只能落在一处）"
+                ));
+            }
+        }
+    }
+
+    assert!(
+        problems.is_empty(),
+        "DTO 桥接归属双向校验失败: {problems:#?}"
+    );
 }

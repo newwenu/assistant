@@ -1,4 +1,3 @@
-use assistant_storage::conversations::ConversationRow;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -30,33 +29,6 @@ pub struct ConversationDto {
     /// 会话级工具配置；键恒在，未配置时为 `null`（agent 链路回退到模式初始值）。
     #[serde(default)]
     pub tool_config: Option<ConversationToolConfigDto>,
-}
-
-impl From<ConversationRow> for ConversationDto {
-    fn from(r: ConversationRow) -> Self {
-        let tool_config = r
-            .tool_config_json
-            .as_deref()
-            .and_then(|raw| serde_json::from_str(raw).ok());
-        Self {
-            id: r.id,
-            title: r.title,
-            title_source: r.title_source,
-            provider_id: r.provider_id,
-            model_id: r.model_id,
-            system_prompt: r.system_prompt,
-            is_pinned: r.is_pinned,
-            sort_order: r.sort_order,
-            generation: r.generation,
-            created_at: r.created_at,
-            updated_at: r.updated_at,
-            is_full: r.is_full,
-            active_branch_id: r.active_branch_id,
-            mode_id: r.mode_id,
-            workspace_root: r.workspace_root,
-            tool_config,
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]

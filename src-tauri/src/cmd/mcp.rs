@@ -10,20 +10,7 @@ use crate::mcp::config::{
     derive_server_id, is_valid_server_id, open_launch_config, runtime_config, seal_launch_config,
     validate_launch_config,
 };
-use crate::protocol::{
-    McpLaunchInputDto, McpServerCreateDto, McpServerDto, McpServerStatusDto, McpServerUpdateDto,
-};
-
-impl From<McpServerStatus> for McpServerStatusDto {
-    fn from(status: McpServerStatus) -> Self {
-        match status {
-            McpServerStatus::Stopped => Self::Stopped,
-            McpServerStatus::Starting => Self::Starting,
-            McpServerStatus::Ready => Self::Ready,
-            McpServerStatus::Error => Self::Error,
-        }
-    }
-}
+use crate::protocol::{McpLaunchInputDto, McpServerCreateDto, McpServerDto, McpServerUpdateDto};
 
 fn launch_config(dto: &McpLaunchInputDto) -> McpLaunchConfig {
     McpLaunchConfig {

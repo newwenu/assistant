@@ -9,6 +9,7 @@ publish.workspace = true
 slow-tests = []
 
 [dependencies]
+assistant-protocol = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 log = { workspace = true }

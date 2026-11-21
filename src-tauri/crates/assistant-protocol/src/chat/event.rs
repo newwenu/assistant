@@ -1,5 +1,3 @@
-use assistant_providers::base::ProviderErrorPayload;
-use assistant_providers::types::chat_delta::RetryNotification;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -18,18 +16,6 @@ pub struct RetryNotificationDto {
     pub error_code: Option<CommandErrorCodeDto>,
 }
 
-impl From<RetryNotification> for RetryNotificationDto {
-    fn from(r: RetryNotification) -> Self {
-        Self {
-            attempt: r.attempt,
-            max_attempts: r.max_attempts,
-            delay_ms: r.delay_ms,
-            message: r.message,
-            error_code: r.error_code.map(CommandErrorCodeDto::from),
-        }
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ProviderErrorPayloadDto {
@@ -44,20 +30,6 @@ pub struct ProviderErrorPayloadDto {
     pub provider: Option<String>,
     #[serde(default)]
     pub provider_code: Option<String>,
-}
-
-impl From<ProviderErrorPayload> for ProviderErrorPayloadDto {
-    fn from(p: ProviderErrorPayload) -> Self {
-        Self {
-            code: CommandErrorCodeDto::from(p.code),
-            message: p.message,
-            retry_after_ms: p.retry_after_ms,
-            retryable: p.retryable,
-            http_status: p.http_status,
-            provider: p.provider,
-            provider_code: p.provider_code,
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default, TS)]
@@ -107,21 +79,6 @@ pub enum TurnPhaseDto {
     Finalizing,
 }
 
-impl From<assistant_agent::kernel::TurnPhase> for TurnPhaseDto {
-    fn from(phase: assistant_agent::kernel::TurnPhase) -> Self {
-        use assistant_agent::kernel::TurnPhase;
-        match phase {
-            TurnPhase::Starting => Self::Starting,
-            TurnPhase::Compacting => Self::Compacting,
-            TurnPhase::Thinking => Self::Thinking,
-            TurnPhase::Streaming => Self::Streaming,
-            TurnPhase::ToolCalling => Self::ToolCalling,
-            TurnPhase::AwaitingApproval => Self::AwaitingApproval,
-            TurnPhase::Finalizing => Self::Finalizing,
-        }
-    }
-}
-
 /// 与内核 `SessionState` 同源（封闭集合）；同样用穷尽 `match` 保证不漏变体。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase", rename_all_fields = "camelCase")]
@@ -135,26 +92,6 @@ pub enum SessionStateDto {
         message: String,
         recoverable: bool,
     },
-}
-
-impl From<assistant_agent::kernel::SessionState> for SessionStateDto {
-    fn from(state: assistant_agent::kernel::SessionState) -> Self {
-        use assistant_agent::kernel::SessionState;
-        match state {
-            SessionState::Idle => Self::Idle,
-            SessionState::Processing { turn_id, phase } => Self::Processing {
-                turn_id,
-                phase: phase.into(),
-            },
-            SessionState::Error {
-                message,
-                recoverable,
-            } => Self::Error {
-                message,
-                recoverable,
-            },
-        }
-    }
 }
 
 /// 状态快照载荷：不带 `seq`（它不是流片段）。
