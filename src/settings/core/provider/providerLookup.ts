@@ -58,9 +58,10 @@ export function getPresetByType(type: string): ProviderPreset | undefined {
 }
 
 export function getApiFormatByType(type: string): ApiFormat {
-  const preset = PRESET_MAP.get(type);
+  const normalized = type.trim().toLowerCase();
+  const preset = PRESET_MAP.get(normalized);
   if (preset) return preset.format;
-  const byCustomType = getProviderFormatByCustomType(type);
+  const byCustomType = getProviderFormatByCustomType(normalized);
   if (byCustomType) return byCustomType.id as ApiFormat;
   log.warn("unknown provider type, falling back to default api format", {
     type,

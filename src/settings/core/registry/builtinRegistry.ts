@@ -192,22 +192,52 @@ export function insertUnique<T>(
   key: string,
   item: T,
   kind: string,
+  keyOf?: (entry: T) => string,
 ): void {
+  if (keyOf) {
+    const index = list.findIndex((entry) => keyOf(entry) === key);
+    if (index >= 0) {
+      list[index] = item;
+      bumpBuiltinVersion();
+      return;
+    }
+  }
   if (insertUniqueEntry(list, keys, key, item, kind)) bumpBuiltinVersion();
 }
 
 export function defineSetting(def: SettingDefinition): SettingDefinition {
-  insertUnique(definitions, definitionKeys, def.key, def, "setting key");
+  insertUnique(
+    definitions,
+    definitionKeys,
+    def.key,
+    def,
+    "setting key",
+    (entry) => entry.key,
+  );
   return def;
 }
 
 export function defineSection(sec: SettingSectionDef): SettingSectionDef {
-  insertUnique(sections, sectionIds, sec.id, sec, "section id");
+  insertUnique(
+    sections,
+    sectionIds,
+    sec.id,
+    sec,
+    "section id",
+    (entry) => entry.id,
+  );
   return sec;
 }
 
 export function defineConfSlot(slot: ConfSlot): ConfSlot {
-  insertUnique(confSlots, confSlotGroups, slot.group, slot, "conf group");
+  insertUnique(
+    confSlots,
+    confSlotGroups,
+    slot.group,
+    slot,
+    "conf group",
+    (entry) => entry.group,
+  );
   return slot;
 }
 

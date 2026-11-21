@@ -8,8 +8,18 @@ const log = createLogger("confRuntime");
 
 const slots = new Map<ConfGroup, ConfSlot>();
 
+function isSameSlot(a: ConfSlot, b: ConfSlot): boolean {
+  return (
+    a.invoke === b.invoke &&
+    a.namespace === b.namespace &&
+    a.pageId === b.pageId
+  );
+}
+
 export function registerConfSlot<G extends ConfGroup>(slot: ConfSlot<G>): void {
-  if (slots.has(slot.group)) {
+  const existing = slots.get(slot.group);
+  if (existing) {
+    if (isSameSlot(existing, slot)) return;
     if (import.meta.env.DEV) {
       throw new Error(`[conf] duplicate conf slot: ${slot.group}`);
     }
