@@ -41,7 +41,7 @@
 | **P15 Turn 观测面** | 一轮 agent turn 的 12 个既有节点出声（单一 `agent-node-event` + 7 值节点状态闭集 + 三投影），供主窗口按 `(conversationId, turnId)` 渲染 orb agent 的完整执行过程；**只读事实、不参与控制**（观测 sink 不作控制通道；将来的编排器经独立控制端口接入，见 I55 §11）、不改既有事件语义 | I55（已归档） | ✅ 已完成（2026-11-19）：V0–V2 全部交付（后端 12 节点出声 + 前端投影与渲染），V3 回放受闸未开工；观测轴只读既有事实、不参与控制，不阻塞任何在途阶段；规格与任务清单已归档 | P4（`TurnObserver` 已存在）、P6（`transport` 已接线） |
 | **P16 长行读取（有界水平窗口）** | 把 `read` 的「无界」收口成「有界 + 如实报告」，**不新增任何读取侧状态**：扫描宽限改字节口径 `EOF_GRACE_BYTES`（8 MiB）+ **整行计费**（预算耗尽时即使窗口未满也停）；超长行带截断标记、`data` 增 `truncatedLines`；footer 增 `[long-lines]`；`ReadReceipt` 增 `truncated_lines` / `line_window_max_chars` 并驱动 `edit` fail-closed 闸门；**不做**行内水平窗口（`column` / `maxLineChars` 已移交 P17，I57 §0.1）、行索引 / seek / 精确 `totalLines`（I57 §9 L1 / L3 / L6 / L7 是边界，不是缺陷） | I57（已归档） | ✅ 已完成（2026-11-18；T1–T4 全部勾选，G1–G8 / G10–G12 有测试映射，`cargo test -p assistant-tools` 全绿、clippy 无警告、fmt 无 diff；P17 的 T2–T6 前置解除；任务级进度见 I57 tasklist（已归档）） | P5、P13 |
 | **P17 超级工具（能力发现与索引型读取）** | 新增三个工具：`request_tool`（`Tool::manual()` + 本轮可用集透传，按需返回清单与手册，**不改变本轮工具集**）、`super_read`（落盘行索引 + 按行 `seek` + 精确 `totalLines` + `unit: char\|byte`）、`super_edit`（行地址区间替换 + `expected` 校验，不做子串匹配）；索引目录 / revision 失效 / 单飞 / 容量淘汰；**契约对齐、实现独立**（I58 §0.3）：B 自写扫描 / 渲染 / 索引，只对齐 P16 的行格式字面量、footer 标记集、`data` 键名与回执字段，`data` 只增 `index` 一项并回写 I57 §3.3 | I58（已归档） | ✅ 已完成（2026-11-19；T1–T8 全部勾选，G1–G23 逐条有测试映射：G20 渲染层门禁落在**源码结构 + CSS 声明**层（`chat/tool/__tests__/panelStructure.test.ts` 11 条，仓库无 jsdom / testing-library，不为此引入新依赖），失败矩阵 F1–F14 逐条映射（F1 / F2 / F3 走公开入口、F4 文案在判据层钉住，其余在对应工具或判据层断言）；升级通道 G4·G21·G22·G23 由 `src-tauri/tests/tool_escalation.rs` 11 用例 + `assistant-agent` 循环侧 3 用例 + `request_tool` 工具侧 10 用例覆盖；`cargo test --workspace` / `clippy` / `fmt --check` / `vitest` / `tsc --noEmit` 全绿，`npm run contract:gen` 对两个生成文件零 diff（本阶段未改 DTO）；任务级进度与验收记录见 I58 tasklist（已归档）） | P2、P4、P5、P13（格式字面量对齐 I57，非实现依赖） |
-| **P18 编排层（L2）** | 在 turn 之间编排：`assistant-orchestrator` 独立 crate（内核的客户端）+ run 级键与取消树 + run 台账 + 控制端口；工作流模板（数据）与 turn 模板（常量）分离；图保持 DAG、保存期校验、不做结果缓存；**不新增执行语义**（执行节点只有 `turn` 一类，`hitl` 只等待、`group` 只分组） | [I70](./I70-agent-orchestration-layer-spec.md)（阶段规格）· [I69](./I69-agent-orchestration-roadmap.md)（波次路线图） | 📋 规格已就绪，未开工（2026-11-22；波次 R0–R5 与门禁见 I69，约束与判据见 I70） | P4、P5、P12、P15 |
+| **P18 编排层（L2）** | 在 turn 之间编排：`assistant-orchestrator` 独立 crate（内核的客户端）+ run 级键与取消树 + run 台账 + 控制端口；工作流模板（数据）与 turn 模板（常量）分离；图保持 DAG、保存期校验、不做结果缓存；**不新增执行语义**（执行节点只有 `turn` 一类，`hitl` 只等待、`group` 只分组） | [I69a](./I69a-agent-orchestration-base-spec.md)（语义与结构规格）· [I69b](./I69b-agent-orchestration-contract-spec.md)（对外契约与前端接缝）· [I69](./I69-agent-orchestration-roadmap.md)（波次路线图） | 📋 规格已就绪，未开工（2026-11-22；波次 R0–R5 与门禁见 I69，约束与判据见 I69a / I69b） | P4、P5、P12、P15 |
 
 **P0 的完成判据**（P0 时点复核；后续 P5/P6 新增工具不改变该判据的时点含义）：`assistant-agent` 与前端不再持有 chat tool call 累积器与渲染组件；`ToolRegistry` 具备 `<=` 语义与受众过滤；`os_tool_exec` 已走 `exec::invoke`；P0 时点生产注册表只有 `fs_link`（`TOOLBOX_ONLY`）。
 
@@ -49,7 +49,7 @@
 
 参考项目（DeepSeek Harness、Codex、Goose、OpenBitFun、OpenHuman）都在单 agent 闭环之上提供了会话级编排能力。本表只登记候选，**不改变 §2 的 P0–P7 门禁**；任何候选开工前必须先按 §7 第 5 条修改本文 §2/§3，再写 spec。
 
-P8.1 规格已留档但**暂缓接入**（可选备选，见本表末行）；P8.2 仍以 P8.1 为前提，P8.1 暂缓期间 P8.2 不得开工。P10 已立项（规格 [I38g](./I38g-agent-approval-advisor-spec.md)，后续轴）；P15 **已完成**（2026-11-18 立项、2026-11-19 V0–V2 交付并归档，见 §2，规格 I55（已归档），观测轴：只读既有事实、不参与控制，范围约束见本节末）。P18 **已立项**（2026-11-22，阶段规格 [I70](./I70-agent-orchestration-layer-spec.md)、波次路线图 [I69](./I69-agent-orchestration-roadmap.md)，编排轴 L2）。P8.2–P9 属「会话编排」轴（L3），P10 属「审批链」轴，P11 属「工具能力」轴，P12 属「环境（工作区）」轴，P15 属「观测」轴，P18 属「编排」轴（L2），六条轴不互相前置；**P18 与 P8.2 / P8.3 分层不同**（L2 在 turn 之间，L3 在会话之上），互不前置，但 P18 的委派节点类别保留未实现、不得提前建第二套深度规则。
+P8.1 规格已留档但**暂缓接入**（可选备选，见本表末行）；P8.2 仍以 P8.1 为前提，P8.1 暂缓期间 P8.2 不得开工。P10 已立项（规格 [I38g](./I38g-agent-approval-advisor-spec.md)，后续轴）；P15 **已完成**（2026-11-18 立项、2026-11-19 V0–V2 交付并归档，见 §2，规格 I55（已归档），观测轴：只读既有事实、不参与控制，范围约束见本节末）。P18 **已立项**（2026-11-22，阶段规格 [I69a](./I69a-agent-orchestration-base-spec.md) / [I69b](./I69b-agent-orchestration-contract-spec.md)、波次路线图 [I69](./I69-agent-orchestration-roadmap.md)，编排轴 L2）。P8.2–P9 属「会话编排」轴（L3），P10 属「审批链」轴，P11 属「工具能力」轴，P12 属「环境（工作区）」轴，P15 属「观测」轴，P18 属「编排」轴（L2），六条轴不互相前置；**P18 与 P8.2 / P8.3 分层不同**（L2 在 turn 之间，L3 在会话之上），互不前置，但 P18 的委派节点类别保留未实现、不得提前建第二套深度规则。
 
 工作区（原 I38d §4.9（已归档）的推迟项，早期口径挂 P8.2）已于 2026-11-09 **提取为独立阶段 P12**（见 §2，规格 I38h（已归档））：它只依赖 P5 + P6，与 P8.1 无关，不应被 P8.1 的暂缓连带阻塞。
 
@@ -94,9 +94,9 @@ P8.1 规格已留档但**暂缓接入**（可选备选，见本表末行）；P8
 | P5 + P13 → P16 | 水平窗口复用 P5 的 `read` 分块扫描（`window.rs`）与 `append` 截断点；`[truncated: …]` 四态与 `data` 开放 JSON 口径取自 P13（不新增 wire 字段、无 DTO 变更、前端零改动） |
 | P4 + P5 + P13 → P17（T1） | `request_tool` 的可用集取自 P4 已持有的 `TurnRunCtx.tools`（`Option<&[ToolSpec]>`），其生产者是 P5 的 `resolve_available_tools`；`super_read` / `super_edit` 复用 P2 的 Pipeline 与回执存储（`ReadReceiptStore`）、P13 的落盘与预览口径 |
 | P16 → P17（T2–T6） | **只是格式对齐，不是实现依赖**（I58 §0.3「契约对齐、实现独立」）：P17 自写扫描 / 渲染 / 索引，只须保证行格式**字面量**（`{number:>6}` + `\t`、` [truncated]`）、footer 标记集、`data` 既有键名与 `ReadReceipt` 字段与 P16 一致，否则 `edit` 的前缀剥离与闸门会失效（I58 §12 R6）。P16 已完成，无排期阻塞 |
-| P4 + P5 → P18 | 编排只经既有命令入口发起 turn（`src-tauri/src/cmd/agent/mod.rs` 的发送实现）、只经 `ToolPipeline` 执行工具；编排层是**内核的客户端**，不新增发射点、不自建工具执行路径（I70 INV1–INV3） |
-| P15 → P18 | 编排订阅既有节点事件做只读投影，**不改 `EventSink` 签名、不加回执**（I70 INV3）；run 级归属由编排层自己的事件键承担，不回写观测面 |
-| P12 → P18 | 冲突域判据 = 各节点所属会话的 `resolve_workspace` 唯一解析结果；run 不持有工作区（I70 §4 D14） |
+| P4 + P5 → P18 | 编排只经既有命令入口发起 turn（`src-tauri/src/cmd/agent/mod.rs` 的发送实现）、只经 `ToolPipeline` 执行工具；编排层是**内核的客户端**，不新增发射点、不自建工具执行路径（I69a INV1–INV3） |
+| P15 → P18 | 编排订阅既有节点事件做只读投影，**不改 `EventSink` 签名、不加回执**（I69a INV3）；run 级归属由编排层自己的事件键承担，不回写观测面 |
+| P12 → P18 | 冲突域判据 = 各节点所属会话的 `resolve_workspace` 唯一解析结果；run 不持有工作区（I69a §4 D14） |
 | P18 → 画布 W3 / W4 | 模板 schema（R1）与 run 台账 / run 事件 / 前端接缝（R2 / R4 / R5）分别是画布**编排模板编辑器**与**运行态叠加**的前置；两个波次属画布侧规格（W1/W2 见 I66 / I68，W3/W4 定义见画布分析 §11），不由 P18 交付 |
 
 **可并行**：P1 完成后，P2 与 P3 可并行（一个改 `assistant-tools`，一个改 `assistant-agent`，无文件交叠）。P5 在 P2 完成后可与 P3/P4 并行。
@@ -130,7 +130,7 @@ P8.1 规格已留档但**暂缓接入**（可选备选，见本表末行）；P8
 | P16 任务级进度（T1–T4 勾选） | I57 tasklist（已归档） | 任务清单（唯一任务级进度） |
 | P17 超级工具规格（`request_tool` / `super_read` / `super_edit` / 索引生命周期 / 失败矩阵 / 门禁 G1–G23） | I58（已归档） | 实施规格（三个新工具唯一来源；与 I57 逐节对齐） |
 | P17 任务级进度（T1–T8 勾选） | I58 tasklist（已归档） | 任务清单（唯一任务级进度） |
-| P18 编排层阶段规格（L2 编排：边界 / 不变量 / 决议 / 台账与契约 / 调度语义 / 失败矩阵 / 验收 A1–A27） | [I70](./I70-agent-orchestration-layer-spec.md) | 阶段规格（编排层约束唯一来源） |
+| P18 编排层阶段规格（L2 编排：边界 / 不变量 / 决议 / 台账 / 调度语义 / 失败矩阵 / 验收 A1–A27） | [I69a](./I69a-agent-orchestration-base-spec.md) · [I69b](./I69b-agent-orchestration-contract-spec.md) | 阶段规格（编排层语义与契约唯一来源） |
 | P18 波次路线图（R0–R5 / 波次门禁 / 回退点 / 范围外归属 / 风险处置） | [I69](./I69-agent-orchestration-roadmap.md) | 路线图（编排层顺序与验收点唯一来源） |
 | assistant 消息身份指示（头像 / 模式 / 模型、消息级 `mode_id`） | I43-assistant-identity-spec.md（已归档） | 实施规格 |
 | 模型能力事实（三态 + 来源 + 主体 key；内容/列表/推理三处止损） | I45-model-capability-facts-spec.md（已归档） | 实施规格 |

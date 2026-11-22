@@ -1,6 +1,6 @@
 # 编排层「缝」的代码安排：参考项目专项分析
 
-> 日期：2026-11-19｜2026-11-20（结论速览改命题核对、基线改时点快照、移除决议性表述）
+> 日期：2026-11-19｜2026-11-20（结论速览改命题核对、基线改时点快照、移除决议性表述）｜2026-11-22（§4.1 补计数口径）
 > 性质：**预先分析**（只回答「清晰是靠什么机制维持的、我们差在哪一条」；**不含取舍决议**——缝怎么立、注册表落哪层、要不要动 crate 结构，属规格职责）
 > 代码事实快照：仓库代码的 2026-11-19 时点（**时点记录**，不随代码演进追改，需要最新事实时以代码为准）
 > 时效与终止：本文是**一次性决策输入**。编排层结构调整的规格定案后整体归档冻结、不再修改；有效内容由规格承接，事实条目作为历史快照保留。
@@ -227,6 +227,8 @@ langgraph 的 `pregel/` 里，状态访问本身被升成了与节点同一代�
 | `kernel → agent` | **12** | `kernel/mod.rs` 3、`kernel/ports/mod.rs` 2、`kernel/turn/emit.rs` 2、`kernel/turn/runner.rs` 5 |
 | `kernel → agent`（测试面，不计入） | 2 | `kernel/ports/test_doubles.rs` |
 | `agent → kernel` | **17** | 分布 9 个文件：`middleware` 1、`round_executor` 1、`stop` 1、`loop_executor/budget` 1、`loop_executor/call` 4、`loop_executor/execute` 1、`loop_executor/mod` 3、`loop_executor/persist` 2、`loop_executor/terminal` 3 |
+
+计数口径：按 `use crate::agent::…` 的 import 条目计——同一文件多条分别计，`super` / 同层引用不计，测试面单列不计入。复算时须按同一口径，否则条数不可比。
 
 核对：**双向互指，缝不存在。** 参考项目在这个指标上全是 0（§3.3）。
 

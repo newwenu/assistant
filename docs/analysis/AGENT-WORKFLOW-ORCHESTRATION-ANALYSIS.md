@@ -1,6 +1,6 @@
 # 可编排 Agent（ComfyUI 类图编排）：可行性分析
 
-> 日期：2026-11-18（初稿）｜2026-11-19（增补 §12）｜2026-11-20（事实快照复核 + 决策项改为待定案项）｜性质：**预先分析**（只核对命题、对照参考、列全选项与后果；**不含取舍决议**——选型、编号、分期与落地方式属规格职责）
+> 日期：2026-11-18（初稿）｜2026-11-19（增补 §12）｜2026-11-20（事实快照复核 + 决策项改为待定案项）｜2026-11-22（N13 计数复核更正）｜性质：**预先分析**（只核对命题、对照参考、列全选项与后果；**不含取舍决议**——选型、编号、分期与落地方式属规格职责）
 > 判据来源：`docs/principle/CODE-REVIEW-PRINCIPLE.md`、`docs/principle/CODE-SPLIT-PRINCIPLE.md`
 > 事实快照：截至 2026-11-20 的仓库代码（**时点记录**，不随代码演进追改；需要最新事实时以代码为准）；I55 观测规格（已归档）、I38 阶段总纲 §2.1（`docs/store/I38-agent-roadmap.md`）、I38f 子代理规格（`docs/store/I38f-agent-subagent-spec.md`）、I36a 内核基线（`docs/store/I36a-agent-kernel-baseline.md`）
 > 参考实现：`references/9-workflow-orchestration/` 的稀疏检出——ComfyUI（`nodes.py`、`comfy_execution/graph.py`、`comfy_execution/caching.py`、`comfy_execution/jobs.py`、`execution.py`、`progress.py`、`validation.py`）、n8n（`packages/core/src/execution-engine/workflow-execute.ts`）、langgraph（`libs/langgraph/pregel/`）、Dify（`api/core/workflow/`：`graph_topology.py`、`node_execution.py`、`nodes/agent_v2/`、`nodes/human_input/`）、litegraph.js（画布）。凡标「参考」的形态判断只出自上述检出部分，不外推到未检出的部分。
@@ -115,7 +115,7 @@
 | **N10** | 全仓无 `run` / `node` / `span` 级持久化；`messages` 只有 `tool_calls_json` 与配对结果行（含 `tool_call_id` / `is_error` / `status` / `turn_index` / `iteration`） | I55 N16 / N18 | 编排的 run 台账**必须新建 schema**，不能塞进消息行 |
 | **N11** | 前端 `transport.ts` 对 `agent-tool-call` 按**活跃会话**过滤；`chatStreamStore` 为全局单缓冲（`streamingContent` / `streamingMessageId` / `streamingIteration` 各一份） | `src/services/stream/transport.ts`、`src/stores/chat/chatStreamStore.ts` | 多 run 并行时前端会丢事件；编排 UI 必须自带按 run 键控的投影，不能复用单缓冲 |
 | **N12** | `package.json` 无任何画布库（无 reactflow / litegraph / xyflow），仅有 `@dnd-kit`（拖拽排序） | `package.json` | 画布需新增依赖或自研；`@dnd-kit` 只能做列表排序，不能做二维图 |
-| **N13** | 前端 feature 目录 2 个（`observation` / `vault`）；后端 `crates/` 12 个（agent / config / crash / crypto / i18n / orb / providers / security / storage / sync / tools / vault），**无编排 crate** | `src/features/`、`src-tauri/crates/` | 编排若在后端，必须是新 crate；`FeatureModule`（`src/features/types.ts`）已提供 routes / sidebar / settings / ipc 注册位，`observation` 是首个按该契约挂载的 feature，可作为编排 feature 的模板 |
+| **N13** | 前端 feature 目录 5 个（`canvas` / `clock` / `observation` / `orchestration` / `vault`，其中除 `canvas` 外的 4 个按 `FeatureModule` 注册）；后端 `crates/` 14 个（agent / clock / config / crash / crypto / i18n / orb / protocol / providers / security / storage / sync / tools / vault），**无编排 crate** | `src/features/`、`src/features/registry.ts`、`src-tauri/Cargo.toml`（workspace `members`） | 编排若在后端，必须是新 crate；`FeatureModule`（`src/features/types.ts`）已提供 routes / sidebar / settings / ipc 注册位，`observation` 是首个按该契约挂载的 feature，可作为编排 feature 的模板。**2026-11-22 复核更正**：初稿记为「前端 2 / 后端 12」——后端漏计 `assistant-protocol` 与 `assistant-clock`（二者在快照时点即存在，属记错而非漂移）；前端 `clock` / `orchestration` 目录与 `canvas` 设施目录为快照后新增 |
 | **N14** | 预算三维（迭代上限 / 工具调用上限 / turn 墙钟）；`token-budget` 钩子未配置时**不安装**、无默认值 | `src-tauri/crates/assistant-agent/src/kernel/limits.rs`、`agent/stop.rs` | turn 预算无法覆盖 run；且「未配置 ≠ 0」的显示口径必须沿用（I55 §4.4） |
 | **N15** | 审批发生在工具流水线的 `Gateway` 阶段（`ApprovalScope` 求值）；`ask_user` 是一个**工具**，不是节点 | `src-tauri/crates/assistant-tools/src/runtime/pipeline.rs`、I38f | 人在环当前只有两种形态：调用级审批、工具级提问；**没有图级 HITL 形态** |
 | **N16** | `spawn_agent` 规格：作为工具接入 Pipeline、`max_depth = 1` 硬上限、结果摘要回父、取消树向父会话传播（**暂缓接入**） | I38f | 图内子代理必须复用这条链路，不能新造「图内 spawn」 |
