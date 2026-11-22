@@ -1,0 +1,745 @@
+# I70 — 编排层（L2）规格
+
+| 项 | 值 |
+|---|---|
+| 状态 | 定稿（可实施） |
+| 日期 | 2026-11-22 |
+| 阶段 | P18（编排轴 L2） |
+| 波次与交付顺序 | [I69](./I69-agent-orchestration-roadmap.md)（**唯一来源**：R0–R5 的交付物、前置、退出条件、回退点；本文不列交付物、不排波次） |
+| 进度 | 阶段级见 [I38 §2](./I38-agent-roadmap.md)；任务级见 tasklist（随开工建立） |
+| 事实来源 | `docs/analysis/AGENT-WORKFLOW-ORCHESTRATION-ANALYSIS.md`（2026-11-20 快照：N1–N18、G1–G11、D1–D10、O1–O16；**时点记录，不随后续代码追改**） |
+| 术语唯一出处 | `docs/analysis/ORCHESTRATION-CONCEPT-SEMANTIC-TRANSFER.md` §2.5（用户可见词）· §2.6（开发原语）；本文只引用，不复述定义 |
+| 关联 | I55（已归档，观测面与 §11 接入约束）· I38f（`spawn_agent`，暂缓）· [I52](./I52-shell-sandbox-spec.md)（沙箱不替代审批）· I66 / I68（已归档，画布 W1 / W2） |
+| 影响范围 | 后端：新建 `src-tauri/crates/assistant-orchestrator/`；`assistant-storage/src/orchestration.rs`；`src-tauri/src/cmd/agent/mod.rs`（`start_turn` 回传 turn 标识、sink 组合 tap）；`src-tauri/src/cmd/orchestration/`；`src-tauri/src/adapters/orchestration.rs`；`assistant-protocol/src/orchestration.rs`。前端：`src/features/orchestration/`（本文只约束接缝，§12.4）。画布编辑器与运行态叠加的形态由画布侧规格定义，本文只约束它们读取编排层事实的方式 |
+| 契约影响 | **wire 冻结前零变更**（无 DTO、无命令、无事件）；冻结时一次性新增（清单见 §12） |
+
+> 本文中的「必须 / 禁止」为可验收约束；「应当」为默认做法，偏离须在代码注释写明理由。判据编号 A1–A27 由本文定义，仅描述「怎么验」；「哪一波交付、按什么顺序、何时算过关」由 [I69](./I69-agent-orchestration-roadmap.md) 定义，本文的判据只支撑其退出条件，不另立波次。
+
+---
+
+## 0 定位：编排层是内核的客户端
+
+一句话：**编排层只请求执行、只读事实、自己记账、失败不牵连内核**。
+
+| 客户端行为 | 编排层做什么 | 编排层不做什么 |
+|---|---|---|
+| **请求执行** | 经宿主控制端口发起一次 turn；turn 内部怎么跑由内核决定 | 不构造 `TurnSpec`、不直连 provider、不自己跑工具流水线 |
+| **读事实** | 订阅 turn 终态（tap）与节点级事件（只读） | 不改 `EventSink` 签名、不加回执、不做背压、不读前端投影 |
+| **自己记账** | 模板 / run / node_run 落库，run 状态只从台账读 | 不把 run 状态塞进消息行，不从前端缓存反推状态 |
+| **失败不牵连** | 崩溃 / 丢事件 / 被杀时只降级自己的视图 | 不让 turn 失败、不重放事件、不改内核终态 |
+
+**为什么是「客户端」而不是「内核的一部分」**：内核的 12 节点模板是编译期常量、共享一个 `TurnRunCtx`、只有一个 `TurnObserver`（分析 N3、N5）。把编排塞进内核，等于让常量模板变成可编辑数据、让唯一观测端口分叉——这两件事都是不可逆的结构破坏。所以编排必须站在内核外面。
+
+本文不涉及画布形态：L1 观测栅格与画布设施、画布预设分别见 I66 / I68（已归档）；模板编辑器与运行态叠加的形态属画布侧规格，本文只约束它们读取编排层事实的方式（§12.4）。
+
+---
+
+## 1 范围与边界
+
+### 1.1 本文的职责
+
+本文只定义「做出来的东西必须满足什么」：不变量、决议、结构、端口、台账、调度语义、失败矩阵、契约纪律与判据（A1–A27）。
+
+**交付什么、按什么顺序交付、每波怎么验收、哪一波可回退，全部见 [I69](./I69-agent-orchestration-roadmap.md)**。本文不列交付物、不给任何条目排波次；需要知道某条约束落在哪一波，查 I69 §4 的交付物表。
+
+约束的作用域到「编排层 + 它的前端接缝」为止。模板编辑器与运行态叠加除 §12.4 的读取纪律外，不受本文约束。
+
+### 1.2 边界：不做的语义
+
+| # | 不交付 | 原因 |
+|---|---|---|
+| 1 | L3（会话之上、跨会话 Router） | D1、D16；与 P8.3 边界未定 |
+| 2 | 节点结果缓存与 `replayable` 标记 | D3；agent 节点非纯函数（分析 §4.2） |
+| 3 | 图级环 | D2；循环收敛到 turn 内部迭代 |
+| 4 | 图级授权（整链一次批准） | D7；会形成绕过 `Gateway` 的第二条路径 |
+| 5 | 图内委派节点（`spawn_agent`） | D10；P8.1 暂缓，第二套深度规则禁止 |
+| 6 | 工具调用节点 | D17；工具调用在 turn 内，无独立生命周期 |
+| 7 | 参数引用上游输出 / 变量池 | D11；参数只接受常量 |
+| 8 | typed handoff（交接类别闭集） | 分析 §12.2 #1 是最关键缺口，但闭集需单独裁定；v1 的边只有激活语义（§2.2 第 3 条） |
+| 9 | 队列（pending / running / history） | 分析 §12.3 第 3 项；`TurnTasks` 是互斥表 |
+| 10 | 运行时注入节点（运行时生长子图） | INV7；静态模板 + 版本化，运行时增删节点会让校验无法静态化 |
+| 11 | 节点级续跑 | D15 |
+| 12 | 画布基础设施改造（补边 / 视口 / 预设 / 布局算法） | W1 / W2 已交付（I66 / I68）；P18 只在其上叠加，不改设施 |
+| 13 | 后台任务（应用关闭后继续跑） | P9 / I52-Ext |
+| 14 | 原始事件落库 | D5；事件是广播，不入台账 |
+| 15 | 运行时节点类型注册表（`NODE_CLASS_MAPPINGS` 类） | 节点类别是编译期闭集枚举（§7.1），不做运行时注册；分析 §12.2 #2 的缺口以闭集收口，不以注册表收口 |
+
+### 1.3 与观测面的分界
+
+| 维度 | 观测面（L1，P15 已交付） | 编排层（L2，本文） |
+|---|---|---|
+| 单位 | 格子 `(node, iteration)`，12 个常量节点 | 节点 `WorkflowNode`，用户定义的 `turn` / `hitl` |
+| 状态闭集 | `NodeState` 7 值（I55 定型） | `NodeRunState` 7 值（本文 §7.2） |
+| `skipped` 含义 | **报告**未执行 | **调度阻断**（入边未激活） |
+| 拓扑来源 | 编译期常量 `TEMPLATE_EDGES` | 落库的模板数据 |
+| 可编辑 | 否 | 是（W3 起） |
+| 数据流向 | 只读投影，人看 | 只读输入，调度用 |
+
+**两套闭集不得互借类型**：`NodeState` 与 `NodeRunState` 必须各自定义、各自有转换表。把 L1 的 `NodeState` 复用到 run 台账，会让「报告」与「阻断」两个相反语义共用一个词（词表 §2.5.4 已列为禁用）。
+
+### 1.4 与既有命令入口的关系
+
+| 能力 | 既有入口 | 编排层如何使用 |
+|---|---|---|
+| 发起 turn | `src-tauri/src/cmd/agent/mod.rs` 的 `start_turn`（`send_agent_message` 的唯一实现） | 经 `RunHost::launch_turn`，由宿主调用 `start_turn`。**不新增第二个发射点** |
+| 取消 | `cancel_agent`（按会话）→ `TurnTasks::cancel` | 经 `RunHost::cancel_conversation`；run 级取消由编排层对在跑节点的会话逐个调用（§8.4） |
+| 工具执行 | `ToolPipeline`（`assistant-tools`） | **不接触**。编排层不依赖 `assistant-tools`（§5.2） |
+| 审批 / 提问回填 | `resolve_agent_tool_call` / `resolve_agent_question` | **不接触**。HITL gate 是编排层自己的通道（§8.5） |
+
+---
+
+## 2 术语引用与用词纪律
+
+### 2.1 引用表
+
+| 术语 | 唯一出处 | 本文用法 |
+|---|---|---|
+| 执行单元 / `WorkflowNode` / 卡片 / 端口 / 接线 / 连线 / 就绪集合 / 激活 / 冲突域 | 词表 §2.5.2 | 直接引用，不再定义 |
+| 观测节点 / 格子 / 锚点 / 相位 / 证据等级 | 词表 §2.5.3 | L1 语境一律用这组词 |
+| 折叠 / 投影 / 抑制点 / 调度点 | 词表 §2.6.2、§2.6.3 | 前端侧只引用，不改 |
+| run / run 台账 / node_run / gate | 本文 §7 | 本文定义，属 L2 专属 |
+| `TurnSpec` / `TurnRunCtx` / `TurnTasks` / `EventSink` | 分析 N3 / N7 / N8 | 只描述既有事实，不重命名 |
+
+### 2.2 用词纪律
+
+| # | 禁止 | 必须 |
+|---|---|---|
+| 1 | 本文的「节点」指 L1 的观测节点 | 本文「节点」一律指 `WorkflowNode`；L1 一律写「观测节点」或「格子」 |
+| 2 | 把激活边叫「接线」 | v1 的边**没有交接类别**，只有激活语义 → 叫**激活边**（activation edge）。接线（typed handoff）不在 v1（§1.2 第 8 项） |
+| 3 | `skipped` 一套含义 | L1 = 报告；L2 = 调度阻断。两处都必须带限定语 |
+| 4 | `run` 与 `turn` 互换 | run 是编排实例（含多节点）；turn 是执行单元（一次内核轮次） |
+| 5 | 「工作流模板」与「turn 模板」混用 | 工作流模板 = 数据（落库、可编辑）；turn 模板 = 编译期常量（12 节点）。类型名、表名、文件必须分开 |
+| 6 | 把「就绪集合」当存储状态 | 就绪集合是纯派生量（§8.1）；台账只存 `pending` / `running` / `waiting` 等显式状态 |
+
+---
+
+## 3 不变量
+
+| # | 不变量 | 落点 | 检查方式 |
+|---|---|---|---|
+| **INV1** | **唯一发射者**：turn 只能经 `RunHost::launch_turn` 发起，宿主内部调 `start_turn`；编排层不得依赖 `tauri` / `assistant-agent` / `assistant-tools` | §5.2 依赖方向 | `cargo tree -p assistant-orchestrator` 无上述三项；全仓 `TurnSpec::agent()` 构造点仍只有命令层（O1） |
+| **INV2** | **唯一工具路径**：工具执行仍由内核 Pipeline 完成；编排层不持有工具注册表、不自建执行 | §6.1 端口面 | 编排 crate 无 `assistant_tools` 引用（O5） |
+| **INV3** | **观测只读**：编排层只订阅，`EventSink::emit` 签名不变、无返回值、无回执、无背压 | §6.3 | 端口 diff 为零；tap 实现不得阻塞（O2） |
+| **INV4** | **失败不回灌**：编排层崩溃 / 丢事件 / 被杀三种情形下，turn 仍正常终态落库 | §10 F5–F7 | 单测：tap panic 后 turn 仍 `completed`（O15） |
+| **INV5** | **执行节点集合受 O3 约束**：v1 只有 `turn` 一类执行节点；`hitl` 是等待节点、`group` 是模板分组（不是节点类别），二者均**不新增执行语义** | §7.1、D18 | 节点类别枚举逐项可映射：`turn`→N5 的 turn，`hitl`→无执行，`group`→不在枚举内（O3） |
+| **INV6** | **双模板分离**：`WorkflowTemplate` 与 turn 模板不得共用类型名、不得互相引用；工作流模板不得引用 12 节点 id | §5.1 | 类型名审查 + 编译期 `satisfies` 锁不变（O4） |
+| **INV7** | **静态图**：保存期拒绝环与悬空边；运行时不得增删节点、不得注入临时节点 | §8.1、§10 F8 | 校验单测（O13）；crate 内无 `add_node` 类 API |
+| **INV8** | **台账唯一**：run 状态只从台账读；不得从前端投影、事件重放或时间戳反推 | §7.3 | 状态读取 API 只有 `RunLedger` 一处 |
+| **INV9** | **取消树幂等**：run → node → turn；重复取消无副作用，取消后不再发起新节点 | §8.4 | 单测：二次 cancel 后状态不变（O7） |
+| **INV10** | **会话互斥不被绕过**：同一 `conversation_id` 同一时刻最多一个 `running` 节点；编排层不得自建 turn 队列 | §8.2 | 单测：同会话两节点不并发（D6） |
+| **INV11** | **预算分层且「未配置 ≠ 0」**：run 墙钟 / 节点数上限 / 并行上限为可执行闸门，token 只做读侧归因；四者口径独立；未配置一律显示为「未配置」，不得显示 `0`、也不得以 `0` 表示无限 | §8.6 | 单测 + 显示口径审查（O9） |
+| **INV12** | **wire 最后冻结**：wire 冻结前零 DTO、零命令、零事件；冻结时一次性出契约 | §12 | `git diff --stat src/types src/vault/core/contract` 在冻结前为空（O14） |
+| **INV13** | **坐标不进语义**：模板语义字段（`nodes` / `edges`）与呈现字段（`layout`）分列；校验与调度只读语义 | §7.1 | 校验单测：改坐标不改变任何校验结果 |
+
+---
+
+## 4 决议
+
+分析文档 §7 的 D1–D10 与 §12 的 Q1–Q6 在此收敛。**每条决议给出「不做会怎样」**，因为编排阶段最大的风险不是做错，而是做了却没被约束。
+
+| # | 取舍 | 决议 | 理由（不做会怎样） | 不可逆程度 |
+|---|---|---|---|---|
+| **D1** | 编排粒度 | **只做 L2（turn 之间）**。L3 留 P8.2 / P8.3 | 做 L3 要跨会话 Router，与 P8.3 重叠且需要后台推进；L2 只需 run 台账 | 中：L2 可后扩 L3，但 run 与会话的归属一旦绑死难解耦（D12 已预留解耦） |
+| **D2** | 环的承载 | **图保持 DAG**；所有循环收敛到 turn 内部迭代；保存期拒环 | 允许图级环会让状态机从「每节点一次」变成「每节点 × 轮次」，需收敛判据与死循环保护，校验无法静态化 | 中：后加环要重做校验与调度 |
+| **D3** | 节点结果缓存 | **不缓存**；schema 不引入 `replayable` 字段 | agent 节点非确定、有副作用、可被人工否决（分析 §4.2）；加字段等于承诺未实现的能力 | 低：不缓存没有历史依赖 |
+| **D4** | 编排位置 | **后端独立 crate** `assistant-orchestrator` | 前端方案在「断开前端仍推进」「跨窗口一致」两条上不成立（O10）；「编排即模式」无法承载落库与取消树 | **高**：位置决定 crate 边界与宿主改动面 |
+| **D5** | 落库范围 | **模板 + run + node_run + 结果引用**；**不落原始事件** | 落原始事件会让存储随 run 长度线性增长；只落引用已够审计与定位 | 中：后加原始事件只是新表 |
+| **D6** | 并发键 | **`(run_id, node_id)`**；但执行仍受会话互斥约束 → **并行需不同会话** | 复用 `conversation_id` 与 N7 直接冲突；谎称「同会话可并行」会造出第二套 turn 键 | 中：键进事件与台账后改粒度要两端同改 |
+| **D7** | 审批单元 | **保持调用级**；不做图级授权 | 图级授权会让长图「一次批准」变成绕过 `Gateway` 的权限旁路，与 I52「沙箱不替代审批」冲突 | **高**：一旦进审计字段，撤销要迁移 |
+| **D8** | 预算分层 | **run 墙钟 + 节点数上限为可执行闸门；token 只做读侧归因** | 只有总预算则超支无法定位；token 实时闸门需要 turn 级用量回传（内核契约变更），本阶段不做 | 中：归因字段后加可兼容 |
+| **D9** | HITL 回答去向 | **只进 run 台账，不进对话历史** | 进对话历史会把「图级确认」变成一条用户消息，与 `user-message-confirmed` 语义冲突，且污染会话上下文 | 中：节点类别进 schema 后删除需兼容旧模板 |
+| **D10** | 与 P8.1 的先后 | **编排先立项，但 v1 schema 不含委派类别** | 分析 §4.11 的禁令针对「图内委派这条第二路径」；不含该类别即满足，不需等 P8.1 | 中：v2 加类别需 schema 版本升级 |
+| **D11** | 参数与上游输出 | **参数只接受常量**，不接受引用（Q1） | 允许引用就要变量池 + 类型系统 + 求值器，等于把编排做成数据流引擎 | 中：后加引用要改 schema 与校验 |
+| **D12** | run 与会话的归属（Q2） | run 是独立实体；`origin_conversation_id` 必填（UI 定位锚点）；**每个节点在发起时解析出自己的 `conversation_id`**（缺省 = `origin_conversation_id`），模板本身不绑会话 | 把 run 绑到单一会话会让并行分支无处落脚；完全不绑则 UI 无法定位；模板绑会话则模板不可复用 | 中：归属列进台账后改需迁移 |
+| **D13** | 坐标与语义 | 模板语义字段与 `layout` **分列两列**；坐标不参与校验、不参与调度 | 坐标混进语义会让「挪一下卡片」触发版本变更与校验失败 | 低 |
+| **D14** | 工作区与冲突域（Q3） | run **不持有工作区**；冲突域判据 = 各节点所属会话的 `resolve_workspace` 结果；同域写节点不得并行 | 让 run 持有工作区会与 P12 的唯一解析结果产生第二个真相 | 中：判据进调度器后改需重算 |
+| **D15** | 节点级续跑（Q5） | **不支持**。run 中断后只能整体重跑（新 `run_id`）；台账不存节点输入快照 | 存快照等于把模板参数复制一份进 run，且「从中间续跑」的语义（已产生的副作用怎么办）无解 | 中：O6 由 `orphaned` 收口满足 |
+| **D16** | 与 L3 / Router 的关系（Q6） | 本阶段不涉及；run 不承担跨会话路由 | 跨会话路由需要「哪个会话接哪一步」的策略，属 P8.3 | 低 |
+| **D17** | 工具调用是否成节点 | **否**。工具调用在 turn 内，无独立生命周期；做成节点会产生第二条执行路径 | 与 O5 直接冲突；且工具节点无法表达「5 阶段」中的审批与落盘 | 中：后加需先解决执行路径归属 |
+| **D18** | `group` 的形态 | `group` **不是节点类别**，而是模板级分组（`groups` + `node.group_id`）；不参与调度、不产生 node_run | 把容器做成节点会让就绪集合、台账、取消树三处都要处理「无执行节点」的空转 | 低 |
+
+---
+
+## 5 结构与依赖
+
+### 5.1 crate 与模块
+
+```
+src-tauri/crates/assistant-orchestrator/src/
+  lib.rs        // 对外 API：Orchestrator / RunHost / RunLedger / OrchestratorError
+  model.rs      // WorkflowTemplate / WorkflowNode / WorkflowEdge / WorkflowLayout / NodeKind / EdgeCondition / TurnNodeParams
+  validate.rs   // 保存期校验（纯函数：Template -> Result<(), Vec<ValidateError>>）
+  schedule.rs   // 就绪集合 / 激活 / 冲突域（纯函数，唯一失效点）
+  run.rs        // run 与 node_run 状态机（迁移表 + 非法迁移即 panic 于测试）
+  ledger.rs     // RunLedger trait + MemoryLedger（内存版）+ StorageLedger（落库版）
+  port.rs       // RunHost / TurnTap / LaunchTurnSpec / StartedTurn / LaunchError
+  event.rs      // RunEvent 与广播端口（骨架与宿主接线分离，接线时机见 I69）
+```
+
+`assistant-storage/src/orchestration.rs`：三张表的 CRUD 与迁移。
+
+**命名纪律**：`model.rs` 的类型名不得含 `Template` 之外与 turn 模板相关的词；turn 模板常量仍只在 `src/stores/agent/observation/template.ts` 与内核侧，编排 crate 不得引用（INV6）。
+
+### 5.2 依赖方向
+
+```
+tauri 宿主（src-tauri）
+  ├── assistant-orchestrator ──→ assistant-storage（落库后）
+  │                          └─→ （仅通用库：serde / serde_json / thiserror / tracing / async-trait / tokio（事件广播与 gate 等待））
+  ├── assistant-agent（内核，编排层不依赖）
+  └── assistant-tools（工具，编排层不依赖）
+```
+
+**为什么必须切断对 `assistant-agent` 的依赖**：INV1 / INV2 是「不得成为第二个发射者 / 不得自建执行路径」。靠代码评审守不住，靠依赖图能守住——不依赖内核 crate，就物理上无法构造 `TurnSpec` 或 `ToolPipeline`。这是本阶段最强的一条结构性约束，也让 `cargo tree` 成为可自动化的门禁。
+
+### 5.3 为什么不放进 `assistant-agent`
+
+| 理由 | 具体后果 |
+|---|---|
+| 内核零编排概念 | 内核是「一次 turn 怎么跑」，加入 run 台账会让内核持有业务数据 |
+| 内核零 `tauri` | 内核要能被测试与复用，不能反向依赖宿主 |
+| 观测端口唯一 | `TurnObserver` 只有一个（N3）；编排若进内核，就必须给观测端口开第二个出口 |
+
+### 5.4 宿主侧改动（最小面）
+
+| 改动 | 位置 | 说明 |
+|---|---|---|
+| `start_turn` 回传 `StartedTurn` | `src-tauri/src/cmd/agent/mod.rs` | 现状返回 `()`，`tasks.begin` 生成的 `turn_id` 被丢弃；改为返回 `{ turn_id, assistant_message_id, turn_index }`。既有调用方忽略返回值即可，零行为变化 |
+| sink 组合 tap | 同上 | `TauriEventSink` 外包一层 `TappedSink`（转发 + 通知 tap）。**不改变 `EventSink` trait**，tap 失败只记日志 |
+| `cancel_conversation` | 同上 | 复用 `TurnTasks::cancel`，不新增取消路径 |
+
+---
+
+## 6 控制端口
+
+### 6.1 `RunHost`（编排层 → 宿主）
+
+```rust
+#[async_trait::async_trait]
+pub trait RunHost: Send + Sync {
+    /// 发起一次 turn；实现内部调用 `start_turn`（唯一发射点）。
+    /// 异步：`start_turn` 本身是 `async fn`，禁止在宿主实现里 `block_on`。
+    async fn launch_turn(&self, spec: LaunchTurnSpec) -> Result<StartedTurn, LaunchError>;
+    /// 按会话取消；语义与 `cancel_agent` 一致（`TurnTasks::cancel`）。同步：只置位令牌。
+    fn cancel_conversation(&self, conversation_id: &str);
+    /// 是否存在活跃 turn；实现即 `TurnTasks::is_busy`（§7.4 的 `orphaned` 判据）。
+    fn is_conversation_busy(&self, conversation_id: &str) -> bool;
+    /// 单调时钟（毫秒）；run 墙钟预算只用它，不用系统时间。
+    fn now_ms(&self) -> i64;
+    /// 会话的唯一工作区解析结果；用于冲突域判定（D14）。无工作区返回 `None`。
+    fn workspace_root(&self, conversation_id: &str) -> Option<String>;
+}
+
+pub struct LaunchTurnSpec {
+    pub conversation_id: String,
+    pub content: String,                 // 已由模板参数填好，非空
+    pub mode_id: Option<String>,
+    pub provider_id: Option<String>,     // None → 宿主取会话当前值
+    pub model_id: Option<String>,        // None → 宿主取会话当前值
+    pub tap: Arc<dyn TurnTap>,           // 只读终态回调
+}
+
+pub struct StartedTurn {
+    pub turn_id: String,
+    pub assistant_message_id: String,
+    pub turn_index: i64,
+}
+
+pub enum LaunchError {
+    SessionBusy,      // 对应 `CommandErrorCodeDto::SessionBusy`
+    InvalidInput,     // 空内容 / 参数不合法
+    Storage,          // 建消息失败
+}
+```
+
+**约束**：`LaunchTurnSpec` 只带纯数据（字符串与 tap），**不带任何 `assistant-protocol` DTO**。宿主负责把它映射成 `SendChatMessageArgsDto` 并解析缺省 provider / model。这样编排 crate 与 wire 解耦（INV12 的前提）。
+
+### 6.2 `TurnTap`（宿主 → 编排层，只读）
+
+```rust
+pub trait TurnTap: Send + Sync {
+    fn on_terminated(&self, turn_id: &str, status: TurnStatusTap, error: Option<&str>);
+}
+
+pub enum TurnStatusTap { Completed, Cancelled, Failed, Interrupted }
+```
+
+| 约束 | 理由 |
+|---|---|
+| 只有 `on_terminated`，**不消费节点级事件** | 节点级事实属 L1 观测面（INV3）；run 只需终态 |
+| 返回 `()`，实现不得阻塞、不得 panic 传播 | 与 `EventSink::emit` 同一条纪律（N2）；宿主侧实现须 `catch_unwind` 或直接吞掉异常 |
+| `TurnStatusTap` 在编排 crate 内独立定义 | 不依赖 `assistant-agent`（INV1）；四值与内核 `TurnStatus` 1:1，映射在宿主 |
+
+### 6.3 gate 端口
+
+gate 解决**不经** `RunHost`，而是编排层自己的命令入口：
+
+```
+resolve_workflow_gate(run_id, node_id, decision: { proceed: bool, note: Option<String> })
+```
+
+宿主把它转成 `Orchestrator::resolve_gate(...)`。**禁止**把 gate 复用成 `resolve_agent_question`：后者属于 `ask_user` 工具，回填会进对话历史（与 D9 冲突）。
+
+### 6.4 禁止事项
+
+| # | 禁止 | 依据 |
+|---|---|---|
+| 1 | 编排层调用 `EventSink::emit` | INV3 |
+| 2 | 编排层构造 `TurnSpec` / `TurnRunner` / `ToolPipeline` | INV1 / INV2 |
+| 3 | 编排层持有 `ToolRegistry` 或读工具清单做可用性判断 | INV2；可用集仍由 `resolve_available_tools` 在发送时算 |
+| 4 | 编排层读 `messages` 表反推 turn 是否完成 | INV8；终态只来自 tap |
+| 5 | 编排层按时间戳判定 turn 是否还活着 | INV8；活跃判定只来自 `TurnTasks`（经宿主） |
+
+---
+
+## 7 run 台账
+
+### 7.1 表结构
+
+```sql
+CREATE TABLE IF NOT EXISTS workflow_templates (
+  id           TEXT PRIMARY KEY,
+  name         TEXT NOT NULL,
+  version      INTEGER NOT NULL,              -- schema 版本，非用户可见版本号
+  spec_json    TEXT NOT NULL,                 -- 语义：nodes / edges / groups
+  layout_json  TEXT NOT NULL DEFAULT '{}',    -- 呈现：坐标，不参与校验（INV13）
+  created_at   INTEGER NOT NULL,
+  updated_at   INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS workflow_runs (
+  id                      TEXT PRIMARY KEY,
+  template_id             TEXT NOT NULL,
+  template_version        INTEGER NOT NULL,   -- 发起时的 schema 版本，模板后续改动不影响已发起 run
+  origin_conversation_id  TEXT NOT NULL,      -- UI 定位锚点（D12）
+  client_run_key          TEXT,               -- 幂等键，见 §7.3
+  state                   TEXT NOT NULL,
+  reason                  TEXT,
+  started_at              INTEGER NOT NULL,
+  updated_at              INTEGER NOT NULL,
+  finished_at             INTEGER,
+  UNIQUE (template_id, origin_conversation_id, client_run_key)
+);
+
+CREATE TABLE IF NOT EXISTS workflow_node_runs (
+  run_id                 TEXT NOT NULL,
+  node_id                TEXT NOT NULL,
+  kind                   TEXT NOT NULL,       -- turn / hitl
+  conversation_id        TEXT,                -- hitl 为 NULL
+  turn_id                TEXT,                -- hitl 为 NULL
+  assistant_message_id   TEXT,                -- 结果引用，见 §7.5
+  state                  TEXT NOT NULL,
+  attempt                INTEGER NOT NULL DEFAULT 1,
+  note                   TEXT,                -- hitl 的确认备注（D9）
+  reason                 TEXT,
+  started_at             INTEGER,
+  finished_at            INTEGER,
+  PRIMARY KEY (run_id, node_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_node_runs_turn ON workflow_node_runs(turn_id);
+CREATE INDEX IF NOT EXISTS idx_runs_origin ON workflow_runs(origin_conversation_id, started_at DESC);
+```
+
+**`conversation_id` 的来源**：模板不绑会话（D12）；发起时由 `WorkflowRunStartInputDto.nodeConversations` 解析每个节点（缺省 = `originConversationId`），解析结果写入 `workflow_node_runs.conversation_id` 作为 run 内快照。模板后续被编辑不影响已发起 run。
+
+**`turn_id` 的语义**：内核 `TurnTasks::begin` 生成的 `turn_id` 是 `"{conversation_id}:{counter}"` 形式的**进程内**标识，进程重启后计数归零、同一字符串会复用。因此：
+
+- `workflow_node_runs.turn_id` **只用于进程内把 tap 回调对回节点**，不作为审计依据；
+- 审计与 token 归因一律走 `assistant_message_id`（数据库主键、跨重启稳定）；
+- 重启后旧行的 `turn_id` 允许变成「指向不存在的东西」，读取侧不校验（§7.5）。
+
+### 7.2 状态闭集与迁移
+
+**`RunState`（7 值）**
+
+| 状态 | 含义 | 迁移到 |
+|---|---|---|
+| `pending` | 已落库、尚未启动 | `running`、`cancelled` |
+| `running` | 至少一个节点在跑或可推进 | `waiting`、`finished`、`failed`、`cancelled`、`orphaned` |
+| `waiting` | 无节点可推进，且存在 `hitl` 等待 | `running`、`failed`、`cancelled`、`orphaned` |
+| `finished` | 汇点全部终态且无 `failed` 节点 | 终态 |
+| `failed` | 汇点全部终态且存在 `failed` 节点 | 终态 |
+| `cancelled` | 用户取消 | 终态 |
+| `orphaned` | 启动扫描发现「台账在跑但无活跃 turn」 | 终态 |
+
+**`NodeRunState`（7 值）**
+
+| 状态 | 含义 | 迁移到 |
+|---|---|---|
+| `pending` | 未激活 | `running`（`turn`）· `waiting`（`hitl`）· `skipped` |
+| `running` | `turn` 节点在跑（`hitl` 不进入此态） | `finished`、`failed`、`cancelled` |
+| `waiting` | `hitl` 节点等人（无超时，§8.5） | `finished`（proceed）· `failed`（reject）· `cancelled` |
+| `finished` | `turn` 的 turn `completed`；或 `hitl` 被 proceed | 终态 |
+| `failed` | turn `failed` / `interrupted`、发起被拒、或 `hitl` 被 reject | 终态 |
+| `skipped` | **调度阻断**：入边全部未激活（与 L1 的「报告未执行」不同义） | 终态 |
+| `cancelled` | run 取消传播到此节点 | 终态 |
+
+**终态集**：`finished` / `failed` / `skipped` / `cancelled`。终态不得再迁移；非法迁移在测试构建下 panic，生产构建记 `error` 并保持原状态（不静默改写台账）。
+
+### 7.3 键与幂等
+
+| 对象 | 键 | 说明 |
+|---|---|---|
+| run | `run_id`（宿主生成 UUID） | 不复用 `turn_id`（N7 已说明 `turn_id` 不可作持久主键） |
+| 节点 | `(run_id, node_id)` | 即并发键（D6） |
+| 事件路由 | `(run_id, node_id)` | 与台账同粒度（O12） |
+| 幂等发起 | `(template_id, origin_conversation_id, client_run_key)` 唯一 | 第二次发起返回既有 run，不产生新 run、不双执行（O6） |
+
+`client_run_key` 由前端在「点一次运行」时生成；为 `NULL` 时不参与唯一约束（允许同一模板并发多 run）。
+
+### 7.4 `orphaned` 收口
+
+启动时扫描 `workflow_runs.state IN ('running','waiting')`：
+
+1. 对每一行，收集其 `workflow_node_runs.state = 'running'` 的 `conversation_id`；
+2. 经宿主 `is_conversation_busy(conversation_id)`（实现即 `TurnTasks::is_busy`：存在当前代际且令牌未取消）判定是否真有活跃 turn；
+3. 全部不活跃 → run 置 `orphaned`、在跑节点置 `failed(reason: orphaned)`；
+4. 任一仍活跃 → **不改**该 run（可能是同进程重启前的残留窗口，交给下一轮扫描或 `reconcile`）。
+
+**禁止用时间戳判定活跃**（§6.4 第 5 条）。扫描只在启动时跑一次，不做周期轮询（周期轮询需要额外线程与锁，收益低于 `reconcile`）。
+
+### 7.5 引用列不加外键
+
+`assistant_message_id` 与 `turn_id` **只存值、不加外键约束**。
+
+理由：会话删除会级联删除 `messages`；若加外键，删会话会被 run 台账阻塞（或反过来级联删掉审计事实）。读取时容忍悬空引用，显示为「结果已删除」，台账行保留。
+
+### 7.6 不落原始事件
+
+事件是广播、可丢（N2）。落原始事件会让存储随 run 长度线性增长，而审计只需要「哪个节点、什么终态、对应哪个 turn」。节点级细节已在 L1 观测面与消息行里，不重复存（D5）。
+
+### 7.7 `reconcile` 校正表
+
+`reconcile_workflow_run` 是「事件丢了之后把台账拉回事实」的唯一入口（A26）。它**只读**三处事实：台账、`TurnTasks`（经 `RunHost::is_conversation_busy`）、`messages.status`（闭集 `streaming` / `completed` / `interrupted` / `failed`）。
+
+| 台账 `node_run.state` | 会话忙 | `messages.status` | 校正为 |
+|---|---|---|---|
+| `running` | 是 | 任意 | **不动**（turn 确实在跑） |
+| `running` | 否 | `completed` | `finished` |
+| `running` | 否 | `failed` | `failed(reason: message_failed)` |
+| `running` | 否 | `interrupted` | `failed(reason: interrupted)` |
+| `running` | 否 | `streaming` | `failed(reason: orphaned)` |
+| `waiting`（`hitl`） | — | — | **不动**（人工等待无超时，§8.5） |
+| `pending` / 终态 | — | — | **不动** |
+
+节点校正完成后按 §8.1 重算 run 状态：所有汇点终态且无 `failed` → `finished`；有 `failed` → `failed`；仍有可推进节点 → `running`；仅剩 `hitl` 等待 → `waiting`。
+
+**禁止**：`reconcile` 不得发起新 turn、不得重放事件、不得把 `failed` 改回 `running`（只能前推，不能回退）。
+
+---
+
+## 8 调度语义
+
+### 8.1 就绪集合与激活
+
+| 概念 | 定义 |
+|---|---|
+| **入边** | 指向节点 `n` 的激活边集合 |
+| **就绪** | `n.state = pending` 且 `n` 的所有入边都已判定（源节点为终态或源边条件为 `always` 时提前判定） |
+| **激活** | 入边中至少一条的条件成立 → `n` 可推进；否则 → `skipped` |
+| **汇点** | 无出边的节点；run 结束条件由汇点全部终态判定 |
+
+**判定顺序**（唯一实现，`schedule.rs`）：
+
+1. 收集所有 `pending` 节点；
+2. 对每个 `pending` 节点，若存在未判定入边则跳过；
+3. 入边判定完成后，按条件求值（§8.3）决定「激活」或「skipped」；
+4. 激活节点进入待发起队列；
+5. 从待发起队列中按「会话空闲 + 冲突域空闲 + 未超预算」筛出可发起者。
+
+**就绪集合不落库**：它是纯派生量，落库会与节点状态双写（§2.2 第 6 条）。
+
+### 8.2 串行与并行
+
+| 约束 | 规则 |
+|---|---|
+| 会话互斥 | 同一 `conversation_id` 同时最多一个 `running` 节点（INV10）。`TurnTasks` 的 `OnBusy::Reject` 是兜底，不是主判据 |
+| 并行条件 | 两个节点可并行，当且仅当：`conversation_id` 不同 **且** 冲突域不冲突（§8.3） |
+| 并行上限 | run 级 `max_parallel`（默认 4，可配置）；超限时按节点 id 稳定排序取前 N，保证可复现 |
+| 串行默认 | 模板只有一条链时天然串行，不需要单独模式 |
+
+**为什么不做到「同会话并行」**：那需要第二套 turn 键与第二个 `TurnTasks` 语义，等于改内核（D6）。本阶段如实收缩：**并行 = 不同会话**。
+
+### 8.3 冲突域
+
+| 项 | 规则 |
+|---|---|
+| 域标识 | 节点所属会话的 `workspace_root`（经 `RunHost::workspace_root`） |
+| 无工作区 | `None` 视为独立域（不与任何节点冲突） |
+| 冲突判据 | 同域且两个节点都可能写（`turn` 节点默认视为可能写）→ 不得并行 |
+| 执行期 | 冲突判定只在「发起前」做一次；运行中不重新求值（工作区变更不在 run 生命周期内生效） |
+
+### 8.4 条件边与取消
+
+**条件边闭集（`EdgeCondition`）**
+
+| 值 | 成立条件 | 依据 |
+|---|---|---|
+| `always` | 源节点为任意终态 | 无条件流转 |
+| `onSuccess` | 源节点 `finished`（turn `completed`） | — |
+| `onFailure` | 源节点 `failed`（turn `failed` / `interrupted`，或发起被拒） | — |
+
+`cancelled` 与 `skipped` 的源节点**不激活任何下游**（除 `always` 外均不成立），保证取消不会顺流推进。
+
+**取消树**
+
+1. `cancel_run(run_id)` → run 置 `cancelled`，记取消时间；
+2. 对每个 `running` 节点：`RunHost::cancel_conversation(conversation_id)`；
+3. 节点收到 `TurnStatusTap::Cancelled` → `cancelled`；若 turn 已 `completed` 则保留 `finished`（取消晚于完成不追改）；
+4. `pending` / `waiting` 节点直接置 `cancelled`；
+5. 重复取消：run 已是终态 → 直接返回，无副作用（INV9）。
+
+### 8.5 HITL 节点
+
+| 项 | 规则 |
+|---|---|
+| 语义 | **只等待**。节点被激活后进入 `waiting`，不发起任何 turn、不消耗预算 |
+| 呈现 | 前端用既有审批卡片样式，但通道是编排层自己的 gate（§6.3） |
+| 解决 | `proceed: true` → 节点 `finished`、run 回到 `running`；`proceed: false` → 节点 `failed(reason: rejected)` |
+| 备注 | `note` 落 `workflow_node_runs.note`，**不进对话历史**（D9） |
+| 超时 | **无默认超时**。人工等待不设上限；只有显式 cancel 或 resolve 能结束（与审批 120s 超时的差异必须在文档与 UI 文案中写明） |
+| 不发起 turn | 因此 `hitl` 节点不需要 `conversation_id`，也不占用会话互斥 |
+
+### 8.6 预算
+
+| 维度 | 是否闸门 | 口径 |
+|---|---|---|
+| run 墙钟 | **是** | 从 `pending → running` 起算，用 `RunHost::now_ms`；超限 → run `failed(reason: budget)`，在跑节点取消 |
+| run 节点数上限 | **是** | 静态上限；发起前判定，超限 → run `failed(reason: budget)` |
+| run 最大并行 | 是（调度上限） | §8.2 |
+| token | **否（只归因）** | 读侧 join：`workflow_node_runs.assistant_message_id` → `token_usage_records.message_id`（该表无 `turn_id` 列，只能按消息归因）；实时闸门需内核回传用量，属内核契约变更，本阶段不做（D8） |
+| 节点配额 | 否（不设） | 节点级 turn 预算仍由内核三维预算（N14）管；编排层不二次分配 |
+
+**「未配置 ≠ 0」**：四个维度中凡未配置的，台账 `reason` 与 UI 显示为「未配置」，不得写 `0`，也不得用 `0` 表示无限（INV11）。`max_parallel` 例外：它有默认值 4，因此恒有值。
+
+---
+
+## 9 事件与投影
+
+### 9.1 事件
+
+事件名：`workflow-run-event`。载荷 `WorkflowRunEventDto`：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `runId` | `String` | 必填 |
+| `runState` | `WorkflowRunStateDto` | 必填；该 run 的当前状态（闭集枚举，§7.2） |
+| `nodeId` | `String \| null` | run 级事件为 `null` |
+| `nodeState` | `WorkflowNodeRunStateDto \| null` | `nodeId` 为 `null` 时必为 `null`；否则为该节点新状态（闭集枚举，§7.2） |
+| `reason` | `String \| null` | 失败原因 / 预算原因 / 取消原因 |
+| `atMs` | `number` | 宿主时钟（`now_ms`），不用系统时间 |
+| `seq` | `number` | run 内单调递增，从 1 起；重连后按 `seq` 去重 |
+
+**为什么 `runState` 恒带、`nodeState` 可空**：每个事件都发生在某个 run 上，run 状态总是可判定；节点级事件额外带上该节点的新状态。这样两个闭集各用自己的枚举，不需要「一个 `String` 字段承载两套闭集」这种无法类型化的写法（违反项目「封闭集合用 `enum`」规则）。
+
+**新增状态的代价**：`WorkflowRunStateDto` / `WorkflowNodeRunStateDto` 增变体即契约变更——必须 `npm run contract:gen` 并同步前端 `switch` 兜底。**禁止**为了「以后好加」把它们退化成 `String`；未知值的显示纪律由前端兜底分支承担（未知 → 显示为「未知状态」，不渲染为默认态）。
+
+### 9.2 路由与只读
+
+| 约束 | 说明 |
+|---|---|
+| 键控 | 前端按 `(runId, nodeId)` 键控投影（O12） |
+| 禁止 | 不得复用 `chatStreamStore` 单缓冲（N11）；不得按「活跃会话」过滤 |
+| 只读 | 画布只发命令、只读投影；断开前端后 run 仍推进（O10） |
+| 不落库 | 事件不入台账（§7.6） |
+| 重连 | 前端重连后先拉 `get_workflow_run` 全量，再用事件增量；漏事件靠 `reconcile_workflow_run` 补齐（A26） |
+
+### 9.3 与观测面的关系
+
+编排层**订阅** L1 节点事件只做只读投影（例如把「当前节点正在跑 turn 的第 9 号节点」显示在卡片上），但：
+
+- 不修改 `AgentNodeEvent` 载荷；
+- 不把 run 键写进 L1 事件（run 归属由 `workflow-run-event` 承担，§9.1）；
+- 不把 L1 投影当作调度输入（INV3 / 分析 §4.5）。
+
+---
+
+## 10 失败矩阵
+
+| # | 情形 | 编排层行为 | 内核 / 台账 |
+|---|---|---|---|
+| **F1** | `launch_turn` 返回 `SessionBusy` | 节点 `failed(reason: busy)`；run 按边条件推进（不自动重试——重试属图语义，v1 无环） | turn 未创建；台账已写节点行 |
+| **F2** | turn 终态 `failed` | 节点 `failed`；下游按 `onFailure` 决定 | turn 已落消息行与终态 |
+| **F3** | turn 终态 `interrupted` | 同 `failed`（归入 `onFailure`） | 同上 |
+| **F4** | turn 终态 `cancelled` | 节点 `cancelled`；不激活下游 | 同上 |
+| **F5** | tap 丢事件（run 停在 `running`） | **不主动收口**；只降级为「停在最后已知节点」 | turn 正常终态 |
+| **F6** | 编排层 panic | 进程内其他组件不受影响；重启后由 `orphaned` 扫描收口 | turn 正常终态 |
+| **F7** | 台账写失败 | 节点结果不丢（turn 已落消息行）；run 置 `failed(reason: ledger)` 并记 `error` 日志 | **不回滚** turn |
+| **F8** | 非法模板 | 保存期拒绝，不产生 run | 无 |
+| **F9** | 重复发起（同 `client_run_key`） | 返回既有 run | 不双执行 |
+| **F10** | 未知节点类别（DB 被手改 / 旧模板 + 新代码） | 节点 `failed(reason: unknown_kind)`；不渲染为默认态（O11） | 台账保留原值 |
+| **F11** | gate 永不解决 | run 停在 `waiting`，无超时；只有 cancel / resolve 结束 | 无 |
+
+**总纪律**：F1–F11 中任何一条都**不得**改变 turn 的终态，也不得让 `start_turn` 之外的路径产生 turn（INV4）。
+
+---
+
+## 11 缺口承接
+
+| 缺口（分析 §6） | 落点 | 说明 |
+|---|---|---|
+| G1 run 级任务键与取消树 | §8.1 / §8.4 | `(run_id, node_id)` + 取消树；`TurnTasks` 键策略不动 |
+| G2 run / node_run 持久化 | §7.1 | 三张表；edge 属模板 `spec_json`，不单独建表 |
+| G3 编排控制端口定义 | §6.1 / §6.2 | — |
+| G4 run 级事件归属键 | §7.1 / §9.1 | 台账主键 + 事件键 |
+| G5 并行调度与冲突域 | §8.2 / §8.3 | — |
+| G6 模板 → turn 请求编译层 | §5.2 | `TurnNodeParams` → `LaunchTurnSpec`；宿主补缺省值 |
+| G7 画布依赖与图数据模型 | §5.1（后端一半） | 图数据模型由本文定义；画布库与前端渲染属画布侧（W1 / W2 已交付），模板编辑器属画布侧规格 |
+| G8 图级授权单元 | 不做（D7） | 保持调用级审批 |
+| G9 run 级预算与归因 | §8.6 | — |
+| G10 多 run 并行的事件路由 | §9.1 / §9.2 | 后端按 `(runId, nodeId)` 键控；前端按同一键做投影 |
+| G11 图级 HITL 节点 | §8.5 | — |
+
+---
+
+## 12 契约影响
+
+### 12.1 新增 DTO（`assistant-protocol/src/orchestration.rs`）
+
+| DTO | 用途 | 备注 |
+|---|---|---|
+| `WorkflowNodeKindDto` | 节点类别 | 闭集 `turn` / `hitl`（INV5；`group` 不在枚举内） |
+| `WorkflowEdgeConditionDto` | 激活边条件 | 闭集 `always` / `onSuccess` / `onFailure` |
+| `WorkflowRunStateDto` | run 状态 | 闭集 7 值（§7.2） |
+| `WorkflowNodeRunStateDto` | 节点状态 | 闭集 7 值（§7.2）；与 run 状态**不共用类型** |
+| `WorkflowTemplateDto` | 模板读（全量） | 含 `id` / `name` / `version` / `nodes` / `edges` / `groups` / `layout`；`get_workflow_template` 的返回 |
+| `WorkflowTemplateSummaryDto` | 模板列表项 | 只含 `id` / `name` / `updatedAt` / `nodeCount`；`list_workflow_templates` 的返回；**不含** `nodes` / `layout`（列表不传大对象） |
+| `WorkflowNodeDto` | 模板节点 | `id` / `kind`（闭集枚举）/ `title` / `params`（`TurnNodeParamsDto`，常量参数）/ `groupId`（`T \| null`） |
+| `TurnNodeParamsDto` | `turn` 节点参数 | `content`（必填、常量）；`modeId` / `providerId` / `modelId` 为 `T \| null`（`null` = 取会话当前值） |
+| `WorkflowEdgeDto` | 激活边 | `id` / `from` / `to` / `condition`（闭集枚举 `WorkflowEdgeConditionDto`） |
+| `WorkflowGroupDto` | 模板分组 | 只含 `id` / `title` / `nodeIds`（D18） |
+| `WorkflowLayoutDto` | 呈现 | `positions`：`nodeId → { x: number, y: number }`；不参与校验、不参与调度（INV13）；**不使用 `Record<string, unknown>`** |
+| `WorkflowTemplateSaveInputDto` | 模板写 | `deny_unknown_fields`；`Option` 字段加 `#[ts(optional = nullable)]` |
+| `WorkflowRunDto` | run 读 | `state` 为闭集枚举 `WorkflowRunStateDto`；`reason` / `finishedAt` 为 `T \| null` |
+| `WorkflowNodeRunDto` | 节点读 | `state` 为闭集枚举 `WorkflowNodeRunStateDto`；含 `assistantMessageId` / `turnId` / `note`，值可为 `null` |
+| `WorkflowRunStartInputDto` | 发起 | `templateId` / `originConversationId` / `clientRunKey`（`T \| null`）/ `nodeConversations`（`nodeId → conversationId`，可空、缺省取 `originConversationId`） |
+| `WorkflowGateResolveInputDto` | gate | `runId` / `nodeId` / `proceed` / `note` |
+| `WorkflowRunEventDto` | 事件 | §9.1（`runState` 恒在、`nodeState` 可空） |
+
+**两个状态枚举**：`WorkflowRunStateDto`（7 值）与 `WorkflowNodeRunStateDto`（7 值）各自独立定义，**不得合并、不得互相复用**（§1.3「两套闭集不得互借类型」）。两者在 `assistant-protocol` 中定义，内部 `RunState` / `NodeRunState` 不外泄到契约，显式转换（与 I55 的 `NodeStateDto` 同一做法）。
+
+**字段纪律**（项目规则）：输出 DTO 的 `Option` 不加 `skip_serializing_if`（键恒在、值 `null`，前端声明 `T | null` 必填）；输入 DTO 的 `Option` 加 `#[ts(optional = nullable)]` 并加 `deny_unknown_fields`；封闭集合用 `enum`（`kind` / `condition` / 两个状态枚举），开放集合才保留 `String` 且前端兜底不窄化。
+
+### 12.2 新增命令（`src-tauri/src/cmd/orchestration/`）
+
+| 命令 | 说明 |
+|---|---|
+| `save_workflow_template` | 保存即校验；非法图返回定位错误 |
+| `get_workflow_template` | 读单个模板全量（`WorkflowTemplateDto`）；W3 编辑器的唯一读取入口 |
+| `list_workflow_templates` | 列表只取摘要（`WorkflowTemplateSummaryDto`） |
+| `delete_workflow_template` | 删除模板；**不删**已发起的 run |
+| `start_workflow_run` | 幂等发起（§7.3） |
+| `cancel_workflow_run` | 幂等取消（§8.4） |
+| `resolve_workflow_gate` | §6.3 |
+| `list_workflow_runs` | 按 `origin_conversation_id` 分页 |
+| `get_workflow_run` | 全量（run + 全部 node_run），供重连重建 |
+| `reconcile_workflow_run` | 依据 `TurnTasks` 与实际消息终态校正台账（A26） |
+
+### 12.3 生成与登记
+
+1. `npm run contract:gen` 生成 `src/types/protocol.contract.ts`；
+2. `assistant-protocol/tests/protocol_bindings.rs` 的 `declarations` 数组必须登记全部新增 DTO（漏登记即测试失败）；
+3. `npm run contract:check` 必须幂等；
+4. 契约冻结前上述两个文件 **零 diff**（INV12）。
+
+### 12.4 前端接缝
+
+编排层的前端部分**只到接缝**，不含任何画布渲染与编辑器（模板编辑器与运行态叠加属画布侧规格，见 [I69 §1](./I69-agent-orchestration-roadmap.md)）。
+
+| 接缝 | 位置 | 约束 | 判据 |
+|---|---|---|---|
+| 命令封装 | `src/features/orchestration/api.ts` | 十个命令的类型化封装，统一经 `tauriInvoke`（`src/services/system/tauriInvoke.ts`）；组件与 store **禁止**直接 `invoke` | A27 |
+| 事件订阅唯一入口 | `src/features/orchestration/events.ts` | 全仓唯一 `listen("workflow-run-event")`；组件**禁止**各自 `listen`（与 `src/stores/agent/observation/schedule.ts` 同一条纪律） | A27 |
+| 键控投影 | 同上 | 按 `(runId, nodeId)` 键控（§9.2）；**禁止**复用 `chatStreamStore` 单缓冲、禁止按「活跃会话」过滤 | A27 |
+| 重连与补齐 | 同上 | 先 `get_workflow_run` 全量，再事件增量；漏事件调 `reconcile_workflow_run` | A26 |
+| 类型来源 | `src/types/protocol.contract.ts` | 由 `contract:gen` 生成，**禁止**手改（项目规则） | A25 |
+| 模块注册 | `src/features/orchestration/module.ts` | 按 `FeatureModule` 范式注册（`src/features/registry.ts`）；只留入口与空态，页面与画布属画布侧规格 | A27 |
+
+**不含**：模板编辑器（W3）、运行态叠加（W4）、画布库选型与渲染（W1 / W2 已交付）。前端断开不影响 run 推进（INV4 / K12）。
+
+---
+
+## 13 与既有阶段的关系
+
+| 阶段 | 关系 |
+|---|---|
+| P4（内核） | 复用 `start_turn` / `TurnTasks` / `TurnEvent::Terminated`；**不改内核语义** |
+| P5（工具） | 编排层不接触 `ToolPipeline`；可用工具集仍由发送时的 `resolve_available_tools` 决定 |
+| P12（工作区） | 冲突域取 `resolve_workspace` 的唯一解析结果（D14） |
+| P15（观测） | 订阅 `agent-node-event` 做只读投影；不改 `EventSink`（INV3） |
+| P16 / P17 | 无关系 |
+| P8.1（`spawn_agent`） | 暂缓；v1 无委派类别（D10） |
+| P8.2 / P8.3（L3） | 分层不同，互不前置（D1 / D16） |
+| P9（后台任务） | run 生命周期止于应用进程；跨重启续跑不在本阶段（D15） |
+| 画布 W1 / W2 | 可并行；W1 / W2 不读模板与台账 |
+| 画布 W3（模板编辑器） | 读取模板 schema 与模板命令；形态属画布侧规格 |
+| 画布 W4（运行态叠加） | 读取 run 台账与 `workflow-run-event`；只读叠加，前端卸载不影响 run（K12） |
+
+---
+
+## 14 验收
+
+| # | 判据 | 检查方式 |
+|---|---|---|
+| **A1** | 两个 `turn` 节点的串行 run 跑完，节点状态与 run 状态正确，`assistant_message_id` 指向真实消息行 | crate 集成测试（假 `RunHost` + 真台账） |
+| **A2** | 全仓 turn 发起点仍只有命令层一处；编排层不构造 `TurnSpec` | `cargo tree` + grep `TurnSpec::agent()` |
+| **A3** | `cargo tree -p assistant-orchestrator` 不含 `tauri` / `assistant-agent` / `assistant-tools` | 命令 |
+| **A4** | 宿主返回 `SessionBusy` 时节点 `failed(busy)`、run 不挂死 | 单测（F1） |
+| **A5** | tap 内 panic 时 turn 仍正常终态 | 单测（F6 / INV4） |
+| **A6** | 零 wire diff（`git diff --stat src/types src/vault/core/contract` 为空） | 命令（INV12） |
+| **A7** | 六类非法模板（环 / 悬空边 / 重复 id / 缺必填参数 / 未知类别 / 条件与类别不匹配）各被拒并定位到 `node_id` / `edge_id` | 校验单测（F8） |
+| **A8** | 合法模板通过校验并编译出正确的 `LaunchTurnSpec` 序列 | 单测 |
+| **A9** | 环在保存期被拒，不进入运行期 | 校验单测（INV7） |
+| **A10** | 只改 `layout` 不改变任何校验结果、不改变 `spec_json` | 单测（INV13） |
+| **A11** | 未知节点类别被拒，不降级为默认态 | 单测（O11） |
+| **A12** | 进程重启后 run / node_run 可读且状态与终止前一致 | 集成测试（真 DB） |
+| **A13** | 同 `client_run_key` 重复发起返回既有 run，不双执行 | 集成测试（O6） |
+| **A14** | 模拟进程被杀后启动扫描把在跑 run 置 `orphaned`、节点置 `failed(orphaned)` | 集成测试 |
+| **A15** | 删除会话后台账行保留、引用显示「结果已删除」、无外键错误 | 集成测试（§7.5） |
+| **A16** | 台账写失败时 run 置 `failed(ledger)`、turn 终态不变 | 单测（F7 / INV4） |
+| **A17** | 两个不同会话的节点并行推进，墙钟区间明显重叠 | 集成测试 |
+| **A18** | 同会话两节点不同时 `running`；`TurnTasks` 不出现 `SessionBusy` | 集成测试（INV10） |
+| **A19** | `cancel_run` 使在跑节点收到取消；二次取消无副作用 | 单测（INV9） |
+| **A20** | 条件边只激活一条下游，其余 `skipped`（调度阻断义） | 单测（§8.4） |
+| **A21** | 同 `workspace_root` 的两个 `turn` 节点不并行 | 单测（§8.3） |
+| **A22** | `hitl` run 停在 `waiting`；`resolve(proceed=true)` 后继续；`note` 落台账且对话历史无新增消息 | 集成测试（D9） |
+| **A23** | gate 无默认超时：等待超过任意时长仍 `waiting`；只有 cancel / resolve 结束 | 集成测试（§8.5） |
+| **A24** | 墙钟超限 → run `failed(budget)` 且在跑节点被取消；节点数超限 → 发起前拒绝；token 归因可按节点分摊；未配置的预算维度显示「未配置」而非 `0` | 单测 + 集成（INV11） |
+| **A25** | `contract:gen` / `contract:check` 幂等；`protocol_bindings` 登记齐全 | 命令 |
+| **A26** | 前端漏接事件后 run 仍推进；`reconcile` 能依据 `TurnTasks` 与实际消息终态补齐台账 | 集成测试（§7.7） |
+| **A27** | 命令封装与事件订阅各自唯一入口；组件不直接 `invoke` / `listen`；投影按 `(runId, nodeId)` 键控而非单缓冲 | 结构测试 + grep |
+
+---
+
+## 15 已拒绝方案
+
+| # | 方案 | 拒绝理由 |
+|---|---|---|
+| RD1 | 把编排放进 `assistant-agent` | 内核要零编排概念、零 `tauri`；会迫使观测端口开第二个出口（§5.3） |
+| RD2 | 前端编排（B 方案） | 断开前端无法推进（O10）；跨窗口不一致；应用最小化即停 |
+| RD3 | 「编排即模式」（C 方案） | 无台账、无取消树；模式是运行配置，不是调度器 |
+| RD4 | 复用 `TurnTasks` 作 run 键 | 互斥表不是队列，也不是 run 归属；会与 N7 直接冲突（D6） |
+| RD5 | 节点结果缓存 + `replayable` | 假命中（分析 §4.2）；schema 一旦有该字段即为承诺（D3） |
+| RD6 | 图级环 + 收敛判据 | 状态机膨胀为「节点 × run × iteration」，校验无法静态化（D2） |
+| RD7 | 图级授权绕过 `Gateway` | 权限旁路，与 I52 冲突（D7） |
+| RD8 | 复用 `ask_user` 作为图级 HITL | 回答进对话历史，污染上下文（D9） |
+| RD9 | 把工具调用做成节点 | 产生第二条执行路径（D17 / O5） |
+| RD10 | 变量池 / 参数引用上游输出 | 需要类型系统与求值器，等于把编排做成数据流引擎（D11） |
+| RD11 | 原始事件落库 | 存储随 run 长度线性增长（D5） |
+| RD12 | 用时间戳判定 turn 是否活着 | 时钟不可靠，会把正在跑的 run 误标 `orphaned`（§7.4） |
+
+---
+
+## 16 未决问题
+
+| # | 问题 | 当前处置 | 何时裁定 |
+|---|---|---|---|
+| OQ1 | typed handoff（交接类别闭集） | v1 边只有激活语义；不引入类型校验 | 需要「节点输出能否接下游输入」时（分析 §12.2 #1） |
+| OQ2 | `run` 与「应用关闭后继续跑」（P9） | run 生命周期止于进程；`orphaned` 收口 | P9 立项时 |
+| OQ3 | run / 模板的归档与清理策略 | 本阶段不做；台账只增不删（删模板不删 run） | 存储压力出现时（可复用 P14 `ReclaimPolicy` 口径） |
+| OQ4 | 会话内并行（同 `conversation_id` 多节点） | 不支持（D6） | 需要改 `TurnTasks` 键策略时，属内核契约变更 |
+| OQ5 | 条件边扩展到「按输出内容路由」 | 不支持；闭集只有三值 | typed handoff（OQ1）定案后 |
+| OQ6 | HITL 是否支持「多选项 + 表单」 | v1 只有 `proceed` + `note` | W3 编辑器定案时 |
+| OQ7 | run 预算的 token 实时闸门 | 只归因不闸门（D8） | 内核回传 turn 级用量时 |
+| OQ8 | 模板版本与用户可见版本号的关系 | `version` 只表示 schema 版本；用户版本号暂不引入 | W3 需要「历史版本」时 |
