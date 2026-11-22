@@ -14,16 +14,12 @@ use super::component_prefix_match;
 /// 凭据目录（`.ssh` / `.gnupg` / `.aws` / `.azure` / `.kube` / `keychains` 等）
 /// 无论位于何处一律拒绝，判定先于 `workspace_root` 授权。
 pub fn reject_system_dirs(path: &Path) -> Result<(), String> {
-    // macOS 的 `/etc` / `/tmp` / `/var` 是符号链接（真实路径在 `/private/` 下），
-    // Debian 系的 `/bin` / `/sbin` 也指向 `/usr`。调用方传入的是归一后的路径
-    // （`resolve` 已 canonicalize），只按字面比较会漏判受保护目录。
-    // 两侧都按归一结果比较；归一失败时保留原形态，方向只会更严。
+    // 符号链接（macOS `/etc` `/tmp` `/var` → `/private`，Debian `/bin` `/sbin` → `/usr`）
+    // 只按字面比较会漏判，故两侧都取归一结果；归一失败保留原形态，方向只会更严。
     let canonical =
         super::resolve::canonicalize_lenient(path).unwrap_or_else(|_| path.to_path_buf());
     for protected in protected_dirs() {
-        if component_prefix_match(path, &protected)
-            || component_prefix_match(&canonical, &protected)
-        {
+        if protected_prefix_hit(path, &canonical, &protected) {
             return Err(format!(
                 "path '{}' is inside a protected system directory '{}'",
                 path.display(),
@@ -36,6 +32,28 @@ pub fn reject_system_dirs(path: &Path) -> Result<(), String> {
         reject_credential_dirs(&canonical)?;
     }
     Ok(())
+}
+
+/// 受保护目录的组件级前缀判定。
+///
+/// macOS 上不能直接比真实路径：`/Users`、`/home`、`/Library` 的真实路径挂在
+/// 数据卷 `/System/Volumes/Data` 下，按真实路径比会让 `/System` 命中每个家目录。
+/// 故 macOS 先把两侧还原成逻辑形态再比，其余平台直接比较归一结果。
+fn protected_prefix_hit(path: &Path, canonical: &Path, protected: &Path) -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        let data_volume_root = "/System/Volumes/Data";
+        let logical = |value: &Path| match value.strip_prefix(data_volume_root) {
+            Ok(rest) => Path::new("/").join(rest),
+            Err(_) => value.to_path_buf(),
+        };
+        return component_prefix_match(&logical(path), &logical(protected))
+            || component_prefix_match(&logical(canonical), &logical(protected));
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        component_prefix_match(path, protected) || component_prefix_match(canonical, protected)
+    }
 }
 
 fn protected_dirs() -> Vec<PathBuf> {

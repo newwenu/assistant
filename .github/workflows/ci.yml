@@ -1,24 +1,20 @@
 name: CI
 
-# 目的：把「开发机只有 Windows」的验证缺口交给 GitHub Actions 的真实虚拟机。
+# 目的：开发机只有 Windows，Linux / macOS 的实机行为交给 GitHub Actions 的真实虚拟机验证。
 #
-# 平台结论差异（见 I53 沙箱准备任务清单（已归档） 验收记录）：
-# - Linux：Landlock 用例会真实执行（A-S1 / A-S2 / A-S3），失败即边界失效；
-# - macOS：Seatbelt 仍是占位，只能验证「编译通过 + probe 不可用 → 不注册 shell」的 fail-closed；
-# - Windows：本机可完整执行（fmt / 编译 / 用例），因此 CI 不再重复跑 Windows，只保留开发机跑不到的 Linux 与 macOS。
+# 平台分工：
+# - Linux / macOS：格式、全 workspace 测试与沙箱实机用例都在真实内核上跑；
+#   沙箱后端探测不到可用能力时会自报不可用、shell 不注册（fail-closed），该步仍须通过；
+# - Windows：格式、编译与用例由开发机覆盖，不进 CI。
 #
-# 可选特性关闭态（full / slim / 单特性两态）的落点：
-# - 前端在 ubuntu 上跑 full build + `VAULT_ENABLED=0 CLOCK_ENABLED=0` slim build + 产物字符串探针；
-#   slim build 同时由 Vite 产物图断言（F7）硬失败兜底（断言根同时覆盖 src/features/ 与 src/tools/）；
-# - 后端关闭态只在 Linux 跑（`-p assistant-app --no-default-features`），并追加
-#   `assert-feature-shed.mjs` 的 normal-edge 依赖图断言（CI-2），不跑 workspace 全量——
-#   workspace 成员的测试目标仍会编译 assistant-vault / assistant-clock 自身，不能作为关闭态证据；
-# - 单特性独立性由 `--features vault` / `--features clock` 两组互补证据覆盖：
-#   前者证明关 clock 时 assistant-clock 不在 normal-edge 图，后者证明关 vault 时三个 vault crate 消失；
-# - Windows 仍不进 CI（同上平台结论），关闭态由开发机 `feature-build.ps1 -Preset <name>` 覆盖。
+# 特性关闭态：
+# - 前端：默认构建 + 关闭全部特性后的构建，构建期产物图断言与产物字符串探针共同保证
+#   关闭态产物里既无对应特性代码、也无对应文案；
+# - 后端：只在 Linux 跑关闭态（及单特性两态）的编译、装配契约与依赖图断言；
+#   不用 workspace 全量——它会把特性 crate 自身一并编译，无法作为关闭态证据。
 #
-# 本文件是草稿：首次接入时若某平台因 runner 环境（缺失系统库、内核 Landlock 不可用）失败，
-# 先修环境或把该步拆成独立 job，不要用 continue-on-error 掩盖失败。
+# 某平台因 runner 环境（缺系统库、内核不支持 Landlock）失败时，先修环境或把该步拆成独立 job，
+# 不要用 continue-on-error 掩盖失败。
 
 on:
   push:
@@ -36,7 +32,7 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: "1"
-  # 与开发机一致；升级工具链时同步本行与 Cargo.lock。
+  # 升级 Rust / Node 工具链时同步更新这两行。
   RUST_TOOLCHAIN: "1.100.0"
   NODE_VERSION: "26"
 
@@ -69,11 +65,11 @@ jobs:
       - name: 单元测试
         run: npm test
 
-      # full 态：确认默认（含 vault）构建不误报，F7 落地后这里同时守产物图断言。
+      # full 态：确认默认（含 vault）构建不误报，产物图断言同样生效。
       - name: 前端构建（full）
         run: npm run build
 
-      # slim 态：两个特性都关，特性模块不得进入产物图（F7 由此步硬失败）。
+      # slim 态：两个特性都关，特性模块不得进入产物图，产物图断言在此硬失败。
       - name: 前端构建（slim / VAULT_ENABLED=0 CLOCK_ENABLED=0）
         run: VAULT_ENABLED=0 CLOCK_ENABLED=0 npm run build
 
@@ -123,12 +119,13 @@ jobs:
         working-directory: src-tauri
         run: cargo fmt --all -- --check
 
-      # 沙箱用例单独一步：失败时直接从步骤名定位到 I53 验收项（A-S1 / A-S2 / A-S3 / A-S5 / A-S7）。
-      - name: 沙箱实机用例（I53）
+      # 沙箱用例单独一步：失败时从步骤名即可判断是边界用例而非编译/其他测试的问题。
+      # Windows 独有的几条用例不在本矩阵覆盖范围，由开发机负责。
+      - name: 沙箱实机用例
         working-directory: src-tauri
         run: cargo test -p assistant-tools --all-targets --no-fail-fast
 
-      # --no-fail-fast：一个 target 失败不吞掉其余 target 的结果，便于一次看清三平台差异。
+      # --no-fail-fast：一个 target 失败不吞掉其余 target 的结果，便于一次看清各平台差异。
       - name: 工作区测试
         working-directory: src-tauri
         run: cargo test --workspace --all-targets --no-fail-fast
@@ -145,7 +142,7 @@ jobs:
         working-directory: src-tauri
         run: cargo test -p assistant-app --no-default-features --test assembly_contract
 
-      # 契约生成需要 Node + 上面装的 Tauri 依赖，只在 Linux 跑一次，避免三平台重复编译。
+      # 契约生成需要 Node + 上面装的 Tauri 依赖，只在 Linux 跑一次，避免两个平台重复编译。
       - uses: actions/setup-node@v4
         if: runner.os == 'Linux'
         with:
@@ -158,7 +155,7 @@ jobs:
           npm ci
           npm run contract:check
 
-      # CI-2：关闭态依赖图断言。禁用特性的 `dep:` crate 不得出现在 normal-edge 图，
+      # 关闭态依赖图断言：被关掉的特性所独占的依赖 crate 不得留在 normal-edge 图，
       # 否则「关闭」只是不注册，依赖仍被编进二进制。脚本内部 cwd = src-tauri。
       - name: 关闭态依赖断开断言（slim）
         if: runner.os == 'Linux'

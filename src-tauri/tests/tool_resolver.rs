@@ -226,7 +226,12 @@ async fn shell_visibility_needs_registration_checkbox_and_tier() {
     let storage = tempfile::tempdir().expect("storage tempdir");
     let backend: Arc<dyn assistant_tools::ToolResultStorage> =
         Arc::new(FileToolResultStorage::new(storage.path()));
-    let probe = detect(&SandboxHostPaths::default());
+    // 敏感列表必须非空（Unix 后端以空列表判负）；本用例只验证注册门禁，
+    // 不真正执行子进程，用独立 tempdir 即可。
+    let sensitive = tempfile::tempdir().expect("sensitive tempdir");
+    let probe = detect(&SandboxHostPaths {
+        sensitive_read_deny: vec![sensitive.path().to_path_buf()],
+    });
     assert_ne!(
         probe.enforcement,
         SandboxEnforcement::None,

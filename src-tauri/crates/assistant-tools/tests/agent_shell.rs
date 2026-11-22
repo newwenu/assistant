@@ -62,6 +62,9 @@ fn plain_path(path: &std::path::Path) -> String {
 struct Harness {
     workspace: tempfile::TempDir,
     storage: tempfile::TempDir,
+    /// 只靠 `Drop` 保活：路径在构造期被 `detect` 取走，用例本身不读它。
+    #[allow(dead_code)]
+    sensitive: tempfile::TempDir,
     probe: &'static SandboxProbe,
     tool: Arc<ShellTool>,
 }
@@ -70,7 +73,12 @@ impl Harness {
     fn new() -> Self {
         let workspace = tempfile::tempdir().expect("workspace tempdir");
         let storage = tempfile::tempdir().expect("storage tempdir");
-        let probe = detect(&SandboxHostPaths::default());
+        // 敏感列表必须非空（Unix 后端以空列表判负），且须用兄弟 tempdir：
+        // 与可写根不相交，macOS 后置的 `deny file-read*` 也不会罩住 workspace。
+        let sensitive = tempfile::tempdir().expect("sensitive tempdir");
+        let probe = detect(&SandboxHostPaths {
+            sensitive_read_deny: vec![sensitive.path().to_path_buf()],
+        });
         assert_ne!(
             probe.enforcement,
             SandboxEnforcement::None,
@@ -83,6 +91,7 @@ impl Harness {
         Self {
             workspace,
             storage,
+            sensitive,
             probe,
             tool,
         }
@@ -866,9 +875,9 @@ async fn a34_sandbox_flags_report_real_boundary() {
     assert!(result.ok, "{:?}", result.error);
 
     let sandbox = &data_of(&result)["sandbox"];
-    let expected_network = !harness.probe.missing.contains(&SandboxDimension::Network);
+    // `ShellSpawnPlan.network` 恒 `false`（I56 §8.4 另行求交），故 `sandbox.network` 恒为 `false`。
     let expected_fs_read = !harness.probe.missing.contains(&SandboxDimension::FsRead);
-    assert_eq!(sandbox["network"].as_bool(), Some(expected_network));
+    assert_eq!(sandbox["network"].as_bool(), Some(false));
     assert_eq!(sandbox["fsRead"].as_bool(), Some(expected_fs_read));
     assert_eq!(
         sandbox["enforcement"],
