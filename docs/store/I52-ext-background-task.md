@@ -5,7 +5,7 @@
 | 状态 | 草稿（阶段扩展登记；**未立项**，进度只在 [I38 roadmap](./I38-agent-roadmap.md) §2 维护） |
 | 日期 | 2026-11-15 |
 | 阶段 | P9（continuity 轴；**不属 P14**，见 [roadmap §2.1](./I38-agent-roadmap.md)） |
-| 关联 | [I52](./I52-shell-sandbox-spec.md)（P14 阶段规格：§1.2 非目标）、[I56](./I56-shell-tool-spec.md)（`shell` 工具规格：§7.1 / §7.5 终态矩阵、§8 输出存储、§6.1 / §6.2 审批键）、I53（已归档）（沙箱准备）、I36 design D13a / D13b（已归档，持久化边界）、[I38g](./I38g-agent-approval-advisor-spec.md)（P10 顾问）、P12 工作区（`resolve_workspace` 唯一解析点） |
+| 关联 | [I52](./I52-shell-sandbox-spec.md)（P14 阶段规格：§1.2 非目标）、[I56](../achievement/I56-shell-tool-spec.md)（`shell` 工具规格：§7.1 / §7.5 终态矩阵、§8 输出存储、§6.1 / §6.2 审批键）、I53（已归档）（沙箱准备）、I36 design D13a / D13b（已归档，持久化边界）、[I38g](./I38g-agent-approval-advisor-spec.md)（P10 顾问）、P12 工作区（`resolve_workspace` 唯一解析点） |
 | 影响范围 | 文档登记，**不改任何代码契约**；开工前必须先改 roadmap §2 / §3（roadmap §7 第 5 条） |
 
 > 一句话：本文回答「如果将来要引入后台任务，P14 已交付的哪些资产可复用、哪些必须换持有者」。
@@ -36,7 +36,7 @@ I56 §7.1 / §7.5 的全部正确性论证都建立在**一次工具调用 = 一
 |---|---|---|---|
 | I1 | deadline 与取消令牌挂在调用栈上 | I56 §7.1 第 7 步 `select!`（只有 `await` 点可被抢占） | 调用返回后没有任何 `await` 点，超时与取消都不再生效 |
 | I2 | `kill_tree()` 在返回前必调（正常结束也扫尾） | I56 §7.5「正常结束也要扫尾」、A28 | 无第二次进入点去收尸；孙进程可长期逃逸 |
-| I3 | `sink.finish()` 在返回前必调（四种终态一律） | [I56 §7.5](./I56-shell-tool-spec.md)（终态表）、§8.1 不变式 3 / 4 | 没有持有者去 `finish`，后台写入会继续污染已收尾文件 |
+| I3 | `sink.finish()` 在返回前必调（四种终态一律） | [I56 §7.5](../achievement/I56-shell-tool-spec.md)（终态表）、§8.1 不变式 3 / 4 | 没有持有者去 `finish`，后台写入会继续污染已收尾文件 |
 | I4 | 进程归属由 `TurnTasks` 的代际令牌收口 | `begin()` / `finish()` / `child_token` | 没有代际能表达「任务比 turn 活得久」；turn 结束会连带丢归属 |
 
 结论：**这不是加一个 `yield_time_ms` 参数能解决的事，而是换持有者**。P14 若为此预留任何中间态，会让 I56 §7.5 的终态矩阵出现第三态（既非「已回收」也非「已失败」），直接击穿 A12 / A28。
@@ -50,11 +50,11 @@ I56 §7.1 / §7.5 的全部正确性论证都建立在**一次工具调用 = 一
 | # | 层 | 现在（P14） | 引入后台任务后必须改 | P14 可复用资产 |
 |---|---|---|---|---|
 | E1 | 进程归属 | `TurnTasks` 是唯一持有者：`conversation_id → TurnEntry { token, counter, turn_id }`，`finish()` 在 turn 结束移除条目、旧代际令牌随 `Replace` 失效 | 归属上移到 session / app supervisor（P9 新增持有者），并新增「任务 id ↔ 进程树 ↔ 沙箱上下文」登记表；取消语义从「turn 代际」扩展为「任务代际」；turn 结束不得连带回收仍在运行的任务，但会话删除 / 应用退出必须连带回收 | `TurnTasks::child_token` 的子令牌机制（父取消 → 子失效）；`kill_tree()` 幂等 |
-| E2 | 调用形态 | `execute` 同步一次性（[I56 §7.1](./I56-shell-tool-spec.md) 第 4–11 步全在调用栈内）；§7.7 明确不做 `yield_time_ms` 式返回 | 新增后台形态：返回 task id + 首批输出，并新增第二次进入点（`job_output` / `job_kill` 或 `wait` 动作）取终态；**前台形态不变** | 输出先落盘再回读的模型（I56 §8），天然支持后续轮询；`persisted` 引用可直接作为任务输出入口 |
+| E2 | 调用形态 | `execute` 同步一次性（[I56 §7.1](../achievement/I56-shell-tool-spec.md) 第 4–11 步全在调用栈内）；§7.7 明确不做 `yield_time_ms` 式返回 | 新增后台形态：返回 task id + 首批输出，并新增第二次进入点（`job_output` / `job_kill` 或 `wait` 动作）取终态；**前台形态不变** | 输出先落盘再回读的模型（I56 §8），天然支持后续轮询；`persisted` 引用可直接作为任务输出入口 |
 | E3 | 结果与 wire | `ToolResult { ok, data, persisted }` 是一次性快照；P13 信封按「一次调用一条 `Finished`」设计 | 结果拆成「启动（部分）+ 终态（最终）」两段；终态不得复用 `Finished`（历史重载会重放两次），需新的终态来源；`compact` 需要「进行中」形态；`Started.argsPreview` 可复用 | `err_with_data`（失败仍带 `data`）与 `persisted` 输出域；`data` 是开放 JSON，加 `taskId` 不需要 DTO 变更 |
 | E4 | 审批 | `ApprovalScope::Command { argv, cwd, sandbox_enforcement }` 在启动时求值一次（§6.1 / §6.2） | 需定义「授权覆盖任务全生命周期」的语义：后台运行期间是否仍受本次授权约束；降级（`full → partial`）后必须**终止**任务而非静默续跑（与 A7 同源） | `sandbox_enforcement` 进键（§6.2）；`Deny` 先于授权命中（§6.4） |
 | E5 | 沙箱上下文 | `SandboxPlan`（`writable_root` / `program` / `network`）随调用结束销毁（I53 §4.3） | plan 生命周期必须 ≥ 任务生命周期；可写根仍是 `resolve_workspace(conversation_id)` 的唯一解析结果（P12）；会话切换工作区时运行中的任务必须定论（失效并回收，或禁止切换），不得静默沿用旧根 | fail-closed 探测与注册收口（I53 §4.4）；三平台后端 |
-| E6 | 输出 sink | `sink.finish()` 在调用返回前必调，sink 由调用栈持有 | sink 必须由 supervisor 持有并在任务结束时 `finish`；[I56 §8.1](./I56-shell-tool-spec.md) 不变式 3 的 `lock().take()` 语义需改为「任务结束才可取走」，否则后台写入会污染已收尾文件 | 有界内存 + 文件落盘模型；`stderr` 独占保留区 |
+| E6 | 输出 sink | `sink.finish()` 在调用返回前必调，sink 由调用栈持有 | sink 必须由 supervisor 持有并在任务结束时 `finish`；[I56 §8.1](../achievement/I56-shell-tool-spec.md) 不变式 3 的 `lock().take()` 语义需改为「任务结束才可取走」，否则后台写入会污染已收尾文件 | 有界内存 + 文件落盘模型；`stderr` 独占保留区 |
 | E7 | 前端 | 卡片 running 态与 turn 绑定；`is_concurrency_safe = false` 限同轮并行 | turn 结束后仍要显示「运行中 / 完成 / 失败」；任务列表与取消入口必须在 turn 之外可用；通知与历史重载需覆盖终态；并发约束要区分「前台工具并发」与「后台进程配额」 | 五态卡片与审批卡（P6）；`compact` 渲染形态（P13） |
 | E8 | 持久化 | 无：进程归属随应用退出消失 | 重启恢复要求登记表可重建、进程可被 reaper 识别并回收；与 I36 D13a 的现行边界冲突，必须单独 ADR（P9 本体） | 无（P14 不涉及） |
 
@@ -75,7 +75,7 @@ I56 §7.1 / §7.5 的全部正确性论证都建立在**一次工具调用 = 一
 
 | # | 前置 | 判据 |
 |---|---|---|
-| G1 | P14 关闭 | `shell` 已在生产注册、`kill_tree` 幂等、`persisted` 输出域与 `enforcement` 审批键可用（[I56 §13](./I56-shell-tool-spec.md) A6–A36 与 I53 §8 A1–A5） |
+| G1 | P14 关闭 | `shell` 已在生产注册、`kill_tree` 幂等、`persisted` 输出域与 `enforcement` 审批键可用（[I56 §13](../achievement/I56-shell-tool-spec.md) A6–A36 与 I53 §8 A1–A5） |
 | G2 | P9 ADR 落地 | 明确「turn 生命周期」与「任务生命周期」的边界如何扩展 I36 D13a，不得直接叠加后台进程 |
 | G3 | 工作区定论 | 会话切换工作区与运行中任务的关系有唯一结论（沿用 `resolve_workspace` 唯一解析点，P12） |
 | G4 | 审批语义定论 | 「授权覆盖任务全生命周期」与「降级即终止」两条写进 P9 spec，且与 §6.4 求值顺序不冲突 |
@@ -92,7 +92,7 @@ I56 §7.1 / §7.5 的全部正确性论证都建立在**一次工具调用 = 一
 | X2 | 终态如何进入消息链 | 不复用 `Finished`（会重放两次）；倾向「同一 `MessageToolCallDto` 的终态更新 + 单独终态事件」，形态在 P9 spec 定 |
 | X3 | 任务是否跨重启恢复 | 进程无法重建，只能 reaper 识别并标记失败；「重启后仍在跑」不是目标，属 I36 D13a 边界（E8） |
 | X4 | 轮询语义 | 参考三套实现（DSH `job_output`、OpenHuman `wait_subagent`、OpenBitFun `wait` action）的共同约定：**超时即成功**、工具自管 deadline、默认非阻塞、双层界限；倾向沿用 |
-| X5 | 并发配额 | 后台进程与前台工具分开计账；`is_concurrency_safe` 的现行约束只描述前台（E7、[I56 §15](./I56-shell-tool-spec.md) R8） |
+| X5 | 并发配额 | 后台进程与前台工具分开计账；`is_concurrency_safe` 的现行约束只描述前台（E7、[I56 §15](../achievement/I56-shell-tool-spec.md) R8） |
 
 ---
 
@@ -103,5 +103,5 @@ I56 §7.1 / §7.5 的全部正确性论证都建立在**一次工具调用 = 一
 | DSH | 前台执行与后台 job 的边界、`job_output` 轮询形态 |
 | OpenHuman | `wait_subagent` 的超时即成功；`reaper.rs` 的进程回收 |
 | OpenBitFun | `wait` action 与默认非阻塞 |
-| [I56](./I56-shell-tool-spec.md) §7.1 / §7.5 | 同步执行的终态矩阵与「正常结束也扫尾」，是本文 §2 四条不变量的出处 |
+| [I56](../achievement/I56-shell-tool-spec.md) §7.1 / §7.5 | 同步执行的终态矩阵与「正常结束也扫尾」，是本文 §2 四条不变量的出处 |
 | I53（已归档） | fail-closed 探测与注册收口、`kill_tree` 幂等 |

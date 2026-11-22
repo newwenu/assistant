@@ -1,6 +1,6 @@
 # I52 — 沙箱执行层与 `shell` 工具 任务清单
 
-> 规格：[I52-shell-sandbox-spec.md](./I52-shell-sandbox-spec.md)（阶段：范围 / 术语 / 分批 / 验收归属）、[I56-shell-tool-spec.md](./I56-shell-tool-spec.md)（`shell` 工具规格，2026-11-18 起为工具侧唯一来源）
+> 规格：[I52-shell-sandbox-spec.md](./I52-shell-sandbox-spec.md)（阶段：范围 / 术语 / 分批 / 验收归属）、[I56-shell-tool-spec.md](../achievement/I56-shell-tool-spec.md)（`shell` 工具规格，2026-11-18 起为工具侧唯一来源）
 > 事实基线：I56 §2 的 P1–P8（已就绪）与 G1–G8（C5 / C6 / C7 待补）；沙箱准备（S0）的交付物与判据见 I53 §9（已归档）
 > 前置：P2（工具控制层）、P5（OS 工具能力）、P6（前端与审批 UI）、P12（工作区）均已完成；S0 沙箱准备已落地并接线
 

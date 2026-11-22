@@ -6,19 +6,23 @@
 
 切片对应规格章节：T1 观测补全（§3.1–§3.2 / §3.9 / §3.10 / §3.11 / §6.2 / §7.1）→ T2 骨架 + 低风险回收（§5.1–§5.4 / §6.1 / §3.3 白名单）→ T3 中风险回收（§3.10 接口形状 / §5.5 / §3.6）→ T4 前端与收尾（[前端设计文档](./I61-storage-manager-frontend.md) / §10 / §12；规格 §6.3 已整体划出作废）。
 
+> **条目计数口径**：本清单记录的「core 8 条」「13 条 / 8 行」均为 T1–T4 实施期口径。T5 / T6（[I67](./../store/I67-storage-inventory-totals-spec.md) §13）登记 `E14`–`E18` 后，core 条目为 **13 条**，`entries` 合计为 `vault` 构建 18 条 / `vaultless` 构建 13 条；下文的历史计数按当时事实保留，现行口径以 I61 §3.1 与 I67 §13 为准。
+
 **可选功能分区自管理**（§3.1.1 / §3.10「可选功能分区自注册」/ §3.8 G16–G19 / §3.11.1 登记纪律 2–6 / V21–V24）是 T1 之后的装配层修订，任务落在 **T1-g 修订**，替换 T1-c 与 T1-c 修订的旧实现；该修订未完成前，T4 不得按「未挂载补占位行」实现。
 
-依赖：T1 无前置（后端可独立验收）；T2 依赖 T1；T3 依赖 T2（骨架 + 按 ID 锁）；T4 依赖 T1–T3 **且**依赖 I54 的 `R0`（页面容器与三 tab 挂载位，当前未开工）。
+依赖：T1 无前置（后端可独立验收）；T2 依赖 T1；T3 依赖 T2（骨架 + 按 ID 锁）；T4 依赖 T1–T3 **且**依赖 I54 的 `R0`（页面容器与三 tab 挂载位，已落地）。
 
 **进度总览**（勾选状态与本节同步；T1-g 修订落地后，T2 / T3 的旧形态断言按该节表格改写）：
 
 | 切片 | 状态 | 阻塞 |
 |---|---|---|
-| T1 观测补全 | 主体完成 2026-11-20；`T1-h` 剩余项已迁到 [剩余清单](./I61-storage-manager-remaining.md)（`R-16` / `R-17`） | — |
-| T1-g 修订（分区自管理） | 进行中 2026-11-21：17 项中 2 项完成（`section.rs` 契约 + 注册校验）、2 项部分完成（`mod.rs` 模块声明、`registry.rs` 的 `OPTIONAL_SEGMENTS`） | — |
+| T1 观测补全 | 完成 2026-11-20；`T1-h` 剩余项已全部落地（见 [剩余清单](./I61-storage-manager-remaining.md) `R-16` / `R-17`） | — |
+| T1-g 修订（分区自管理） | 完成 2026-11-21（`R-01`–`R-15` 全部落地，见 [剩余清单](./I61-storage-manager-remaining.md)） | — |
 | T2 骨架 + 低风险回收 | 完成 2026-11-20 | — |
-| T3 中风险回收 | 完成 2026-11-20（`E8` 形态待 T1-g 改写） | T1-g |
-| T4 前端与收尾 | 未开工 | T1-g + I54 `R0` |
+| T3 中风险回收 | 完成 2026-11-20（`E8` 形态已按 T1-g 改写） | — |
+| T4 前端与收尾 | 主体完成（`R-19`–`R-36` 已落地）；`R-37` 附件明细区手动回归待做 | — |
+| T5 登记 `EBWebView`（`E14`） | 完成（[I67](./../store/I67-storage-inventory-totals-spec.md) §13） | — |
+| T6 登记四个配置文件（`E15`–`E18`） | 完成（[I67](./../store/I67-storage-inventory-totals-spec.md) §13） | — |
 
 > 本清单不管理提交。提交粒度按代码依赖与可编译性现场决定；这里只回答「代码改没改、验收跑没跑」。
 > 勾选表示代码已改且对应验收已跑。
@@ -187,7 +191,8 @@
   - 验收：`reclaim.rs` 检索 `security` 零命中；`E8 + A4` 在 vault 构建放行、vaultless 构建拒绝且零副作用
 - [ ] ~~`src-tauri/tests/storage_breakdown.rs`：golden 改为两种构建分别断言——`vault` 13 行、`vaultless` 8 行；`vaultless` 断言 `security` 组**整体不存在**（不得出现 `notImplemented` 占位行），core 条目逐字段与 `vault` 构建一致（V13 / V23①⑤）~~ **（已迁到 [剩余清单](./I61-storage-manager-remaining.md)，以该文件编号为准）**
   - 验收：删掉 `unmounted_probe_keeps_e7_to_e11_visible_and_not_reclaimable`，改为「未挂载 = 行缺失」用例
-  - 进度（2026-11-21，顺带完成）：本文件内重复的 `file_link` 辅助函数已删除，改为 `#[path = "../crates/assistant-tools/tests/support/link.rs"] mod link;` 引入全仓唯一实现（避免各 crate 各写一份后在 Windows 侧漂成两种建链策略）；golden 断言本身未改，仍待本条正式改写
+  - 进度（2026-11-21，顺带完成）：本文件内重复的 `file_link` 辅助函数已删除，改为复用 `assistant-tools` 测试树里的全仓唯一实现（避免各 crate 各写一份后在 Windows 侧漂成两种建链策略）；golden 断言本身未改，仍待本条正式改写
+  - 进度（2026-11-22）：该复用改为经 `assistant-tools` 的 `test-support` feature 公开（`use assistant_tools::os::test_support::link::file_link;`）。原先跨 package 的 `#[path = "../crates/assistant-tools/tests/support/link.rs"]` 虽能通过 rustc，但 rust-analyzer 不认跨源根的 `#[path]`、误报 E0583「unresolved module」
 - [ ] ~~`src-tauri/tests/storage_inventory.rs`：`optionalNotMounted` 断言改为按 `OPTIONAL_SEGMENTS` 首段判定（不再依赖能力名注册）；覆盖「槽缺失 / 零分区 / 单分区 / 双分区」四态（V19 / V23）~~ **（已迁到 [剩余清单](./I61-storage-manager-remaining.md)，以该文件编号为准）**
   - 验收：注册一个首段不在 `OPTIONAL_SEGMENTS` 的假分区 → `register` 拒绝且 breakdown 不出现该行
 - [ ] ~~`src-tauri/tests/storage_reclaim.rs`：`entryKeys` 空 = core 8 条 + 已挂载分区条目（不再写 13）；白名单用例改为分区自述动作驱动；请求已退役分区的 `key` → 按未知 key 拒绝（V20 / V23）~~ **（已迁到 [剩余清单](./I61-storage-manager-remaining.md)，以该文件编号为准）**
