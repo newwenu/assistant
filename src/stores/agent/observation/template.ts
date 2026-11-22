@@ -43,6 +43,34 @@ export const AGENT_NODE_IDS: readonly AgentNodeId[] = AGENT_NODE_TEMPLATE.map(
   (entry) => entry.id,
 );
 
+/** 边的种类：正向（`order` 相邻）或回边（⑫ → ①）。 */
+export type TemplateEdgeKind = "forward" | "loop";
+
+/** 模板边：全图边集的唯一来源（I66 §5.1）。 */
+export interface TemplateEdge {
+  from: AgentNodeId;
+  to: AgentNodeId;
+  kind: TemplateEdgeKind;
+}
+
+const ID_BY_ORDER = new Map<number, AgentNodeId>(
+  AGENT_NODE_TEMPLATE.map((entry) => [entry.order, entry.id]),
+);
+
+const FORWARD_EDGES: readonly TemplateEdge[] = AGENT_NODE_TEMPLATE.flatMap(
+  (entry): TemplateEdge[] => {
+    const previous = ID_BY_ORDER.get(entry.order - 1);
+    if (previous === undefined) return [];
+    return [{ from: previous, to: entry.id, kind: "forward" }];
+  },
+);
+
+/** 12 条边：11 条正向（`order` 相邻）+ 1 条回边 A（⑫ → ①，I55 §3.1）。 */
+export const TEMPLATE_EDGES = [
+  ...FORWARD_EDGES,
+  { from: "after-iteration", to: "admit", kind: "loop" },
+] satisfies readonly TemplateEdge[];
+
 /** 有工具调用时才会走到的后半段节点（⑦ 判定后由 `BranchDetail` 批量标 `skipped`）。 */
 export const TOOL_BRANCH_NODE_IDS: readonly AgentNodeId[] = [
   "budget-split",

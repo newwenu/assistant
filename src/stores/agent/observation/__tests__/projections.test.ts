@@ -10,7 +10,12 @@ import { projectTimeline } from "../projections/timeline";
 import { projectTurnSummary } from "../projections/summary";
 import { subscribeProjections, type ProjectionsListener } from "../schedule";
 import { useObservationStore } from "../store";
-import type { TurnObservation } from "../types";
+import { TEMPLATE_EDGES, templateOrderOf } from "../template";
+import type {
+  AgentNodeId,
+  TurnObservation,
+  TurnObservationStatus,
+} from "../types";
 
 let seq = 0;
 
@@ -81,11 +86,19 @@ describe("projectGraph — 12 格恒定输出", () => {
       obs,
       ev({ node: "model", state: "running", iteration: 2 }),
     );
-    expect(projectGraph(obs).activeEdge).toEqual({
+    const view = projectGraph(obs);
+    expect(view.activeEdge).toEqual({
       from: "ladder",
       to: "model",
       kind: "forward",
+      phase: "active",
     });
+    expect(view.activeEdge).toBe(
+      view.edges.find((edge) => edge.phase === "active") ?? null,
+    );
+    expect(view.edges.filter((edge) => edge.phase === "active")).toHaveLength(
+      1,
+    );
   });
 
   it("第二轮及以后的准入由回边 A 进入", () => {
@@ -102,6 +115,191 @@ describe("projectGraph — 12 格恒定输出", () => {
       from: "after-iteration",
       to: "admit",
       kind: "loop",
+      phase: "active",
+    });
+  });
+});
+
+describe("TEMPLATE_EDGES — 边集恒定 12 条", () => {
+  it("11 条正向边逐条相邻，外加 1 条回边 ⑫→①", () => {
+    expect(TEMPLATE_EDGES).toHaveLength(12);
+    const forward = TEMPLATE_EDGES.filter((edge) => edge.kind === "forward");
+    expect(forward).toHaveLength(11);
+    for (const edge of forward) {
+      expect(templateOrderOf(edge.to)).toBe(
+        (templateOrderOf(edge.from) ?? Number.NaN) + 1,
+      );
+    }
+    expect(TEMPLATE_EDGES.filter((edge) => edge.kind === "loop")).toEqual([
+      { from: "after-iteration", to: "admit", kind: "loop" },
+    ]);
+  });
+});
+
+describe("projectGraph — 边相位", () => {
+  type GraphView = ReturnType<typeof projectGraph>;
+
+  function edgeOf(view: GraphView, from: AgentNodeId, to: AgentNodeId) {
+    const edge = view.edges.find(
+      (item) => item.from === from && item.to === to,
+    );
+    if (edge === undefined) throw new Error(`缺边 ${from}→${to}`);
+    return edge;
+  }
+
+  it("正向边：from 未触达 untaken、from 触达 idle、to 触达 passed", () => {
+    expect(edgeOf(projectGraph(fresh()), "admit", "prepare").phase).toBe(
+      "untaken",
+    );
+
+    const idle = applyNodeEvent(
+      fresh(),
+      ev({ node: "admit", state: "running", iteration: 0 }),
+    );
+    expect(edgeOf(projectGraph(idle), "admit", "prepare").phase).toBe("idle");
+
+    const passed = applyNodeEvent(
+      fresh(),
+      ev({ node: "brake", state: "finished", iteration: 1 }),
+    );
+    expect(edgeOf(projectGraph(passed), "prepare", "brake").phase).toBe(
+      "passed",
+    );
+  });
+
+  it("正向边：to 被标 skipped 时保持 untaken，不画成 passed", () => {
+    const obs = applyNodeEvent(
+      fresh(),
+      ev({
+        node: "branch",
+        state: "finished",
+        iteration: 1,
+        detail: {
+          kind: "branch",
+          hasToolCalls: false,
+          wrapUp: false,
+          toolCallCount: 0,
+        },
+      }),
+    );
+    const view = projectGraph(obs);
+    expect(view.nodes.find((node) => node.id === "budget-split")?.state).toBe(
+      "skipped",
+    );
+    expect(edgeOf(view, "branch", "budget-split").phase).toBe("untaken");
+  });
+
+  it("回边：⑫ 未触达 untaken、⑫ 触达 idle、圈数 ≥ 2 passed", () => {
+    expect(
+      edgeOf(projectGraph(fresh()), "after-iteration", "admit").phase,
+    ).toBe("untaken");
+
+    const idle = applyNodeEvent(
+      fresh(),
+      ev({ node: "after-iteration", state: "finished", iteration: 1 }),
+    );
+    expect(edgeOf(projectGraph(idle), "after-iteration", "admit").phase).toBe(
+      "idle",
+    );
+
+    const passed = applyNodeEvent(
+      fresh(),
+      ev({ node: "after-iteration", state: "finished", iteration: 2 }),
+    );
+    expect(edgeOf(projectGraph(passed), "after-iteration", "admit").phase).toBe(
+      "passed",
+    );
+  });
+
+  it("无进行中格子时不存在 active 相位，activeEdge 为 null", () => {
+    const view = projectGraph(fresh());
+    expect(view.edges.every((edge) => edge.phase !== "active")).toBe(true);
+    expect(view.activeEdge).toBeNull();
+  });
+});
+
+describe("projectGraph — 出口标注", () => {
+  function withStatus(
+    obs: TurnObservation,
+    status: TurnObservationStatus,
+  ): TurnObservation {
+    return { ...obs, status };
+  }
+
+  it("running 无出口；completed / wrap_up 的出口为 ⑦ branch", () => {
+    expect(projectGraph(fresh()).exit).toBeNull();
+
+    const completed = applyNodeEvent(
+      fresh(),
+      ev({ node: "branch", state: "finished", iteration: 1 }),
+    );
+    expect(projectGraph(withStatus(completed, "completed")).exit).toEqual({
+      node: "branch",
+      status: "completed",
+    });
+    expect(projectGraph(withStatus(completed, "wrap_up")).exit).toEqual({
+      node: "branch",
+      status: "wrap_up",
+    });
+  });
+
+  it("failed 取最靠后的已触达候选（⑤ model 优先于 ④ ladder）", () => {
+    const obs = withStatus(
+      applyNodeEvent(
+        fresh(),
+        ev({ node: "model", state: "error", iteration: 1 }),
+      ),
+      "failed",
+    );
+    expect(projectGraph(obs).exit).toEqual({ node: "model", status: "failed" });
+  });
+
+  it("cancelled 取 ⑨ pipeline，stopped 取 ⑩ after-tool", () => {
+    const cancelled = withStatus(
+      applyNodeEvent(
+        fresh(),
+        ev({ node: "pipeline", state: "running", iteration: 1 }),
+      ),
+      "cancelled",
+    );
+    expect(projectGraph(cancelled).exit).toEqual({
+      node: "pipeline",
+      status: "cancelled",
+    });
+
+    const stopped = withStatus(
+      applyNodeEvent(
+        fresh(),
+        ev({ node: "after-tool", state: "finished", iteration: 1 }),
+      ),
+      "stopped",
+    );
+    expect(projectGraph(stopped).exit).toEqual({
+      node: "after-tool",
+      status: "stopped",
+    });
+  });
+
+  it("halted_by_budget 出口为 ③ brake；候选全 pending 时取最小 order", () => {
+    const halted = withStatus(
+      applyNodeEvent(
+        fresh(),
+        ev({ node: "brake", state: "finished", iteration: 1 }),
+      ),
+      "halted_by_budget",
+    );
+    expect(projectGraph(halted).exit).toEqual({
+      node: "brake",
+      status: "halted_by_budget",
+    });
+
+    expect(projectGraph(withStatus(fresh(), "stopped")).exit).toEqual({
+      node: "brake",
+      status: "stopped",
+    });
+    expect(projectGraph(withStatus(fresh(), "completed")).exit).toEqual({
+      node: "branch",
+      status: "completed",
     });
   });
 });

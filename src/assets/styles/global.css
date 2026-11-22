@@ -19,6 +19,7 @@
   --color-error-bg: #fff1f0;
   --color-error-border: #fdd;
   --color-success: #52c41a;
+  --color-warning: #faad14;
   --color-warning-bg: #fffbe6;
   --color-warning-border: #ffe58f;
   --color-format-anthropic: #d97757;
@@ -39,6 +40,11 @@
   --sidebar-width: 240px;
   --sidebar-collapsed-width: 64px;
   --titlebar-height: 38px;
+
+  --canvas-cell-w: 132px;
+  --canvas-cell-h: 78px;
+  --canvas-gap: 8px;
+  --canvas-loop-gutter: 16px;
 
   --orb-ball-size: 84px;
   --orb-hitbox-size: 88px;
@@ -86,6 +92,7 @@
   --color-error-bg: #1f1316;
   --color-error-border: #3a1d21;
   --color-success: #73d13d;
+  --color-warning: #faad14;
   --color-warning-bg: #1a1912;
   --color-warning-border: #3a3620;
   --color-format-anthropic: #e8916a;

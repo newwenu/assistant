@@ -1,89 +1,175 @@
-# I66 Agent 观测画布 UI 规格（W1）
+# I66 画布 UI 规格（W1 · 画布设施 + 示例内容）
 
 | 项 | 值 |
 |---|---|
-| 状态 | 草案（术语与几何已定，待实现） |
-| 日期 | 2026-11-21 |
+| 状态 | 定稿（可实施；按 §14 顺序落地） |
+| 日期 | 2026-11-22（校正：W1 只交付画布设施与**示例内容**，真实内容在 W2） |
+| 波次 | W1 = 本规格（设施 + 示例内容）；W2 = `docs/store/I68-agent-canvas-preset-spec.md`（真实内容 + 预设 + 宿主接线） |
 | 术语唯一出处 | `docs/analysis/ORCHESTRATION-CONCEPT-SEMANTIC-TRANSFER.md` §2.5（用户可见词表）/ §2.6（开发原语词表） |
-| 事实来源 | `docs/analysis/AGENT-CANVAS-RENDERING-ANALYSIS.md`（命题 P1–P13、缺口 G1–G13、验收 K1–K15） |
-| 拓扑出处 | `docs/archived/agent/I55-agent-turn-observability-spec.md`（已归档：§3.1 模板、§3.2 出口、§6.2 渲染） |
+| 事实来源 | `docs/analysis/AGENT-CANVAS-RENDERING-ANALYSIS.md`（命题 P1–P13、缺口 G1–G13）；本规格 §15 的 K1–K25 是**自有编号**，与前者不同 |
 | 视觉与主题约束 | `docs/DESIGN.md` §5（双层变量体系、§5.3 禁用 fallback） |
-| 影响范围 | `src/stores/agent/observation/template.ts`、`.../projections/graph.ts`、`src/features/observation/`（GraphCanvas / NodeCell / ObservationPage / 新增 LegendPanel）、`observation.module.css`、`src/assets/styles/global.css`、`src/i18n/locales/{zh-CN,en-US}.json` |
+| 影响范围 | 新建 `src/features/canvas/`：`types.ts` / `layout.ts` / `geometry.ts` / `viewport.ts` / `CanvasViewport.tsx` / `CanvasCard.tsx` / `CanvasEdge.tsx` / `CanvasLabel.tsx` / `CanvasLegend.tsx` / `canvas.module.css`；示例内容 `demo/demoContent.ts` + `demo/CanvasDemoPage.tsx` + `module.ts`（deep-link 自检路由）；`src/features/registry.ts`（+1 段装载）；`src/assets/styles/global.css`（新增 `--canvas-*`）；`src/i18n/locales/{zh-CN,en-US}.json`（`canvas.*`）。**不改** `src/features/observation/`、**不改** `src/stores/agent/observation/`、**不删** `GraphCanvas.tsx` / `NodeCell.tsx`（接线与删除属 W2） |
 | 契约影响 | 无。全部为前端本地视图模型，不进 wire、不触发 `npm run contract:gen` |
+| 内容绑定 | 无。本规格正文与设施代码均不出现 `AgentNodeId` / `GraphView` / `TurnObservationStatus` / 任何观测 id；示例内容用 `demo-*` 假标识（K24 / K25） |
 
-> 定位：把「12 格观测栅格」从「一格一状态 + 单条活动边」升级为**可读的静态拓扑图**——全图 12 条边、四相边相位、出口标记、节点选择、图例齐全，且全部几何由模板行列号推导、零 DOM 测量。
+> 定位：交付**画布**（词表 §2.5.2：有视口、缩放、平移的编排面）的七件设施，以及一组**可丢弃的示例内容**用于设施自检。W1 的示例内容不是产品内容，也不是现有观测卡片的延续：它是 6 张 `demo-*` 卡片，只用来让视口、缩放、四相、出口、图例、键盘与 memo 行为可被看见、可被验收。真实内容（turn 观测投影）在 W2 才接入（§1.6）。
 
 ---
 
 ## 1 范围与边界
 
-### 1.1 解决什么
+### 1.1 交付什么（七项设施 + 一项示例）
 
-| # | 目标 | 完成判据 |
+| # | 目标 | 判据 |
 |---|---|---|
-| 1 | 全图边集可见：不止活动边，12 条边全部渲染并带相位 | K2 / K6 / K7 |
-| 2 | 边相位可区分：已通行 / 活动中 / 待通行 / 未通行 | K3 / §7 |
-| 3 | 出口可见：终态出口落在一格上，且不混入边集 | K4 / K5 / K8 |
-| 4 | 节点可选中：键盘可达、可读、可取消 | K12 / K13 / K14 |
-| 5 | 图例齐全：状态 / 证据 / 边 / 出口 / 圈与分支五组，中英双语 | K15 / K16 |
+| 1 | 坐标布局：条目 `row` / `column` 经纯函数换算成盒子 `x / y / w / h`，id 泛型 `string`，零 DOM 测量 | K1 / K2 / K3 / K21 |
+| 2 | 边几何：三类 route（同行 / 跨行 / 外轨）由盒子推导出线段与箭头 | K4 / K5 |
+| 3 | 视口：三层结构、缩放、平移、复位，世界坐标与屏幕坐标分离且可互转 | K6 / K7 / K8 / K22 |
+| 4 | 卡片壳：只接收盒子 + 选中 + 已本地化文案 + 色调 + 出口态，不决定内容 | K11 / K12 |
+| 5 | 边渲染器：四相编码（线型 / 线宽 / 颜色 / 动画）+ 活动动画 | K10 / K12 |
+| 6 | 图例编码：相位四值与出口三态两组，与画布元素共用同一 CSS 类 | K10 / K12 |
+| 7 | 边界纪律：设施不依赖观测模块、不绑定 DTO、不持有内容数据 | K13 / K14 / K24 |
+| 8 | **示例内容**：6 张 `demo-*` 卡片 + 4 条边（四相各一）+ 1 个出口，经 deep-link 自检路由可打开 | K19 / K20 / K25 |
 
-### 1.2 不解决什么
+W1 的交付物是**可被组合的设施 + 一次性示例**。示例只证明设施可用；它不含任何观测语义，W2 接入真实内容时整体删除（§11.3）。
+
+### 1.2 不交付什么
 
 | # | 排除项 | 理由 |
 |---|---|---|
-| 1 | 任何编辑、连线、拖拽、参数表单 | 观测面只读（不变量 N1 / N2）；可编排画布属 L2，见 §1.3 |
-| 2 | L2（turn 之间）编排与 L2 参数表单 | 本规格只做 W1 观测栅格。L2 画布要引入「盒子模型 + 自由坐标 + 端口句柄 + 参数表单」，与 W1 的「格子模型 + 推导坐标」是两套视图模型，混在一份规格会导致几何规则互相污染。L2 另立规格 |
-| 3 | 卡片/标记两级缩放形态 | V1 只有「格子」一级（§2.5 四态表）；另外两级是反原语（§2.6），不建符号 |
-| 4 | 时间线与格子联动高亮 | 需要跨面板 hover 状态与双向选中语义，V1 代价大于收益（OQ-3） |
-| 5 | 百分比进度、逐秒跳动的计时 | 无观测时钟，不引入 JS 定时器（§11.4） |
-| 6 | 引入图形库（reactflow / dagre / d3） | 12 个固定格 + 12 条推导边，DOM + CSS Grid 足够；引库会带入自己的坐标系、尺寸测量与主题体系，直接违反 N7 与主题约束 |
+| 1 | 编辑模式：拖拽 / 连线 / 删除 / 参数表单 | 需要 L2 数据模型（`WorkflowNode`、参数 schema、交接类别），编排分析 §12.2 标为「缺」，工作流画布尚未立项。坐标模型已按盒子建（§5.5），编辑阶段只需接命令与命中区 |
+| 2 | 端口 / 槽 / 接线 / 连接句柄 | 同上：运行内容无边可接，端口是 L2 概念（词表 §2.5.4） |
+| 3 | 多圈并置、多实例并排 | 画布一次只呈现一层内容；并排对比另立规格（OQ-2） |
+| 4 | 时间线与卡片联动高亮 | 需要跨面板 hover 与双向选中语义，W1 代价大于收益（OQ-3） |
+| 5 | 百分比进度、逐秒跳动的计时 | 无观测时钟；引入定时器会破坏投影纯函数性（§12.4） |
+| 6 | 图形库（reactflow / dagre / d3） | DOM + 绝对定位足够；引库会带入自己的坐标系、测量与主题体系（N7） |
 | 7 | 导出图片、分享链接 | 无需求来源 |
-| 8 | 多圈并置（迭代矩阵） | `projectGraph` 只投影当前圈（§9.1）。2 行 × 11 列是常量几何，多圈并置要按圈数复制行，直接破坏常量几何；且 V1 回答的是「这一轮走到哪」，不是「历史对比」。历史圈只在 inspector 时间线里 |
-| 9 | 全局快捷键 / 命令面板入口 | 快捷键表的生成源在 Rust（`DEFAULT_SHORTCUT_PATTERNS` → `npm run contract:gen`），加一条画布快捷键要改 Rust 常量并重新生成，不能前端手改（§3） |
+| 8 | 全局快捷键 | 快捷键生成源在 Rust（`DEFAULT_SHORTCUT_PATTERNS` → `contract:gen`），前端手改会被 `contract:verify` 的 `git diff --exit-code` 拦下（§3） |
+| 9 | 自动 fit-to-view / 响应式缩放 | 需要读容器尺寸（测量）。初始 `scale = 1`、原点对齐视口左上，缩放与平移全由用户驱动（§6.3） |
+| 10 | **真实内容**：turn 观测的卡片 / 边 / 相位 / 出口 / 图例内容组 | 属 W2（§1.6）。W1 的示例内容不是真实内容，也不得被当作真实内容的默认值 |
+| 11 | 宿主页接线：改造 `ObservationPage`、删除 `GraphCanvas` / `NodeCell` | 属 W2：真实内容接入时一次性替换，避免 W1 出现「半新半旧」两套视图 |
+| 12 | 内容语义判定：哪条边活动、哪张卡片是出口、相位如何取 | 已落地在观测投影层（`src/stores/agent/observation/projections/graph.ts`），W2 只做映射；本规格不复述判定表 |
 
-### 1.3 与分析的差异（以本规格为准）
+### 1.3 与分析文档的差异（有意校正）
 
-分析文档 §4.6 对几何给的是「候选方案」，本规格在落笔时按可实施性收敛。以下差异均为**有意收窄**，不是遗漏。
+分析文档 §1.1 的结论是「两套视图模型、一套渲染设施、两份交互策略」。本规格交付的是**设施**这一半，因此以下几处按画布语义收敛。
 
 | # | 分析表述 | 本规格 | 理由 |
 |---|---|---|---|
-| D-1 | 出口渲染为「悬空短桩 + 汇点徽标」在格子外 | 出口收进格子右下角，用「内折角括号 + 汇点方块」（§8.2） | 12 格中 10 格的右边框紧邻下一格入锚点，8px 列间距放不下短桩 + 汇点；收进格内零碰撞，且同一时刻只有一格带出口，不会与常规边混淆 |
-| D-2 | 回边可走「行间隙」或「外轨」 | 固定走顶部外轨（§6.3） | 行间隙要避让 ⑦ 底锚点与 ⑧ 顶锚点，且 ⑫→① 要横跨 11 列，走行间隙会横穿整行；外轨只与两个角相接 |
-| D-3 | 端口桩（悬空短线）表达「可接」 | 不画桩。锚点即「格子边框上的交点」（§6.2） | 观测面不可接，桩会暗示可连线；且桩需要独立定位，与 N7 冲突 |
-| D-4 | 百分比进度环 | 保留时长数字，文案改为「按事件刷新」（§11.4） | 无时钟源，百分比必然靠定时器伪造 |
-| D-5 | 边可由 SVG/Canvas 绘制 | 只用 DOM + CSS Grid（§6.8） | 约束来源见 §3 |
-| D-6 | 列宽可自动缩放 | 固定最小列宽 + 横向滚动（§6.7） | 缩放需测量，违反 N7 |
-| D-7 | 选中「格子」（节点 × 圈） | 选中「节点」（§9.1） | 同一时刻只有一个圈可见（`projectGraph` 只投影当前圈），选圈是无意义自由度 |
+| D-1 | L1 观测内容用「格子」模型（`row` / `column`） | 画布内容用「盒子」模型（`x / y / w / h`），`row` / `column` 只作为布局输入 | 画布必须有坐标系才能承载缩放与平移；格子模型只能贴 CSS Grid，表达不了视口 |
+| D-2 | 「观测栅格」是 L1 的只读栅格，W1 交付它 | **不交付观测栅格，也不交付观测内容**；W1 用 6 张示例卡片自检设施，真实内容由 W2 以画布预设方式接入（§1.6） | 「观测画布」在词表里不存在且属禁用叫法（词表 §2.5.4）；叫画布就必须有视口，有视口就不能是格子 |
+| D-3 | 出口渲染为格外悬空短桩 + 汇点徽标 | 收进盒子右下角，内折角括号 + 汇点方块（§8.1） | 相邻盒子间隙只有 `--canvas-gap`，放不下短桩 + 汇点 |
+| D-4 | 回边可走行间隙或外轨 | 外轨 route 固定走顶部留白（§6.4） | 行间隙要避让下锚点与上锚点；跨列回边走行间隙会横穿整行 |
+| D-5 | 端口桩（悬空短线）表达「可接」 | 不画桩。锚点即盒子边框上的交点 | 运行内容不可接，桩会暗示可连线 |
+| D-6 | 百分比进度环 | 保留时长数字，文案改为「按事件刷新」 | 无时钟源，百分比必然靠定时器伪造 |
+| D-7 | 选中「格子 × 圈」 | 选中「卡片」（§9.1） | 画布只呈现一层内容，选圈是无意义自由度 |
+| D-8 | `ResizeObserver` 自动缩放列宽 | 不做自动缩放；缩放由用户驱动的视口变换承担（§6.3） | 自动缩放需测量，违反 N7 |
+| D-9 | 「两套视图模型」= 观测视图模型 + 编排视图模型 | 设施视图模型（`CanvasCardView` / `CanvasEdgeView`）与**内容视图模型**（W2 的映射产物）分开；设施类型不含内容语义 | 分析说的「两套」都指内容层；设施层需要第三种、且必须与两者都不耦合，否则换内容要改设施 |
+
+### 1.4 与现状代码的关系
+
+现状 `src/features/observation/` 的 `GraphCanvas` / `NodeCell` 是「12 格 CSS Grid + 单条活动边」的只读占位视图，不是画布：无坐标系、无视口、无缩放、无平移。**它们不是本规格的底座，也不被本规格改写**：
+
+| 对象 | W1 处置 | W2 处置 |
+|---|---|---|
+| `GraphCanvas.tsx` / `NodeCell.tsx` | 不动、不 import | 真实内容接入画布后删除 |
+| `ObservationPage.tsx` | 不动 | 改为画布宿主页（画布 + `InspectorPanel`） |
+| `src/stores/agent/observation/`（模板 / 投影 / 调度） | 不动、不 import（K24） | 作为真实内容的数据源，由 W2 适配层读取 |
+| `src/features/canvas/`（本规格） | 新建，设施 + 示例内容 | 设施保留，示例内容整体删除 |
+
+### 1.5 与词表原语表的差异（落地后需回写词表）
+
+词表 §2.6 的原语表是按「L1 = 观测栅格」写的，其中 §2.6.6 把「全局坐标系 / `viewport store`」与「`React.memo` 边界」列为**反原语**。本规格交付画布设施，这两条必须反转；落地后要回写词表（§2.6.7 第 3 条）。
+
+| # | 词表条目 | 词表写法 | 本规格 | 理由 |
+|---|---|---|---|---|
+| T-1 | 容器词（§2.5.2 / §2.5.4） | 「画布」不加限定属禁用叫法，应写「观测栅格」/「编排画布」 | 就叫**画布**，不加任何限定词 | 用户已定：交付画布本体，不交付观测栅格；「观测画布」「只读画布」都是自造词（词表无），「画布」本身已是完整术语（§2.5.2 定义含视口 / 缩放 / 平移） |
+| T-2 | §2.6.6 反原语「全局坐标系 / `viewport store`」 | 不造 | 造 `CanvasViewportState` + 世界/屏幕双坐标系 | 画布定义（§2.5.2）要求视口、缩放、平移；但仍是**组件本地 state**，不进 store、不进 wire（N4） |
+| T-3 | §2.6.6 反原语「`React.memo` 边界（v1）」 | 不造 | `CanvasCard` / `CanvasEdge` / `CanvasLabel` / `CanvasLegend` 全部 memo | §12.5 的两条触发条件均已满足（拖拽每帧变 + 元素数随内容线性增长） |
+| T-4 | §2.6.5 锚点 `AnchorPoint { xPct, yPct }` | 百分比锚点 | px 世界坐标（`CanvasBox` + 锚点推导） | 百分比随容器尺寸变化，破坏「世界坐标恒定」（§6.8） |
+| T-5 | §2.6.5 出口锚 `exitAnchorOf` | 右边缘 75% 高度 | 盒内右下角内折角括号 | 相邻盒间隙只有 8px，放不下外置短桩（§1.3 D-3） |
+| T-6 | §2.6.4 边集常量 `templateEdges` | 待建 | W1 不造；内容层的边集常量属 W2（已落地于 `template.ts`） | 设施不认识「模板边」，只认识 `CanvasEdgeView`（§5.1） |
+| T-7 | §2.6.4 边索引 `templateEdgeIndex` | 待建 | 不造 | 内容层逐条 `find` 的开销远低于维护索引表 |
+| T-8 | §2.5.3 相位取值「未开始 / 进行中 / 已完成 / 跳过…」 | 描述句 | 具名四值 `untaken` / `idle` / `passed` / `active`（本规格只定义**编码**，判定属观测投影） | 描述句不能进代码；编码见 §5.3 |
+| T-9 | §2.5.3 出口边 `exit edge` | 独立数据类别 | W1 不画出口边元素；只提供盒内角标组件与三态编码（§8） | 角标内嵌后无出口边可画；「出口不是卡片」「出口不与边混类」两条由 W2 的内容不变量承接（N8） |
+| T-10 | §2.5.4「观测格子叫『卡片』→ 应说单元格」（理由：格子无参数、无端口、无动作） | 无条件禁用 | 本规格用**卡片** | 该条的适用前提是「观测栅格容器」——其理由描述的是栅格内容物。本规格容器是画布（用户定案，§2.5.2 定义），渲染形态按 §2.5.1 编排侧取**卡片**，卡片模式为「运行模式 → 运行摘要」；端口区 / 拖拽柄 / 参数表单在只读模式**不渲染**，属卡片构件缺席，不等于「不是卡片」 |
+
+**回写动作**：T-1 / T-2 / T-3 / T-6 / T-8 / T-9 / T-10 落地后需同步修改 `docs/analysis/ORCHESTRATION-CONCEPT-SEMANTIC-TRANSFER.md` §2.5.2 / §2.5.3 / §2.5.4 / §2.6.5 / §2.6.6，否则下次按词表评审会把本规格判为违规。
+
+### 1.6 与 W2 的分界（真实内容在 W2 才出现）
+
+| 层 | W1（本规格） | W2（`I68-agent-canvas-preset-spec.md`） |
+|---|---|---|
+| 几何 | `layoutTemplate` / `edgeGeometryOf` / 锚点纯函数 | `layoutPreset(preset)` 调 `layoutTemplate`，模块加载时算一次 |
+| 视口 | `CanvasViewport` 三层 + 缩放平移复位 | 不改，直接使用 |
+| 渲染 | `CanvasCard` / `CanvasEdge` / `CanvasLabel` / `CanvasLegend`（只认 §5.1 类型） | 不改，直接使用 |
+| 内容 | **示例内容**：6 张 `demo-*` 卡片 + 4 条边 + 1 个出口（§11） | **真实内容**：观测投影 → §5.1 视图模型的映射（数量由数据源决定，当前快照 12 张 / 12 条，不硬编码） |
+| 宿主 | deep-link 自检路由 `/canvas-demo`（§11.2） | 改造 `ObservationPage` 为画布宿主；删除示例内容、`GraphCanvas`、`NodeCell` |
+| 语义 | 不判定相位、不判定出口；示例直接写死四相各一 | 消费观测投影已算好的 `phase` / `exit` |
+
+三条纪律：
+
+1. **设施不向上取数**：`src/features/canvas/`（`demo/` 之外）不得 `import` `@/stores/agent/observation`、`@/features/observation`（K24）。数据由调用方传入。
+2. **内容不向下改设施**：W2 只能组合设施（传 props、加约束），不得在 `CanvasCard` / `CanvasEdge` 内写观测语义分支；需要新语义时先改本规格。
+3. **W2 不交付「12 张卡片」**：W2 交付的是**映射与摆放**，卡片数量由数据源（模板）决定；模板增删卡片时 W2 不得编译失败或静默漏卡以外的任何行为变化（W2 §4.5 / A2 按 `AGENT_NODE_IDS.length` 断言，不写死 12）。
+
+### 1.7 示例内容纪律（为什么有、为什么不用观测的 12 节点）
+
+**为什么必须有示例**：设施没有可见结果就无法验收——视口缩放锚点、拖拽期 memo 行为、四相可区分性、活动动画、焦点环、出口角标，都只能在真实渲染下走查。只有单测的话，W1 交付的是一堆无法证明可用的函数。
+
+**为什么不用观测的 12 个节点**：
+
+| # | 若用观测 12 节点 | 后果 |
+|---|---|---|
+| 1 | 示例即真实内容 | W2 换内容时要重写示例与测试，示例反而成了第二套内容实现（重蹈覆辙） |
+| 2 | 示例的卡片数 = 12 变成设施验收的隐含前提 | 测试会写死 12 个盒子，模板一变就红，逼出「12 是不变量」的错误结论 |
+| 3 | 示例 import 观测模板 | 依赖方向反转（设施 → 观测），W2 的内容映射层失去意义（K24 失败） |
+| 4 | 示例带观测文案键 | 图例与卡片会提前绑定观测语义，W2 无法换预设 |
+
+**示例的四条纪律**：
+
+1. id 一律 `demo-*`，**不得**出现任何观测 id（`admit` / `prepare` / …）与观测类型名（K25）；
+2. 示例不得 `import` 观测模块、不得订阅事件流、不得读 store；
+3. 示例是**临时脚手架**：W2 删除整个 `demo/`、`module.ts`，并从 `registry.ts` 去掉装载；
+4. 示例只覆盖设施需要的最小形状：两行布局、四相各一、一个出口、一个标签（§11.1）。
 
 ---
 
 ## 2 术语引用（不重复定义）
 
-本规格的每一个名词都指向词表，本文**不新增术语、不重复定义**。
+### 2.1 引用表
 
 | 层 | 术语 | 出处 |
 |---|---|---|
-| 用户可见 | 格子、卡片、连线、锚点、出口、图例、圈、工具分支 | 概念清单 §2.5 |
-| 用户可见 | 填 vs 接、参数表单、参数项、参数摘要、卡片主体四态 | 概念清单 §2.5 |
-| 开发原语 | 折叠、投影、调度、抑制、帧合并、锚点推导、模板原语、边集原语 | 概念清单 §2.6 |
-| 开发原语 | 反原语清单（9 条） | 概念清单 §2.6 |
+| 容器（W1） | 画布、视口、缩放、平移 | 词表 §2.5.2 |
+| 渲染（W1） | 卡片、盒子、锚点、边、连线 | 词表 §2.5.1 / §2.5.2 / §2.5.3 |
+| 原语（W1） | 坐标系、视口状态、帧合并、抑制、锚点推导、反原语 | 词表 §2.6 |
+| 内容（W2） | 卡片模式、运行摘要、模板边、前向边、回边、活动边、相位、圈、出口、工具分支 | 词表 §2.5.2 / §2.5.3 |
 
-**用词纪律**（与本规格的行文约定）：
+### 2.2 用词纪律
 
 | 禁止 | 应写 | 说明 |
 |---|---|---|
-| 画布（指观测面时） | 观测栅格 / 栅格 | 「画布」保留给可编辑的编排画布（L2） |
-| 节点 | 格子 | 用户可见的一格；`node` 只用于代码符号与 wire 字段 |
-| 端口 | 锚点 | 锚点不是可交互实体，只是边框交点 |
-| 连线的「一条边」 | 一条边 | 「连线」是动作/关系，计数单位是「条」 |
-| 选中格子 | 选中节点 | §9.1 |
-| 裸「节点模板」 | 「turn 模板」/ `AGENT_NODE_TEMPLATE` | 两层图模板必须分开命名（词表 §2.5.4）：本模板是 turn 模板（12 节点、常量），将来用户可编辑的是工作流模板（数据）。混用是最大返工来源 |
-| 「未完成」用于边 | 「未通行」（`untaken`） | `observation.graph.unfinished` 专指「turn 收尾时格子仍停在中间态」，不得挪作边相位文案 |
-| 「边」与「接线」互换 | 边（L1 观测）/ 接线（L2 编排） | 两者不同层；观测栅格里不存在接线 |
+| 「观测画布」 | 画布 | 词表无此词；「画布」自带视口与缩放语义（词表 §2.5.2），旧称在本规格废弃 |
+| 「画布」（不加限定） | 画布 | 「画布」是完整术语，不另造限定词（「只读画布」同样是自造词）；指 L2 编辑面时用「编排画布」，指 L1 栅格时用「观测栅格」（§1.5 T-1） |
+| 「观测栅格」「栅格」 | 画布 / 布局网格 | 本文的交付物是画布；`row` / `column` 只是布局输入 |
+| 「节点」 | 卡片 | 「节点」是原语词（`ObservationNode` / `WorkflowNode`），不是用户词；画布上的渲染形态是**卡片**（词表 §2.5.1） |
+| 「格子」「单元格」 | 卡片 / 盒子 | 格子是 `row` / `column` 视图模型、单元格是**观测栅格**里的渲染形态；本规格画的是画布，用盒子（数据）+ 卡片（渲染）（§1.3 D-1 / §1.5 T-10） |
+| 「示例卡片」用于用户文案 | 不出现 | 示例内容只存在于代码与自检路由，不进任何用户可见文案（OQ-1） |
+| 「出口边」 | 出口（`exit`） | W1 不画出口边元素；出口语义由内容层的 `exit` 承载，设施只提供角标通道（§1.5 T-9） |
+| 端口 | 锚点 | 运行内容不可接，端口是 L2 概念 |
+| 连线的「一条边」 | 一条边 | 计数单位是「条」 |
+| 「未完成」用于边 | 「未通行」（`untaken`） | 「未完成」专指卡片停在中间态，属内容层文案 |
+| 「边」与「接线」互换 | 边（数据形状）/ 连线（渲染形态）/ 接线（L2 语义实例） | 词表 §2.5.4 |
 
-**正向纪律**：写用户词时必须同时给出对应原语词（如「活动边」↔ `activeEdge`、「相位」↔ `EdgePhase`）。只给一边，文案与实现就会漂移（词表 §2.6.7 第 4 条）。
+**不出现的 L2 词**（不是漏写，是 W1 不交付）：
 
-**事实效力**：`I55 §3.1` 的 12 节点表是**抄录对象**，不是权威来源——权威在内核 Rust 代码，表只是转录，且节点数会随内核结构演进（I55 §11.3 自己标了「会变」）。因此本规格所有「12 格」「12 条边」的表述都是**快照值**，新增/删除节点时以 `template.ts` 的编译期锁为准。
+| 词 | 词表定义 | 为何 W1 不出现 |
+|---|---|---|
+| 执行卡片 execution card | 引用一个**执行单元**的卡片，`WorkflowNode` 的主类别 | W1 无工作流模板，没有 `WorkflowNode`，也就没有「引用执行单元」这层语义 |
+| 容器卡片 container card | 承载**子图**的卡片（会话级 / 迭代容器），先占名、未立项 | W1 不渲染嵌套子图 |
+| 执行单元 execution unit | 被 `WorkflowNode` 引用的实体 | 同上，无引用关系，故不出现 |
+| 卡片类别 card kind | 执行卡片按执行单元分型（turn / 工具调用 / 会话 / HITL） | 闭集未定案（词表标「未定案」），W1 不得预设 |
 
 ---
 
@@ -91,14 +177,15 @@
 
 | 约束 | 来源 | 效力 |
 |---|---|---|
-| 只读、不参与控制 | 概念清单 O6 / G7；I55 §6.2 | 硬：违反即不通过 |
-| 渲染侧禁止 DOM 测量与 ResizeObserver | 分析 P11 / N7 | 硬 |
+| 画布不是控制源：运行模式只读，不写 store、不发命令、不回写 wire | 概念清单 O6 / O10；分析 P1 | 硬：违反即不通过 |
+| 布局与渲染零 DOM 测量 | 分析 P11 / N7 | 硬 |
 | 颜色只取 antd 变量、禁止硬编码与 fallback | DESIGN §5.3；项目规则「antd 主题对齐」 | 硬 |
-| 文案只取 i18n、禁止内联中文 | 项目规则「i18n」；分析 P12 | 硬 |
+| 文案只取 i18n、禁止内联中文 | 项目规则「i18n」；分析 P12 | 硬（设施键 `canvas.*`；内容文案由调用方传入） |
 | 键盘可达 + 焦点可见 + 非仅靠颜色编码 | 分析 P12 / P13 | 硬 |
-| 快捷键若全局生效须注册 keymap | 分析 P13 | 软：本规格只用容器内 Esc（§9.4），不需注册。将来加全局快捷键**不能**在前端手写：`shortcutDefaults.generated.ts` 由 `npm run contract:gen` 从 Rust `DEFAULT_SHORTCUT_PATTERNS` 生成，手改会被 `contract:verify` 的 `git diff --exit-code` 拦下。加一条要改 Rust 常量并重新生成 |
-| 单一失效调度点、wire 不带本地 UI 状态 | 分析 P6 / P9；项目规则「wire 不承载本地 UI 状态」 | 硬 |
+| 视口是本地 UI 状态，不进投影入参、不进 wire | 项目规则「wire 不承载本地 UI 状态」；分析 P6 / P9 | 硬 |
+| 单一失效调度点：投影重算只经 `subscribeProjections` | 分析 P6 | 硬（W1 设施**不订阅**，只接收 props） |
 | 动画只由状态驱动 | 分析 P10 | 硬 |
+| 全局快捷键须注册 keymap | 分析 P13 | 软：W1 只用容器内按键与指针手势，不注册。将来加全局快捷键**不能**在前端手写：`shortcutDefaults.generated.ts` 由 `npm run contract:gen` 从 Rust `DEFAULT_SHORTCUT_PATTERNS` 生成，手改会被 `contract:verify` 的 `git diff --exit-code` 拦下 |
 
 ---
 
@@ -106,857 +193,749 @@
 
 | # | 不变量 | 判据 |
 |---|---|---|
-| N1 | 栅格不是控制源：不写 store、不发事件、不回写 wire | 代码审查：`features/observation/` 无 `useObservationStore.setState` / `invoke` |
-| N2 | 观测面只读：所有交互只是本地视图状态（选中），不改变观测数据 | K14 |
-| N3 | 单一失效调度点：投影重算只经 `subscribeProjections` | `projections/*` 不被 `features/` 直接调用（`dependencyDirection.test.ts`） |
-| N4 | wire 不承载本地 UI 状态：`selectedNodeId` 不进 `GraphView`、不进任何 DTO | K8 / typecheck |
-| N5 | 边集与活动边同源：`edges` 与 `activeEdge` 出自同一份 `TEMPLATE_EDGES` | K3 |
-| N6 | 格子必须不透明：任何格子不得使用 `opacity < 1` | K11 / §6.5 |
-| N7 | 几何零测量：位置全部由模板 `row` / `column` 推导 | K9 |
-| N8 | 出口不混入边集：`edges` 中不含出口边，出口只由 `exit` 字段表达 | K8 |
-| N9 | 视图模型只从投影派生：除 `selectedNodeId` 外，`GraphCanvas` 不持有可跨帧存活的派生数据 | K14 |
+| N1 | 画布不是控制源：不写 store、不发事件、不回写 wire | K13（`features/canvas/` 无 store 写入 / `invoke` / `send`） |
+| N2 | 内容只读：设施不产出、不改写内容数据，只把 props 画出来 | K13 / K14 |
+| N3 | 单一失效调度点：设施不订阅事件流；投影重算只经 `subscribeProjections`（在内容层） | K13（不 import 观测模块 / 调度模块） |
+| N4 | 本地 UI 状态不进 wire：`selectedId` / `viewport` 只是组件本地 state，不进任何 DTO、不进投影入参 | K14 + typecheck |
+| N5 | 几何单源：盒子只由 `layoutTemplate` 产出，线段只由 `edgeGeometryOf` 产出，不存在第二套几何 | K1 / K4 |
+| N6 | 卡片必须不透明：任何卡片不得使用 `opacity < 1` | K11 |
+| N7 | 几何零测量：盒子坐标由纯函数从布局常量推导；视口变换只改 `transform` | K3 / K6 |
+| N8 | 出口不混入边集：设施不产出「出口边」元素，角标只挂在卡片上 | K12 + W2 内容不变量 |
+| N9 | 设施不缓存跨帧派生数据：组件内不持有除 `selectedId` / `viewport` 外的可跨帧状态 | 代码审查 |
+| N10 | 设施不认识内容：不出现观测 id / 观测类型 / 固定数量（示例内容除外，且示例只允许出现在 `demo/`） | K24 / K25 |
 
 ---
 
-## 5 视图模型（投影契约）
+## 5 设施视图模型
 
-### 5.1 边集原语：`TEMPLATE_EDGES`
+设施只认下面这套类型；它**不是**观测视图模型，也不含任何内容语义（谁 active、谁是出口由调用方决定）。
 
-现状：边只由 `activeEdgeOf` 里的 `templatePredecessor`（按 `order - 1` 隐式推邻接）临时算出一条。这导致「全图边集」无处可取，画布与投影无法共享同一份边定义。
-
-改为编译期常量，与 `AGENT_NODE_TEMPLATE` 同处 `template.ts`：
+### 5.1 通用类型（`src/features/canvas/types.ts`）
 
 ```ts
-export type TemplateEdgeKind = "forward" | "loop";
+export interface CanvasBox { x: number; y: number; w: number; h: number }
 
-export interface TemplateEdge {
-  from: AgentNodeId;
-  to: AgentNodeId;
-  kind: TemplateEdgeKind;
-}
+/** 卡片语义色调通道。设施只定义通道，取值由调用方映射。 */
+export type CardTone = "default" | "active" | "success" | "warning" | "danger" | "muted";
+export type BadgeTone = "neutral" | "positive" | "warning" | "negative";
 
-/** 12 条边：11 条正向（相邻 order）+ 1 条回边 A（⑫ → ①，I55 §3.1）。 */
-export const TEMPLATE_EDGES: readonly TemplateEdge[] = [/* ... */];
-```
-
-构成规则（**唯一来源**，不得在别处再推导一遍）：
-
-| 类 | 数量 | 定义 | 举例 |
-|---|---|---|---|
-| 正向 | 11 | 对每个 `order >= 1` 的条目，连 `order - 1` 的条目 | `admit → prepare` … `persist-tools → after-iteration` |
-| 回边 A | 1 | `after-iteration → admit` | ⑫ → ① |
-
-`templatePredecessor(node)` 删除；需要前驱时改为 `TEMPLATE_EDGES.find(e => e.to === node && e.kind === "forward")`。`activeEdgeOf` 的**判定逻辑不变**（仍是「最靠后的进行中格子」+ ① 在 `iteration > 1` 时取回边），只把产物从「新建对象」改为「指向 `edges` 中的同一条」。
-
-### 5.2 `GraphEdgeView` 增加相位
-
-```ts
+/** 边相位：四个取值即编码词表（§5.3），判定在调用方。 */
 export type EdgePhase = "untaken" | "idle" | "passed" | "active";
 
-export interface GraphEdgeView {
-  from: AgentNodeId;
-  to: AgentNodeId;
-  kind: TemplateEdgeKind;
+/** 出口三态：角标编码（§5.4），判定在调用方。 */
+export type ExitTone = "failed" | "cancelled" | "stopped";
+
+export interface CanvasBadgeView {
+  text: string;
+  tone?: BadgeTone;
+}
+
+export interface CanvasCardView {
+  id: string;
+  box: CanvasBox;
+  /** 已本地化的标题与副标题；设施不调用任何内容 i18n 键。 */
+  title: string;
+  subtitle?: string;
+  badges?: readonly CanvasBadgeView[];
+  tone?: CardTone;
+  /** `null` / 省略 = 不画出口角标（§8.4）。 */
+  exit?: ExitTone | null;
+}
+
+export type EdgeRoute = "horizontal" | "vertical" | "outer-track";
+
+export interface CanvasEdgeView {
+  id: string;
+  from: string;
+  to: string;
+  route: EdgeRoute;
   phase: EdgePhase;
 }
 
-export interface GraphExitView {
-  node: AgentNodeId;
-  status: TurnObservationStatus;
-}
-
-export interface GraphView {
-  // ... 现有字段不变
-  edges: readonly GraphEdgeView[];
-  /** 恒等于 `edges.find(e => e.phase === "active") ?? null`（同一引用，非拷贝）。 */
-  activeEdge: GraphEdgeView | null;
-  /** 出口不是节点、不是边（I55 §3.2）；`null` = 本实例没有出口。 */
-  exit: GraphExitView | null;
+/** 世界坐标里的纯文本标签（区带说明等），不参与选中与焦点。 */
+export interface CanvasLabelView {
+  id: string;
+  box: CanvasBox;
+  text: string;
+  tone?: "muted" | "default";
 }
 ```
 
 字段纪律：
 
-| 字段 | 允许 | 禁止 |
+| 类型 | 允许 | 禁止 |
 |---|---|---|
-| `edges[i]` | `from` / `to` / `kind` / `phase` | `id` / `handle` / `label` / `path` / 任何像素坐标 |
-| `activeEdge` | 与 `edges[i]` 同一引用 | 新建对象（否则 K3 无法用 `===` 判） |
-| `exit` | `node` / `status` | 混入 `edges` |
+| `CanvasCardView` | `id` / `box` / 已本地化文案 / `tone` / `badges` / `exit` | 状态枚举、证据等级、耗时起点、圈数、任何观测字段 |
+| `CanvasEdgeView` | `id` / `from` / `to` / `route` / `phase` | `kind` / 标签 / 路径字符串 / 像素坐标 / 箭头样式 |
+| `CanvasLabelView` | `id` / `box` / `text` / `tone` | 点击处理器、图标组件、可聚焦标记 |
 
-### 5.3 相位判定（纯函数，无 DOM、无时钟）
+`from` / `to` 引用卡片 `id`；边渲染器按 id 在盒子表里取盒子，取不到即不渲染（并触发开发期断言，不做兜底画线）。
 
-设 `reached(n) = n.state !== "pending"`，`skipped(n) = n.state === "skipped"`。
+### 5.2 内容映射归属调用方
 
-正向边 `p → c`，按序取首个命中：
+`内容视图模型 → CanvasCardView / CanvasEdgeView` 的映射由调用方提供：
 
-| 序 | 条件 | 相位 |
+- W1 示例：`demo/demoContent.ts`（§11.1）；
+- W2 真实内容：观测投影适配层（W2 §4.3 / §7）。
+
+本规格只保证：
+
+- 设施**不** import 观测模块（K24）；
+- 设施**不**出现观测类型名（K24）；
+- 映射结果满足 §5.1 的字段纪律（调用方负责）。
+
+这样「换一份内容」（编排画布、另一套预设、示例）不需要改设施，只换映射。
+
+### 5.3 相位四值的编码契约
+
+| 取值 | 词表描述句（§2.5.3） | 编码 |
 |---|---|---|
-| 1 | 该边是 `activeEdge` | `active` |
-| 2 | `skipped(c)` | `untaken` |
-| 3 | `reached(c)` | `passed` |
-| 4 | `reached(p)` | `idle` |
-| 5 | 其余 | `untaken` |
+| `untaken` | 未开始 / 跳过 | 虚线 1px、弱色、无箭头 |
+| `idle` | —（词表未列，本规格补） | 实线 1px、弱色、无箭头 |
+| `passed` | 已完成 | 实线 2px、主色、有箭头 |
+| `active` | 进行中 | 实线 2px、主色、有箭头 + 虚线流动动画 |
 
-回边 `⑫ → ①`，按序取首个命中：
+判定（何时取哪一相）不在本规格：由观测投影层算出并随 `CanvasEdgeView.phase` 传入（W2 §6.3）。
 
-| 序 | 条件 | 相位 |
+### 5.4 出口三态的编码契约
+
+| 取值 | 语义 | 编码 |
 |---|---|---|
-| 1 | 该边是 `activeEdge` | `active` |
-| 2 | `iteration >= 2` | `passed` |
-| 3 | `reached(⑫)` | `idle` |
-| 4 | 其余 | `untaken` |
+| `failed` | 失败收束 | 角标取 `--ant-color-error` |
+| `cancelled` | 取消收束 | 角标取 `--ant-color-warning` |
+| `stopped` | 正常收束 / 预算中止 | 角标取 `--ant-color-text-secondary` |
 
-说明：
+判定（哪张卡片带出口、取哪一态）不在本规格：由调用方随 `CanvasCardView.exit` 传入。
 
-- **计算顺序**：先由 `activeEdgeOf` 定出「哪条边是活动边」（判定依据是格子状态，与相位无关），再据此为 12 条边逐条赋 `phase`。相位表第 1 行引用的 `activeEdge` 指的就是这个已定好的身份，不是循环依赖。
-- 第 2 条把「⑦ 判定不走工具分支」与「还没走到」合并为同一个 `untaken`：两者语义都是「这条边没有通行」，共用一种视觉（§7）。这是刻意的收敛，不是遗漏。
-- 回边不能用 `reached(①)` 判 `passed`：① 只有一格（`iteration = 0`），第一圈跑完它也 `finished`，会把「没发生过的回边」判成已通行。故必须用圈数判。
-- `error` / `cancelled` 视为已到达（边通行了，只是目的地出错/被取消）。
+### 5.5 布局原语：`layoutTemplate`
 
-### 5.4 出口判定
+画布的坐标不来自 CSS 布局，而来自**纯函数**：条目的 `row` / `column` + 布局常量 → 盒子。
 
-候选集是两处出处的**并集**：I55 §3.2（已归档）的出口表 + 分析 §4.6 补的 ④。
+```ts
+export interface CanvasLayoutEntry {
+  id: string;
+  row: number;
+  column: number;
+}
 
-| 来源 | `failed` | `cancelled` |
-|---|---|---|
-| I55 §3.2 | ⑤ / ⑥ | ⑤ / ⑨ |
-| 分析 §4.6 | ④ | ④ |
-| 本规格采用（并集） | ④ / ⑤ / ⑥ | ④ / ⑤ / ⑨ |
+export const CANVAS_METRICS = {
+  cellW: 132, cellH: 78, gap: 8, loopGutter: 16,
+} as const;
 
-并集不会误报：未真正触发的候选仍是 `pending`，而消歧规则只取「非 `pending` 中最后到达者」，多余候选自然被跳过。
+export interface CanvasLayout {
+  boxes: ReadonlyMap<string, CanvasBox>;
+  width: number;
+  height: number;
+}
 
-| `status` | 候选节点 | 消歧规则 | 结果 |
-|---|---|---|---|
-| `running` | — | — | `null`（无出口） |
-| `completed` | ⑦ | 唯一 | ⑦ |
-| `wrap_up` | ⑦ | 唯一 | ⑦ |
-| `halted_by_budget` | ③ | 唯一 | ③ |
-| `stopped` | ③ / ⑩ / ⑫ | 取最后到达者 | — |
-| `cancelled` | ④ / ⑤ / ⑨ | 取最后到达者 | — |
-| `failed` | ④ / ⑤ / ⑥ | 取最后到达者 | — |
+export function layoutTemplate(entries: readonly CanvasLayoutEntry[]): CanvasLayout;
+```
 
-「最后到达者」定义：在候选集中，先按 `iteration` 降序、再按模板 `order` 降序，取**首个非 `pending`** 的节点；若候选全部 `pending`，取 `order` 最小者（此时出口落在流程最早可能中断的位置）。
+坐标公式（世界坐标，原点 = 内容左上角）：
 
-| 场景 | 候选与状态 | 取谁 |
-|---|---|---|
-| `failed` 于 ④ | ④ error，⑤ ⑥ pending | ④（非 pending 中 order 最大） |
-| `failed` 于 ⑥ | ④ ⑤ finished，⑥ error | ⑥ |
-| `cancelled` 于 ⑨ | ④ ⑤ finished，⑨ cancelled | ⑨ |
-| `stopped` 于 ⑫ | ⑩ ⑪ ⑫ 皆 finished | ⑫ |
-| `stopped` 全 pending | — | ③（order 最小） |
+| 项 | 公式 |
+|---|---|
+| `x` | `column * (cellW + gap)` |
+| `y` | `loopGutter + gap + row * (cellH + gap)` |
+| `w` / `h` | `cellW` / `cellH` |
+| 世界宽 | `(maxColumn + 1) * cellW + maxColumn * gap` |
+| 世界高 | `loopGutter + gap + (maxRow + 1) * cellH + maxRow * gap` |
 
-判定函数必须**纯**（入参只有 `GraphView` 已算好的节点数组与 `status`），放在 `projections/graph.ts`，由 `projectGraph` 一并产出。
+纪律：
 
-**⑥ 的唯一例外**：`persist-assistant` 在同一迭代可**多次**落库（收尾 / 取消 / 预算中止），每次都发一条 `finished`，且不重发 `running`（I55 §4.6 第 4 条）。本判定按**节点聚合状态**（`GraphNodeView.state`）而不是按事实序列，所以多次 `finished` 不影响结果；但若将来改成按 fact 判定，必须按 `seq` 取最后一条，不能按数组顺序——否则出口会在 ⑥ 的多条 `finished` 之间抖动。其余 11 个节点每格每圈恰好一条终态。
+- 布局函数**只**吃条目与常量，不读 DOM、不吃视口；同一份输入在任何窗口尺寸下产出同一份坐标（N7）。
+- `id` 是 `string`：设施不认 `AgentNodeId`（K24）。
+- 布局结果是**常量**：由调用方在模块加载时算一次（§12.2），设施自身不缓存。
+- `row` / `column` 是布局输入，不是视图模型；视图模型只有 `CanvasBox`（§1.3 D-1）。
+- 空输入返回 `{ boxes: 空 Map, width: 0, height: 0 }`；调用方渲染空画布，不做占位卡片。
 
 ---
 
-## 6 几何模型
+## 6 坐标模型与视口
 
-### 6.1 网格轨道
+### 6.1 三层结构与两个坐标系
 
-模板是 2 行 11 列（`column` 0..10），回边需要一条顶部外轨，故栅格为 **3 行**。以下为在现有 `.canvas`（`observation.module.css`）上增补后的完整定义：
+```
+CanvasViewport   （屏幕层：overflow: hidden，接收指针与滚轮）
+└── world layer  （世界层：transform: translate(x, y) scale(s)，transform-origin: 0 0）
+    ├── edges    （边元素，绝对定位，世界坐标）
+    ├── cards    （盒子 → 卡片，绝对定位，世界坐标）
+    └── overlays （标签 / 角标等，绝对定位，世界坐标）
+```
 
-```css
-.canvas {
-  display: grid;
-  grid-template-columns: repeat(11, minmax(var(--canvas-cell-min-width), 1fr));
-  grid-template-rows:
-    var(--canvas-loop-gutter)                    /* 1 行：回边外轨 */
-    minmax(var(--canvas-cell-min-height), auto)  /* 2 行：模板 row 0（①–⑦） */
-    minmax(var(--canvas-cell-min-height), auto); /* 3 行：模板 row 1（⑧–⑫） */
-  column-gap: var(--canvas-gap);
-  row-gap: var(--canvas-gap);
-  align-items: stretch;
+**词与物**：`CanvasBox` 是**盒子**（数据形状，`x` / `y` / `w` / `h`）；`CanvasCard` 是**卡片**（渲染形态，把盒子画出来）。
+
+| 坐标系 | 单位 | 谁产生 | 谁消费 |
+|---|---|---|---|
+| 世界坐标 | px（整数，来自 `layoutTemplate`） | `layoutTemplate()` | 边几何、卡片 `left` / `top` / `width` / `height` |
+| 屏幕坐标 | px（含变换） | `viewport = { x, y, scale }` | 指针位置换算、缩放锚点 |
+
+**唯一变换点**：`transform` 只出现在世界层这一处。卡片、边、标签内部**不得**再带任何 `translate` / `scale`，否则缩放会叠加成两级。
+
+```ts
+export interface CanvasViewportState {
+  x: number;      // 世界层在屏幕上的平移
+  y: number;
+  scale: number;  // 缩放倍率
+}
+
+export const VIEWPORT_DEFAULT: CanvasViewportState = { x: 0, y: 0, scale: 1 };
+export const VIEWPORT_SCALE_MIN = 0.5;
+export const VIEWPORT_SCALE_MAX = 2;
+```
+
+初始值固定为 `{ x: 0, y: 0, scale: 1 }`：原点对齐视口左上，不测量容器、不做 fit（§1.2 第 9 条）。
+
+### 6.2 屏幕坐标与世界坐标互转
+
+两个纯函数，供缩放锚点与将来的编辑命中区共用：
+
+```ts
+export function screenToWorld(p: Point, v: CanvasViewportState): Point {
+  return { x: (p.x - v.x) / v.scale, y: (p.y - v.y) / v.scale };
+}
+
+export function worldToScreen(p: Point, v: CanvasViewportState): Point {
+  return { x: p.x * v.scale + v.x, y: p.y * v.scale + v.y };
 }
 ```
 
-现状差异（三条都要改）：
+`p` 的输入是相对**视口**的坐标（`event.clientX - viewportRect.left`）。这里需要一次视口矩形的读取——它只发生在**指针事件处理器**里，不在渲染路径上，且不参与几何推导（N7 只约束「几何来源」）。为避免每次事件都读，视口矩形在 `pointerdown` 时缓存一次、`pointerup` 时丢弃。
 
-| # | 现状 | 改为 |
+### 6.3 缩放与平移交互
+
+| 手势 | 行为 | 约束 |
 |---|---|---|
-| 1 | `.canvas` 只有 `display: grid; gap: 8px; align-items: stretch`，**无 `grid-template-rows`** | 补 3 条轨道（外轨 + 两行格子） |
-| 2 | 列定义在 `GraphCanvas.tsx` 的内联 `canvasGridStyle`（`repeat(11, minmax(132px, 1fr))`） | 移到 `.canvas` 规则内，列数仍由 `CANVAS_COLUMNS` 模板推导后以内联 `gridTemplateColumns` 覆盖（保留「不写字面量」的做法，只是把 `132px` 换成变量） |
-| 3 | `gap: 8px` 字面量 | `column-gap` / `row-gap` 均用 `var(--canvas-gap)` |
+| `Ctrl` / `⌘` + 滚轮 | 缩放，以**指针位置**为锚点 | 步进 `1.1`；`scale` 夹在 `[0.5, 2]`；`preventDefault`（否则页面会整体缩放） |
+| 滚轮（无修饰键） | 纵向平移，`y += deltaY`；`Shift` + 滚轮为横向平移 | `preventDefault` |
+| 指针拖拽空白处 | 平移，`x += dx`、`y += dy` | 拖拽起点必须是视口或世界层背景，不是卡片/边 |
+| 缩放按钮（`+` / `-` / 复位） | 以**视口中心**为锚点 | 中心由视口矩形算出（同 §6.2 的读取时机），不在渲染路径 |
+| 双击卡片 | 无行为（W1 不做 fit-to-card） | 双击空白处也不复位，避免误触 |
 
-| 模板坐标 | 栅格放置（1 起） |
+缩放锚点的数学（保持锚点下的世界坐标不动）：
+
+```
+s' = clamp(s * k, MIN, MAX)
+x' = px - (px - x) * (s' / s)
+y' = py - (py - y) * (s' / s)
+```
+
+滚轮监听必须用**原生非 passive** 监听器（`useEffect` 里 `addEventListener("wheel", handler, { passive: false })`）：React 的 `onWheel` 在部分环境下是 passive，`preventDefault()` 无效，会导致整个页面跟着缩放。
+
+**视口状态走 React state**（`useState<CanvasViewportState>`），不用 ref + 命令式写 DOM。代价是拖拽每帧触发一次重渲染，因此 `CanvasCard` / `CanvasEdge` 必须 `React.memo`，且 `transform` 只落在世界层——每帧重渲染的只有视口容器本身与子元素的 props 比对，不触碰内容数据（§12.5）。
+
+### 6.4 锚点与边几何
+
+锚点由盒子**推导**，不做测量：锚点 = 盒子边框上的固定交点。
+
+| 锚点 | 位置（世界坐标） |
 |---|---|
-| `row 0` | `grid-row: 2` |
-| `row 1` | `grid-row: 3` |
-| `column c` | `grid-column: c + 1` |
-| 回边外轨 | `grid-row: 1` |
+| 出锚点（右侧） | `(b.x + b.w, b.y + b.h / 2)` |
+| 入锚点（左侧） | `(b.x, b.y + b.h / 2)` |
+| 底锚点（下侧） | `(b.x + b.w / 2, b.y + b.h)` |
+| 顶锚点（上侧） | `(b.x + b.w / 2, b.y)` |
 
-**现状必改**：`NodeCell` 当前用 `gridRow: node.row + 1` 自放置，加入外轨后必须改为 `node.row + 2`，否则全部 12 格会上移一行、盖住外轨。
+设施提供三类 route，几何全部由两个盒子推出：
 
-同一行内所有格子 `align-self: stretch`，因此行内格子等高、垂直中点对齐——这是「同行边只需 `align-self: center`」的前提。
+```ts
+export interface EdgeSegment { x: number; y: number; w: number; h: number }
+export interface EdgeArrow { x: number; y: number; direction: "left" | "right" | "down" }
+export interface EdgeGeometry { segments: readonly EdgeSegment[]; arrow: EdgeArrow | null }
 
-### 6.2 锚点与边的放置规则
+export function edgeGeometryOf(
+  from: CanvasBox,
+  to: CanvasBox,
+  route: EdgeRoute,
+  gutter: number,
+): EdgeGeometry;
+```
 
-锚点 = 格子边框上的交点，不画桩、不测量：
-
-| 边类 | 出锚点 | 入锚点 | 放置规则（`from = (r0,c0)`，`to = (r1,c1)`） |
+| route | 适用 | 几何 | 元素 |
 |---|---|---|---|
-| 同行正向 | 左格右边框中点 | 右格左边框中点 | `grid-column: c0+1 / c0+3`；`grid-row: r0+2`；`align-self: center`；`height: 1px` |
-| 跨行正向 | 上格底边中点 | 下格顶边中点 | `grid-column: c0+1`；`grid-row: r0+2 / r0+4`；`justify-self: center`；`width: 1px` |
-| 回边（三段） | ⑫ 顶边右角 | ① 顶边左角 | 见 §6.3 |
+| `horizontal` | 同一行相邻 | `x = from.x + from.w`，`y = yMid - 0.5`，`w = to.x - x`，`h = 1` | 1 段 + 箭头（指向右） |
+| `vertical` | 上下相邻 | `x = xMid - 0.5`，`y = from.y + from.h`，`w = 1`，`h = to.y - y` | 1 段 + 箭头（指向下） |
+| `outer-track` | 跨列回到起点（外轨） | 三段：右竖 + 顶横 + 左竖（下表） | 3 段 + 箭头（指向左） |
 
-边集按几何分类的实测数量（`TEMPLATE_EDGES` 必须与之一致，K2 / K6）：
+外轨三段（`R = from.x + from.w`、`L = to.x`、`G = gutter`）：
 
-| 类 | 数量 | 具体 |
-|---|---|---|
-| 同行正向 | 10 | ①→② … ⑥→⑦（row 0），⑧→⑨ … ⑪→⑫（row 1） |
-| 跨行正向 | 1 | ⑦ → ⑧（同为 `column 6`，`row 0` → `row 1`） |
-| 回边 | 1 | ⑫ → ①（三段元素） |
+| 段 | x | y | w | h |
+|---|---|---|---|---|
+| 右竖 | `R - 0.5` | `G` | `1` | `from.y - G` |
+| 顶横 | `L` | `G - 0.5` | `R - L` | `1` |
+| 左竖 | `L` | `G` | `1` | `to.y - G` |
 
-合计 11 条正向 + 1 条回边 = 12 条；渲染元素 11 + 3 = 14 个（§6.5）。
+箭头：三角形，`horizontal` 落在目标入锚点、指向右；`vertical` 落在目标顶锚点、指向下；`outer-track` 落在顶横左端、指向左。尺寸 `border-width: 5px 7px 5px 0`（左向）；颜色取该边的 `currentColor`。
 
-同行正向边元素横跨「左格 + 列间距 + 右格」两个轨道，可见部分正好是那 8px 列间距，两端精确落在两格边框上；跨行同理。**没有任何一处需要读取像素尺寸。**
+几何纪律：
 
-### 6.3 回边三段
+- 边的端点**正好**停在盒子边框上，不越入盒子内部：坐标是精确值（不是网格轨道），没有「轨道间隙不确定」的问题。
+- 所有线段 `width` 或 `height` 为 `1`，另一端对齐 `-0.5` 保证落在像素中心（`scale = 1` 时清晰）。
+- 缩放后 1px 线允许亚像素抗锯齿；不得为了「始终 1 屏幕像素」而在缩放时改线宽（那会引入第二套几何）。
+- route 由调用方给出（示例与 W2 各自决定），设施不做「自动选 route」：自动路由需要图算法，且会把布局语义塞进渲染器。
 
-回边不参与 §6.2 的「两点直连」，改为三段拼出「上折 → 横穿 → 下折」：
+### 6.5 渲染顺序与不透明
 
-| 段 | 放置 | 说明 |
-|---|---|---|
-| 横段 | `grid-row: 1; grid-column: 1 / -1; align-self: end; height: 1px` | 贴外轨底边，横跨全部 11 列，两端正好落在第 1 列左边框与第 11 列右边框 |
-| 右竖段 | `grid-row: 1 / 4; grid-column: 11 / 12; justify-self: end; width: 1px; align-self: stretch; margin-block-start: var(--canvas-loop-gutter)` | 从外轨底边下行，经 `row 0` 第 11 列空格（全程可见），再进入 ⑫ 所在轨道；进入 ⑫ 的部分被覆盖，**可见终点 = ⑫ 顶边右角** |
-| 左竖段 | 同上，但 `grid-row: 1 / 3`、`grid-column: 1 / 2`、`justify-self: start` | 从外轨底边下行，进入 ① 所在轨道；进入 ① 的部分被覆盖，**可见终点 = ① 顶边左角** |
+世界层内按 DOM 顺序决定层叠（不使用 `z-index` 手工排序）：
 
-竖段跨度规则：**`grid-row: 1 / (to.row + 3)`**——从外轨起，一直跨到入锚点所在轨道的底边（`to.row` 为 0 → `1 / 3`；为 1 → `1 / 4`）。跨度多算的部分由不透明格子覆盖，不算少算，因此不会出现「竖段够不到格子」的断口。之所以宁可跨到底边也不精确停在顶边：停在顶边需要知道格子顶边位置，而跨到轨道底边只需轨道号——**后者是模板常量，前者要靠测量**。
+1. `edges`——最低
+2. `cards`——覆盖边端点的抗锯齿溢出一像素
+3. `overlays`（标签等）
 
-要点：
-
-- 竖段用 **`align-self: stretch` + `margin-block-start: var(--canvas-loop-gutter)`**，而不是 `height: calc(100% - …)`：拉伸盒减去起始外边距后，顶边正好落在横段所在的那条线上，底边正好落在所跨栅格区域的底边。**全图零 `calc`、零百分比高度、零实测值**，也不依赖「百分比高度能否在 `auto` 轨道内解析」这类浏览器差异。
-- 竖段伸进格内的部分被不透明格子覆盖（N6），因此视觉上只呈现「外轨 → 格子顶边」的连接段。
-- 横段左端加一个 5px 左向三角（`::after`），位置 `inset-inline-start: 4px`。全图只有这一个箭头（§7.3）。
-
-### 6.4 出口标记（格内右下角）
-
-格子加 `position: relative`，出口标记由两个伪元素构成，只在 `data-exit="true"` 的格子上显示：
-
-| 元素 | 形状 | 位置 |
-|---|---|---|
-| `::before` 内折角括号 | `8px × 8px`，只画 `border-inline-end` + `border-block-end` 各 1px | `inset-inline-end: 6px; inset-block-end: 6px` |
-| `::after` 汇点方块 | `6px × 6px` 实心 | `inset-inline-end: 3px; inset-block-end: 3px` |
-
-括号表示「流出」，方块表示「终止于此」。颜色取出口语义色（§8.3）。
-
-**三个必须写死的实现前提**：
-
-| # | 前提 | 原因 |
-|---|---|---|
-| 1 | 两个伪元素都必须 `position: absolute` | `.cell` 是 `display: grid` 且带 `gap: 2px`。未脱离文档流的 `::before` / `::after` 会变成该网格的隐式网格项，各占一行，把格内三段内容整体挤开 |
-| 2 | `.cell` 必须新增 `position: relative` | 现状没有；绝对定位的伪元素会以最近的已定位祖先为参照，落到栅格外 |
-| 3 | 伪元素不参与 `.cell` 的 `align-content: start` | 同上，脱离文档流后不占行 |
-
-`.cell` 现状无任何 `::before` / `::after` 规则，不会与既有样式冲突。
-
-### 6.5 渲染顺序与不透明要求
-
-单层网格，所有元素都是该网格的直接子元素，按 DOM 顺序绘制：
-
-| 顺序 | 元素 | 数量 |
-|---|---|---|
-| 1 | 边元素 | 14（11 正向 + 回边 3 段） |
-| 2 | 格子 | 12 |
-| 3 | 行内标注（工具分支） | 1 |
-
-行内标注的放置（工具分支只有 `row 1` 才可能进入，左侧 6 列在 `row 1` 是空格，标注正好填在那里）：
-
-| 项 | 规则 |
-|---|---|
-| 位置 | `grid-row: 3; grid-column: 1 / span N`，`N` = `row 1` 中最小的 `column`（当前为 6，即 ⑧ 之前的空白列数） |
-| 现状必改 | `TOOL_LANE_LABEL_COLUMNS = 6` 是字面量，与「画布列数由模板推出」的既有做法不一致；改为由 `AGENT_NODE_TEMPLATE` 里 `row === 1` 的最小 `column` 推导 |
-| 文案 | 仍用 `observation.graph.tool_lane` 全文，`font-size: 11px`，允许在 6 列内折行 |
-| 不参与编码 | 标注是灰字说明，不带边框/背景，不占锚点 |
-
-**N6 的落实**：格子必须覆盖其下方边线，因此
-
-- 现状 `observation.module.css` 对 `derived` 用 `opacity: 0.72`、对 `assumed` 用 `opacity: 0.8`，而 `pending` 格子恰好全是 `derived` —— 12 格里最多 12 格半透明，边线会从格子里透出来。
-- 改法：**删除这两处 `opacity`**，`derived` / `assumed` 的「不确定感」改由已有虚线边框 + 文字色降级承担；`pending` 保持 `--ant-color-bg-layout` 不透明底。
-- 判据：`grep -n "opacity" src/features/observation/observation.module.css` 不得命中格子规则。
-
-**同时修掉的两处文字对比度问题**（都不是本设计引入，是现状缺陷，W1b 顺手修）：
-
-| # | 现状 | 改为 | 原因 |
-|---|---|---|---|
-| 1 | `.cell[data-state="pending"] { color: var(--ant-color-text-quaternary) }` | `var(--ant-color-text-tertiary)` | `pending` 是「尚未到达」，不是「禁用」；11px 小字在浅色主题下 quaternary 低于 4.5:1 |
-| 2 | `.cell[data-state="skipped"]` / `[data-state="cancelled"]` 已为 `tertiary` | 保持 | 已达标，不需要再降 |
-
-**颜色语义硬约束**：`--ant-color-error`（红）**只允许出现在** `state === "error"` 与 `status === "failed"` 两处。以下情形一律不得用红：
-
-| 情形 | 正确色 | 理由 |
-|---|---|---|
-| ③ `brake` 的 `verdict: stop`（预算耗尽） | `success`（正常 `finished`） | 预算用尽是**正常收尾**，不是失败（I55 §5.1 末条） |
-| `status === "halted_by_budget"` | `warning` | 用户可见的「提前结束」，不是错误 |
-| `status === "stopped"` / `"cancelled"` | 中性灰（`text-tertiary`） | 用户主动停止，不是故障 |
-
-把「预算用尽」画成红叉是**语义错误**，不是审美差异。
+`N6`：卡片不得 `opacity < 1`（半透明会压暗文字、降低对比度，且边线会透出）。
 
 ### 6.6 布局尺寸变量
 
-尺寸常量集中在 `src/assets/styles/global.css` 的 `:root`（与主题无关，不进 `[data-theme="dark"]` 块）。
-
-依据：`docs/DESIGN.md` §5.2 的变量前缀表已登记 `--sidebar-` / `--titlebar-` / `--orb-` 三组**布局尺寸**前缀（`--orb-ball-size` 等就在 `:root`），说明「布局尺寸进 `:root`、按域前缀分组」是本项目既有做法；§5.3 禁的是「在 `:root` 外定义主题变量」，布局尺寸不属主题变量。新增 `--canvas-` 组需在 §5.2 表里登记，否则下一个人会以为它是野生变量。
+布局常量进 `global.css`（`:root`），与 `layout.ts` 的 `CANVAS_METRICS` **一一对应**，且由测试比对（K23）：
 
 | 变量 | 值 | 用途 |
 |---|---|---|
-| `--canvas-gap` | `8px` | 行/列间距（搬自 `.canvas` 的 `gap: 8px`，`.canvasPane` 的 `gap: 8px` 不动） |
-| `--canvas-loop-gutter` | `16px` | 回边外轨高度 |
-| `--canvas-cell-min-width` | `132px` | 列最小宽度（搬自 `GraphCanvas` 的 `minmax(132px, 1fr)`） |
-| `--canvas-cell-min-height` | `78px` | 行最小高度（搬自 `.cell` 的 `min-height: 78px`） |
-| `--canvas-exit-size` | `6px` | 出口汇点方块边长 |
+| `--canvas-cell-w` | `132px` | 盒子宽 |
+| `--canvas-cell-h` | `78px` | 盒子高 |
+| `--canvas-gap` | `8px` | 盒间距 |
+| `--canvas-loop-gutter` | `16px` | 顶部外轨高 |
 
-搬运纪律：三个「搬自」变量落地后，原处的字面量必须删除，不允许变量与字面量并存（否则改变量不生效，形成第二份真值）。
+`CANVAS_METRICS` 是几何的唯一真值；CSS 变量只供 `padding` / 内边距 / 标签宽度等非几何用途，几何（`left` / `top` / `width` / `height`）一律由 JS 算好后写内联样式，**不**从 CSS 变量读回（读回需要测量）。
 
-需在 `docs/DESIGN.md` §5.2 前缀表增补一行：`--canvas-` | 观测栅格布局 | `--canvas-gap`, `--canvas-loop-gutter`。
-
-线宽（1px / 2px）直接写在规则里——DESIGN §5.3 只约束颜色与阴影的硬编码，不约束线宽。
-
-### 6.6.1 圆角兜底修正
-
-现状 `observation.module.css` 有 **3 处** `var(--radius-md, 8px)`（`.instanceItem`、`.laneLabel`、`.cell`）。`--radius-md` 在 `global.css` 的 `:root` 与 `[data-theme="dark"]` 中**均未定义**，因此这 3 处永远取硬编码兜底 `8px`，违反 DESIGN §5.3「禁用 `--ant-*` 变量 + 硬编码 fallback」的同源规则（自造变量名 + 硬编码兜底，问题等价）。
-
-| 处置 | 内容 |
-|---|---|
-| 替换 | 3 处全部改为 `var(--ant-border-radius)`（antd 6 默认输出 CSS 变量，`src/vault/vault.module.css` 已在用同一写法） |
-| 视觉影响 | antd 6 的 `borderRadius` 在 `theme.ts` 中配置为 `6px`，故圆角由 `8px` → `6px`。这是**与主题对齐的修正**，不是回归 |
-| 另一种写法 | `var(--radius)`（`global.css` L37 定义，同为 `6px`，DESIGN §5.2 已登记）也能得到同一像素值。本规格取 `--ant-border-radius`，因为它与项目规则「仅使用 antd CSS 变量」直接一致，且 vault 已有同款用法；两种写法不得混用，一处组件内只用一种 |
-| 判据 | `rg "radius-md" src/features/observation/` 为空 |
-
-不动的圆角：`.cellBadge` 的 `border-radius: 4px` 保留。它是徽标内部的局部尺寸（与 `font-size: 11px` 配套），不是主题级圆角；改成 `--ant-border-radius`（6px）会让小徽标显得圆钝。
-
-### 6.7 溢出与最小尺寸
-
-| 场景 | 行为 |
-|---|---|
-| 容器宽度 < 11 × 132 + 10 × 8 = 1532px | 栅格容器 `overflow-x: auto`，横向滚动；**不缩放、不折叠列** |
-| 容器高度不足 | 纵向由页面自然滚动（`mainPane` 已有滚动） |
-| 极窄窗口 | 允许横向滚动条出现，不做响应式降级（V1 明确接受） |
-
-### 6.8 禁止事项
+### 6.7 禁止事项
 
 | 禁止 | 原因 |
 |---|---|
-| `getBoundingClientRect` / `offsetWidth` / `clientWidth` / `ResizeObserver` / `MutationObserver` | N7；任何测量都会把「布局完成」变成渲染前置条件，破坏纯投影 |
-| SVG / Canvas 画边 | D-5；会引入第二套坐标系与主题体系 |
-| 绝对定位 + `px` 坐标写边 | 同上；且窗口变化即失真 |
-| `transform: scale()` 做缩放 | 会让 1px 边变成非整数像素，出现断裂 |
-| 给边设 `z-index` 高于格子 | 边会横穿文字（N6 已用 DOM 顺序解决） |
+| `getBoundingClientRect` / `offsetWidth` / `clientWidth` 参与几何推导 | 违反 N7；几何只能来自 `layoutTemplate` |
+| `ResizeObserver` | 同上（§1.2 第 9 条） |
+| CSS Grid / Flex 定位卡片 | 画布必须有坐标系；CSS 布局无法表达缩放与平移（§1.3 D-1） |
+| 卡片内再写 `translate` / `scale` | 会与视口变换叠加（§6.1） |
+| 用 SVG / Canvas 画边 | 会引入第二套尺寸体系（`viewBox` / 位图缩放）；直线边用绝对定位 div 足够 |
+| 百分比尺寸 | 世界坐标是 px；百分比会随视口变化，破坏「世界坐标与屏幕坐标分离」 |
 
 ---
 
-## 7 边的相位与视觉编码
+## 7 视觉编码（四相）
 
-### 7.1 编码表
+### 7.1 一表定完
 
-| 相位 | 线型 | 颜色 | 附加 | 语义（图例文案） |
-|---|---|---|---|---|
-| `passed` | 1px solid | `--ant-color-text-tertiary` | — | 已通行 |
-| `active` | 2px solid | `--ant-color-primary` | 呼吸动画（`opacity` 0.55 ↔ 1，1.6s） | 活动边 |
-| `idle` | 1px dashed | `--ant-color-text-quaternary` | — | 待通行 |
-| `untaken` | 1px dotted | `--ant-color-border` | — | 未通行 |
+| 相位 | 线型 | 线宽 | 颜色（`currentColor`） | 透明度 | 动画 | 箭头 |
+|---|---|---|---|---|---|---|
+| `untaken` 未通行 | 虚线 `3 3` | `1px` | `--ant-color-border` | — | 无 | 无 |
+| `idle` 待通行 | 实线 | `1px` | `--ant-color-border` | — | 无 | 无 |
+| `passed` 已通行 | 实线 | `2px` | `--ant-color-primary` | — | 无 | 有 |
+| `active` 活动中 | 实线 | `2px` | `--ant-color-primary` | — | 虚线流动 `1.2s` 循环 | 有 |
 
-编码纪律：
+区分手段有**四维**（线型 / 线宽 / 颜色 / 动画），任何一维单独即可判读，不依赖颜色单通道（分析 P12 / P13）。色弱用户靠线型与线宽即可分辨四相。
 
-- 四个相位用**三种线型**（solid / dashed / dotted）打底，再叠加线宽与颜色深浅：任意两个相位至少在一个非颜色通道上不同（P12）。
-- 为什么 `idle` 与 `untaken` 不能都用 dashed：两者语义只差「还没走到」与「不会走到」，若线型也相同就只剩颜色差异，违反「非仅靠颜色编码」。故 `untaken` 取 dotted——与格子证据等级里 `assumed` 的 dotted 同一视觉语言，含义也一致：**虚线 = 推测/未定，点线 = 更低置信**。
-- `active` 与 `passed` 靠线宽 + 颜色 + 动效三通道区分，不会误读。
-- `active` 全图至多一条（K3）；`active` 存在时不再额外画「活动边」文字标签——图例已覆盖。
+### 7.2 `currentColor` 单一着色点
 
-### 7.2 回边的相位色
+每条边元素设 `color: <phaseColor>`，其内部的线（`border`）、箭头（`border-left-color`）、标签（`color: inherit`）全部用 `currentColor` 继承。禁止在子元素上再写一遍颜色——否则主题切换时会出现「线变了、箭头没变」。
 
-回边三段共用同一相位样式（同一 `data-phase`）。三段必须同时切换，不允许一段 active、两段 passed。
+### 7.3 动画
 
-### 7.3 方向
+```css
+@keyframes canvas-edge-flow { to { background-position: 12px 0; } }
 
-| 边类 | 方向表达 |
-|---|---|
-| 正向（11 条） | 不画箭头。由「左 → 右」阅读顺序与锚点位置承载 |
-| 回边 | 横段左端一个 5px 左向三角，明确「回到左侧起点」 |
+.canvas-edge[data-phase="active"] {
+  background-image: repeating-linear-gradient(
+    90deg, currentColor 0 4px, transparent 4px 8px
+  );
+  background-size: 8px 100%;
+  animation: canvas-edge-flow 1.2s linear infinite;
+}
+```
 
-理由：正向边的可见段只有 8px，箭头会与相邻格子的边框视觉打架；回边横跨 11 列且方向与阅读顺序相反，必须显式标向。
+约束：
 
-### 7.4 活动边的端点不再由格子二次标注
+- 动画**只**由 `phase === "active"` 驱动（分析 P10）：没有活动边时页面上不得有任何正在运行的动画。
+- 竖线段用 `180deg` 的同一 `repeating-linear-gradient`，`background-size: 100% 8px`，`@keyframes` 改为 `background-position: 0 12px`。
+- 必须提供 `@media (prefers-reduced-motion: reduce)` 分支：`animation: none`，改用 `outline` 的虚线（`1px dashed currentColor`）表达活动态——不能因为关掉动画就丢掉「活动」这个语义。
 
-现状 `NodeCell` 收 `activeSource` / `activeTarget` 两个布尔 prop，并在格子上打 `data-active-source` / `data-active-target`。
+### 7.4 编码只由属性驱动
 
-全图边集渲染后，这两个标注失去意义：活动边的两个端点已由那条 2px 主色边直接指出，再给格子加一层高亮等于用第三个通道重复同一信息，且会与格子的状态编码抢注意力。
-
-| 处置 | 内容 |
-|---|---|
-| 删除 prop | `NodeCellProps.activeSource` / `activeTarget` |
-| 删除属性 | `data-active-source` / `data-active-target` |
-| 删除样式 | `observation.module.css` 中对应选择器 |
-| 保留 | 进行中格子的 `data-state="running"` 呼吸动画（§11.3） |
+设施组件**不得**根据内容语义分支渲染：`CanvasEdge` 只读 `data-phase`，`CanvasCard` 只读 `data-tone` / `data-selected` / `data-exit`，CSS 选择器只认这些属性。调用方换映射时不需要改组件与样式——这是「一套渲染设施、多套视图模型」（分析 §1.1）在代码上的落点。
 
 ---
 
-## 8 出口
+## 8 出口角标（设施组件）
 
-### 8.1 判定
+### 8.1 为什么收进盒子
 
-见 §5.4。`projectGraph` 直接产出 `exit`，画布不做二次判断。
+出口徽标若画在盒子外侧，需要额外一段水平空间：相邻盒子之间只有 `--canvas-gap`（8px），放不下「短桩 + 汇点」；若加宽间隙，盒子会被迫重排。故改为**盒内角标**（§1.3 D-3），几何上零额外空间。
 
-### 8.2 几何
-
-见 §6.4。出口标记**始终在格内右下角**，不越出格子、不占用列间距、不新增边元素。
-
-### 8.3 视觉编码
-
-出口色必须与页面上已有的两处状态色**完全同表**：`GraphCanvas` 的 `STATUS_TAG_COLOR`、`ObservationPage` 的 `statusColor()`。两者当前一致，出口直接复用，不新增第三套映射。
-
-| `status` | 出口色（括号 + 方块） | 对应 antd tag 色 |
+| 部件 | 位置 | 尺寸 |
 |---|---|---|
-| `completed` | `--ant-color-success` | `success` |
-| `failed` | `--ant-color-error` | `error` |
-| `halted_by_budget` | `--ant-color-warning` | `warning` |
-| `wrap_up` | `--ant-color-warning` | `warning` |
-| `stopped` | `--ant-color-text-tertiary` | `default` |
-| `cancelled` | `--ant-color-text-tertiary` | `default` |
-| `running` | 不适用（无出口） | `processing` |
+| 折角括号（L 形） | 盒子右下角内侧，`right: 6`、`bottom: 6` | `border-right` + `border-bottom` 各 `2px`，长 `12px` |
+| 汇点方块 | 折角括号内侧端点 | `6 × 6`，`border-radius: 50%` |
 
-纪律：`stopped` / `cancelled` 是**中性**收尾，不是异常，因此取中性灰而非警告色——否则「用户主动停止」会被读成「出问题了」。这条与 I55 §3.2「`brake` 的 `stop` 不是节点失败」同口径。中性灰选 `--ant-color-text-tertiary`，与 `.cell[data-state="cancelled"]` 的文字色同源，保证「取消格子」与「取消出口」看起来是同一件事。
+### 8.2 三态
 
-实现约束：`status → 语义档位`（`processing` / `success` / `error` / `warning` / `default`，与 antd `Tag` 的 `color` 取值同集）应只定义一次（如 `STATUS_LEVEL: Record<TurnObservationStatus, …>`），`GraphCanvas` 的 `STATUS_TAG_COLOR` 与 `ObservationPage` 的 `statusColor()` 都从它派生，出口色再由档位映射到 CSS 变量。这样「加一个 status」只需改一处，不会出现「tag 是灰、出口是黄」。
+出口用 `data-exit="failed|cancelled|stopped"` 区分三态，颜色见 §5.4。角标本身**不带文字**（盒子只有 132 × 78，塞不进标签）；语义由图例（§10）与调用方的头信息行承担。
 
-### 8.4 文案
+### 8.3 出口与选中的关系
 
-| 位置 | 内容 |
-|---|---|
-| 格子 `aria-label` | 见 §12.4 的拼接规则（含出口时末段追加「出口 + status 名」） |
-| 图例「出口」组 | `observation.graph.exit` + 6 个终态 `observation.status.*` 取值 |
-| 格子可见文字 | 不加「出口」二字，只留角标（避免 12 格里反复出现同词） |
+出口角标属于卡片，选中该卡片时角标不变化（不放大、不换色）。禁止把出口做成「第 13 个可选中对象」：它没有卡片身份，键盘焦点序列里不得出现。
 
-### 8.5 无出口的情形
+### 8.4 无出口时
 
-| 情形 | 表现 |
-|---|---|
-| `status === "running"` | 全部格子 `data-exit="false"` |
-| 实例被 LRU 淘汰 | 不渲染栅格（现有 `Alert` 分支），出口无意义 |
-| 候选节点尚未建立（`cells` 为空） | 按 §5.4 的「全部 pending」兜底取 `order` 最小者，出口仍显示 |
-
-**evicted 的归属边界**（必须写死，否则将来把栅格挂到别处会露出假象）：
-
-| 项 | 规则 |
-|---|---|
-| 谁处理 | `GraphCanvas` **不**处理 evicted；调用方（`ObservationPage`）必须先判 `selected.evicted` 并走 `Alert` |
-| 原因 | `summarize()` 会把 `cells` 清空、`timeline` 清空，而 `projectGraph` 仍按模板恒输出 12 格全 `pending` + `derived`。画布本身无法区分「真的全 pending」与「摘要态」，只有调用方知道 |
-| 复活 | `commit()` 对 evicted 实例收新事件会 `evicted: false` 复活（I55 §6.3 第 3 条的正确行为）。UI 上**不做过渡动画、不弹提示**——加 fade 会掩盖「摘要态 → 完整态」的性质跳变 |
-
-**已核验（无悬挂）**：实例被 LRU 删除时，`flushPending` 取到 `observation = null` → `listener(null)` → `useProjections` 返回 `null` → 页面走 `TemplatePreview` 空态；同时 `useObservationInstances` 重新派生列表，`selected` 回落 `instances[0]`，列表空则 `null` → 空态。两条链路都收敛到空态，无悬挂引用、无白屏。
+`exit` 为 `null` / 省略时不画角标，卡片布局与几何完全不变（角标是盒内装饰，不参与布局）。**不得**用「最近一张卡片」兜底：出口的判定属内容层，设施不做任何猜测。
 
 ---
 
 ## 9 选择与键盘
 
-### 9.1 选择粒度
+### 9.1 选中语义
 
-选中对象是**节点**，不是格子、不是边。理由见 D-7：`projectGraph` 只投影当前圈，一格即一个节点，选圈是无意义自由度。
+- 选中对象是**卡片**（不是「格子 × 圈」，§1.3 D-7）。`selectedId: string | null`，存在 `CanvasViewport` 的本地 state（N4）。
+- 选中是**受控/非受控二选一**：`CanvasViewport` 提供 `selectedId` + `onSelect` 两个可选 props；调用方不传时由设施内部 state 持有（示例与 W2 都用非受控，宿主若要与 Inspector 联动则传受控）。
+- 选中态**不跨实例保留**：内容切换（`cards` 数组换源）时重置为 `null`（不同内容的状态不同，保留选中会让人误读）。视口状态**跨实例保留**（布局恒定，视口有意义）。
+- 选中只影响：卡片 `data-selected` 属性 + 调用方的 `onSelect` 回调。**不**改变边相位、不改变出口、不写 store（N1 / N2）。
 
-### 9.2 状态位置
+### 9.2 键盘
 
-| 状态 | 位置 | 是否进投影 |
+| 按键 | 行为 | 范围 |
 |---|---|---|
-| `selectedNodeId: AgentNodeId \| null` | `ObservationPage` 本地 `useState` | 否（N4 / N9） |
+| `Tab` / `Shift+Tab` | 焦点在卡片间循环（DOM 顺序 = `cards` 数组顺序） | 全局默认行为，无需自定义 |
+| `Enter` / `Space` | 选中当前聚焦卡片（原生 `<button>` 行为） | 卡片元素 |
+| `Esc` | 清空选中，焦点留在视口容器 | 容器内 `keydown`，不注册全局快捷键 |
+| `Ctrl` / `⌘` + `+` / `-` | 缩放（同按钮） | 容器内 `keydown` + `preventDefault` |
+| `Ctrl` / `⌘` + `0` | 视口复位 | 同上 |
 
-不得放进 `GraphView`、不得进 `useProjections` 入参、不得进 store。
+卡片是原生 `<button type="button">`，`aria-pressed={selected}`，`aria-label` 由 `title` + `subtitle` 拼接（文案由调用方给，设施不拼 i18n 键）。焦点环用 `outline: 2px solid var(--ant-color-primary)` + `outline-offset: 2px`，缩放后仍在视野内（`outline` 随 `transform` 缩放，可接受）。
 
-最容易写错的一行代码（**禁止**）：
+### 9.3 头信息行（视口外，不随缩放）
+
+设施提供一条固定高度（`32px`）的头信息行，内容由调用方以 `header` 插槽传入（`ReactNode`），设施自身只放**缩放倍率 + 缩放按钮组**：
+
+| 项 | 归属 | 说明 |
+|---|---|---|
+| 缩放倍率 | 设施 | `×1.00` 形式，只读展示 |
+| 缩放按钮组 | 设施 | `+` / `-` / 复位，`aria-label` 走 i18n（`canvas.zoom_*`） |
+| 内容摘要（活动边 / 圈 / 出口等） | 调用方 | 通过 `header` 插槽传入；设施不读任何内容字段 |
+
+W1 示例页在 `header` 里放「示例内容 · 非真实数据」标记（§11.2）；W2 在 `header` 里放预设名、内置/只读标记与活动边摘要（W2 §8.1）。
+
+### 9.4 指针手势与焦点的冲突
+
+卡片上按下指针**不**开始平移（`pointerdown` 判断 `target.closest("[data-canvas-card]")`，命中即跳过）。拖拽平移期间设置 `cursor: grabbing`，且不改变选中——避免「拖了一下画布就换了选中」。
+
+---
+
+## 10 图例（设施编码）
+
+### 10.1 两组设施图例 + 调用方可追加组
+
+图例是画布的**固定部分**，放在视口下方（不随缩放、不随平移）。设施自带两组（相位、出口），其余组（卡片状态、证据等级等）由调用方通过 `groups` 追加：
 
 ```ts
-// 禁止：把 UI 状态传进投影
-projectTimeline(obs, selectedNodeId);
-projectGraph(obs, selectedNodeId);
+export type CanvasLegendItem =
+  | { kind: "edge"; phase: EdgePhase; label: string }
+  | { kind: "exit"; tone: ExitTone; label: string }
+  | { kind: "card"; tone: CardTone; label: string }
+  | { kind: "badge"; tone: BadgeTone; label: string };
+
+export interface CanvasLegendGroup {
+  id: string;
+  title: string;
+  items: readonly CanvasLegendItem[];
+}
+
+export interface CanvasLegendProps {
+  /** 设施两组（phase / exit）默认渲染；传 false 可关闭。 */
+  showFacilityGroups?: boolean;
+  /** 调用方追加的内容组，按数组顺序渲染。 */
+  groups?: readonly CanvasLegendGroup[];
+}
 ```
 
-理由：一旦入参带上 UI 状态，`schedule.ts` 的 `subscriber.projections` 缓存语义直接失效——同一个 `TurnObservation` 会对应多个投影结果，`observation !== subscriber.observation` 的失效判据不再成立。这是「wire / 投影不承载本地 UI 状态」在**函数签名层面**的落点，比 DTO 层更隐蔽。
+| 组 | 归属 | 条目 |
+|---|---|---|
+| 边相位 | 设施 | 四值（`untaken` / `idle` / `passed` / `active`） |
+| 出口 | 设施 | 三态（failed / cancelled / stopped） |
+| 卡片状态 / 证据等级 / 圈与分支 | 调用方（W2） | W2 §8 / §10 |
 
-### 9.3 交互规则
+### 10.2 图例必须复用同一份编码
 
-| 操作 | 结果 |
-|---|---|
-| 点击格子 | 选中该节点 |
-| 再次点击同一格子 | 取消选中 |
-| 点击另一格子 | 切换到该节点 |
-| 按 `Esc`（焦点在栅格内） | 取消选中 |
-| 切换观测实例 | **保留** `selectedNodeId`；若新实例不含该节点（不会发生，模板恒定）则忽略此规则 |
-| 选中态下数据变化 | 保留选中；格子状态更新但选中不变 |
+图例里的线样、角标、色调必须与画布上的元素**共用同一组 CSS 类**（`.canvas-edge[data-phase=...]`、`.canvas-card[data-tone=...]`、`.canvas-exit[data-exit=...]`），不得另写一套「图例专用样式」——否则改一处忘一处，图例与画布会分叉（K12）。
 
-### 9.4 键盘
+### 10.3 设施 i18n 键
 
-| 项 | 规则 |
-|---|---|
-| 元素 | 格子改为 `<button type="button">`（现状是纯 `div`，不可聚焦） |
-| 先例 | 同一 feature 内的实例列表已是原生 `<button type="button">` + CSS 重置（`.instanceItem`：`background: transparent; border: 1px solid transparent; color: inherit; text-align: left; cursor: pointer`）。照抄这套重置即可：**不需要** `role="button"`、**不需要**手写 `tabIndex`、**不需要** antd 基元 |
-| 重置要点 | `<button>` 不继承字体，必须显式 `font: inherit`；`.cell` 的 `display: grid` 已覆盖按钮默认布局，但 `text-align` 仍要写（否则格内文字居中）；`appearance: none` 视需要补 |
-| 内嵌限制 | `<button>` 内不得再嵌按钮或链接。出口角标必须用伪元素（§6.4），图例不得放进格子 |
-| Tab 顺序 | 等于 DOM 顺序，等于模板顺序（①→⑫）。不引入 roving tabindex（V1 12 个按钮可接受，W3 再评估） |
-| 激活 | `Enter` / `Space` 原生触发 `onClick` |
-| `Esc` | 绑在栅格容器的 `onKeyDown`（靠冒泡从聚焦格子收到），不注册全局 keymap（§3 软约束说明） |
-| 焦点环 | `:focus-visible` 用 `outline: 2px solid var(--ant-color-primary); outline-offset: 2px`，不得用 `outline: none` |
-| `aria-pressed` | 选中为 `true` |
+`src/i18n/locales/{zh-CN,en-US}.json` 需新增（两语言同步）：
 
-### 9.5 选中态视觉
+| 键 | 中文 | 英文 |
+|---|---|---|
+| `canvas.edge.untaken` | 未通行 | Not taken |
+| `canvas.edge.idle` | 待通行 | Idle |
+| `canvas.edge.passed` | 已通行 | Passed |
+| `canvas.edge.active` | 活动中 | Active |
+| `canvas.exit.failed` | 失败出口 | Failed exit |
+| `canvas.exit.cancelled` | 取消出口 | Cancelled exit |
+| `canvas.exit.stopped` | 收束出口 | Stopped exit |
+| `canvas.legend.edge_phase` | 边相位 | Edge phase |
+| `canvas.legend.exit` | 出口 | Exit |
+| `canvas.viewport` | 画布 | Canvas |
+| `canvas.zoom_in` | 放大 | Zoom in |
+| `canvas.zoom_out` | 缩小 | Zoom out |
+| `canvas.zoom_reset` | 复位视图 | Reset view |
+| `canvas.zoom_level` | 缩放 | Zoom |
 
-| 通道 | 值 |
-|---|---|
-| 外描边 | `outline: 2px solid var(--ant-color-primary)`（与 `:focus-visible` 同形，但常驻） |
-| 背景 | `--ant-color-primary-bg`（浅底，非纯色填充，保证文字对比度） |
-
-选中态**不得**改变状态编码（`data-state` 的边框线型与颜色、证据等级的边框样式必须原样保留）——选中是「你指了它一下」，不是「它的状态变了」。
-
-### 9.6 与时间线的关系
-
-V1 不联动（§1.2 第 4 条）。选中节点后不滚动时间线、不过滤时间线、不改变 InspectorPanel 内容。留待 OQ-3。
-
-这条是对早期设想的**明确收窄**：早期方案把「选中后 inspector 只显示该节点事实 + 新增 `observation.inspector.no_node_facts` 空态」列进 W1c。收窄的理由：
-
-| 理由 | 说明 |
-|---|---|
-| 需要新键 | 单节点空态不能用全局 `no_facts`（「该 turn 没有任何事实」≠「该节点没有事实」），必须新立键，属于新增文案面 |
-| 需要新的空态语义 | ①② `admit` / `prepare` 的 `detail` 恒为 `null`（I55 §4.4），不是「加载失败」。做过滤后，这两格的 inspector 会长期显示空态，需要区分「无 detail」与「无时间线事实」两种空 |
-| 与 V1 目标无关 | W1 的目标是「这一轮走到哪」在栅格上可读，选中只承担「指一下」的作用（§9.5）。过滤是 OQ-3 联动的一部分，应与滚动/高亮一起设计 |
-
-因此 W1c **不改 `InspectorPanel`**，也不新增 `observation.inspector.no_node_facts`。若将来做 OQ-3，上面两条是必须先解的前置。
+示例内容另有 `canvas.demo.*` 键（§11.1），W2 落地时随示例一并删除。
 
 ---
 
-## 10 图例
+## 11 示例内容（W1 自检用）
 
-### 10.1 位置与结构
+### 11.1 形状（`src/features/canvas/demo/demoContent.ts`）
 
-图例固定在栅格下方、与 `InspectorPanel` 同级的条带，`flex-wrap` 允许换行；**不可交互**（不做筛选、不做显隐开关），纯标注。
+| 项 | 值 |
+|---|---|
+| 布局条目 | 6 条，两行：`row 0` 列 0–3（4 张）；`row 1` 列 3–4（2 张） |
+| 卡片 | 6 张，id `demo-a` … `demo-f`；`title` 取 `canvas.demo.card.*`，`subtitle` 取 `canvas.demo.subtitle.*` |
+| 边 | 4 条：3 条 `horizontal`（同行相邻）+ 1 条 `vertical`（列 3 的上下两张）；四相各一（`untaken` / `idle` / `passed` / `active`） |
+| 出口 | 1 个，`demo-d` 带 `exit: "stopped"` |
+| 标签 | 1 个，第二行左侧留白处 `text` 取 `canvas.demo.lane`（`CanvasLabelView`） |
+| 图例 | 只用设施两组（不追加内容组） |
 
-结构：五个分组，每组「组标题 + 条目」。
+覆盖检查：两行布局覆盖 `y` 公式与跨行 route；3 + 1 条边覆盖三类 route 中的两类；四相各一覆盖 §7.1 四行；一个出口覆盖 §8.2；一个标签覆盖 `overlays` 层与 memo 边界。
 
-### 10.2 条目
+### 11.2 自检路由
 
-| 组 | 条目 | 视觉样本 |
-|---|---|---|
-| 节点状态 | 7 个 `observation.state.*` | 与格子同款 `data-state` 边框 |
-| 证据等级 | 3 个 `observation.source.*` + 其 `*_hint` **可见文字** | 与格子同款边框样式（实/虚/点），条目下方一行 11px 灰字说明 |
-| 边 | 已通行 / 活动边 / 待通行 / 未通行（4 条） | §7.1 的线型样本 |
-| 出口 | `observation.graph.exit` + 6 个终态 `status` 取值 | §8.3 的角括号 + 方块 |
-| 圈与工具分支 | `observation.graph.iteration`（带示例圈数）/ `observation.graph.tool_lane` | 行内标注同款 |
+| 项 | 值 |
+|---|---|
+| 文件 | `src/features/canvas/module.ts`（`FeatureModule`，只有 `routes`，无 `sidebar`） |
+| 路由 | `path: "/canvas-demo"`，`boundary: "画布设施自检"`，`visibility: "deepLinkOnly"` |
+| 页面 | `demo/CanvasDemoPage.tsx`：`CanvasViewport`（`cards` / `edges` / `labels` / `legendGroups` 来自 `demoContent`）+ `header` 里的「示例内容 · 非真实数据」标记 |
+| 装载 | `src/features/registry.ts` 在 `observationModule` 之后无条件 `await import("./canvas/module")`（示例不含数据依赖，无需编译期开关） |
+| 侧栏 | 无条目：`deepLinkOnly` 保证不出现在导航里，只能手输 URL 或开发期直开 |
+| 退场 | W2 删除 `demo/` 与 `module.ts`，并删除 `registry.ts` 的装载段（W2 §1.2 第 7 条） |
 
-两处条目数的收敛：
+### 11.3 为什么示例必须可整体删除
 
-| 项 | 现状/直觉 | 本规格 | 理由 |
+示例是**唯一**允许出现「写死内容」的地方；把它关在 `demo/` 一个目录里，W2 的验收就是「删除该目录后编译通过、测试通过、真实宿主工作」——这同时证明了设施没有偷偷依赖示例（K19 / K20）。
+
+---
+
+## 12 失效与动画
+
+### 12.1 三类失效，互不越界
+
+| 失效源 | 触发 | 重算什么 | 不得触发什么 |
 |---|---|---|---|
-| 证据 `*_hint` | 作为条目 `title`（悬停可见） | 直接渲染为可见文字 | 格子上的 `title` 在触屏与键盘下不可达（§12.4 已把它删掉）；若图例也只放 `title`，证据等级的解释就没有任何稳定可达的出口 |
-| 出口组的 status 数 | 7 个（含 `running`） | 6 个终态 | `running` 没有出口（§5.4 第 1 行），列进图例等于承诺一个不存在的样本（违反 K15） |
+| 内容失效 | 调用方换 `cards` / `edges` props（W2 由 `subscribeProjections` 驱动） | 卡片 / 边 / 标签的渲染 | 不得重建布局（布局是调用方常量）；设施不订阅 |
+| 视口失效 | 用户缩放 / 平移 | 世界层 `transform` | 不得重算内容、不得重新布局 |
+| 选中失效 | 用户点击 / 键盘 | 卡片 `data-selected` + `onSelect` 回调 | 不得重算内容、不得改相位 |
 
-图例必须顺带说明的三条「节点约定 → 视觉」事实（否则用户会按直觉误读）：
+三类失效各自的更新路径互不调用，这是「单一失效调度点」（N3）在画布上的展开：调度点只在内容层（`subscribeProjections`），视口与选中是纯本地视图状态。
 
-| 事实 | 图例里的落点 | 依据 |
-|---|---|---|
-| `waiting` **只可能**出现在 ⑤ `model` / ⑨ `pipeline` | 「节点状态」组 `waiting` 条目后加一句括注 | I55 §5.2 |
-| 圈数徽标只出现在 10 个迭代内节点；①② 永不带「第 0 圈」 | 「圈与工具分支」组的示例只画在迭代内节点样式的样本上 | I55 §5.4 第 1 条 |
-| ⑧–⑫ 的 `skipped` **恒为 `derived`**（由 ⑦ 的 `branch` detail 批量推导，后端从未下发该事实） | 「证据等级」组把 `derived` 的说明写成「由模板或 ⑦ 判定推导」，不要写成「后端未上报」 | I55 §4.6 + `deriveSkippedCells` 三道守卫 |
+### 12.2 布局在模块加载时算一次
 
-第 3 条尤其重要：如果图例把 `derived` 只解释成「缺数据时补的」，用户会以为后端漏发了 ⑧–⑫ 的 `skipped`，而那是设计上的推导结果。
+布局结果是**调用方常量**：示例在 `demoContent.ts` 模块作用域算一次；W2 在 `layoutPreset` 的模块作用域算一次。设施不缓存布局，任何失效都不得重算它。
 
-### 10.3 i18n 键
+### 12.3 帧合并
 
-新增 9 键（`zh-CN` / `en-US` 各一份）：
+事件流到画布的链路（W2 起）：Rust fact → `subscribeProjections`（合并）→ 内容映射 → 一次 React 提交。画布设施**不得**自己再订阅事件流（否则同一事实会有两条更新路径，出现「边闪一下」）。
 
-| 键 | zh-CN | en-US |
-|---|---|---|
-| `observation.legend.title` | 图例 | Legend |
-| `observation.legend.group.state` | 节点状态 | Node state |
-| `observation.legend.group.source` | 证据等级 | Evidence level |
-| `observation.legend.group.edge` | 边 | Edges |
-| `observation.legend.group.exit` | 出口 | Exit |
-| `observation.legend.group.lane` | 圈与工具分支 | Iteration and tool branch |
-| `observation.legend.edge.passed` | 已通行 | Traversed |
-| `observation.legend.edge.idle` | 待通行 | Upcoming |
-| `observation.legend.edge.untaken` | 未通行 | Not traversed |
+### 12.4 无时钟
 
-`untaken` 必须新立键，**不得复用** `observation.graph.unfinished`：后者是「turn 收尾时格子仍停在中间态」的格子徽标文案（值「未完成」），与「这条边不会通行」不是同一件事。复用会让图例与格子上出现同一个词、两种含义。
+画布内禁止 `setInterval` / `setTimeout` / `requestAnimationFrame` 驱动数据更新：
 
-复用既有键（不新增）：
+- 时长数字只显示「已记录的耗时」，不做逐秒累加（§1.3 D-6）；
+- 唯一允许的 `requestAnimationFrame` 用法是**输入合帧**（若滚轮缩放出现抖动，可把连续 wheel 事件合并到一帧再 `setState`），且不得用于动画推进；
+- CSS 动画（§7.3）由 `data-phase` 驱动，不是由 JS 计时驱动。
 
-| 用途 | 键 |
-|---|---|
-| 活动边 | `observation.graph.active_edge` |
-| 正向 / 回边 | `observation.graph.forward` / `observation.graph.loop` |
-| 出口 | `observation.graph.exit` |
-| 圈数 / 工具分支 | `observation.graph.iteration` / `observation.graph.tool_lane` |
-| 状态 / 证据 | `observation.state.*` / `observation.source.*` |
+### 12.5 memo 决策（条件已满足，必须执行）
 
-### 10.4 图例纪律
+分析文档 §12 记过一条：触发条件满足任一时必须重新评估 memo——「元素数 > 200」或「引入 hover / 拖拽这类每帧必变的本地状态」。视口拖拽正属后者，且元素数随内容线性增长（示例 6 卡片 + 4 边段 + 1 标签；W2 起 12 卡片 + 15 边段 + 1 标签），故**结论是必须 memo**：
 
-| 禁止 | 原因 |
-|---|---|
-| 图例条目点击切换显隐 | 会把图例变成控件，破坏「只读观测面」的一致性 |
-| 图例里出现未实现的条目 | 图例是承诺；条目必须与 §7 / §8 实际渲染一一对应（K15） |
-| 图例文案内联中文 | P12 |
+| 组件 | memo | 依赖的 props | 说明 |
+|---|---|---|---|
+| `CanvasCard` | 是 | `card`、`selected` | 选中变化只让 2 张卡片重渲染 |
+| `CanvasEdge` | 是 | `edge`、`from` / `to` 盒子引用 | 盒子引用来自调用方常量，稳定 |
+| `CanvasLabel` | 是 | `label` | 标签不变 |
+| `CanvasLegend` | 是 | `groups` | 挂载后不重渲染 |
+| `CanvasViewport` | 否 | — | 视口 state 的持有者，本来每帧要变 |
+
+memo 的前提是 props **引用稳定**：`cards` / `edges` 数组由调用方在模块加载或一次映射里构造（不得在渲染函数里新建），因此拖拽期间所有子组件的 props 比对都命中，只有世界层 `transform` 变化。
 
 ---
 
-## 11 失效与动画
+## 13 主题、文案与可达性
 
-### 11.1 三类失效
+### 13.1 颜色
 
-| 类 | 触发 | 重算范围 |
-|---|---|---|
-| 投影失效 | 观测数据变化（`subscribeProjections`） | `projectGraph` 全量（12 格 + 12 边 + 出口） |
-| 选中失效 | 点击 / Esc | 仅 12 个格子的 `data-selected` 与 `aria-pressed` |
-| 布局失效 | 窗口尺寸变化 | 纯 CSS，无 JS 参与（N7） |
-
-### 11.2 选中不触发投影
-
-`selectedNodeId` 在 `ObservationPage`，`useProjections` 的入参只有 `(conversationId, turnId)`，因此选中变化不进入调度链、不重算 `projectGraph`、不重建边元素。判据 K14。
-
-### 11.3 动画规则
-
-| 动画 | 触发条件 | 停止条件 |
-|---|---|---|
-| 活动边呼吸 | `data-phase="active"` | 该边相位不再为 `active`；实例终态时必然不再有 active 边 |
-| 进行中格子呼吸（现状已有） | `data-state="running"` | 状态离开 `running` |
-
-| 规则 | 内容 |
+| 用途 | 变量 |
 |---|---|
-| 只由状态驱动 | 用 `data-*` 属性 + CSS `animation`，禁止 JS `setInterval` / `setTimeout` 驱动 |
-| 无无限循环残留 | 终态实例不得有 `data-phase="active"` 的元素（活动边必然消失）；`data-state="running"` / `"waiting"` 的**未完成格子允许存在**，但动画必须停（见下方两条开关） |
-| 减少动效 | `@media (prefers-reduced-motion: reduce)` 下 `animation: none`，保留全部静态视觉编码 |
-| 不参与布局 | 动画只改 `opacity` / `box-shadow`，不改 `width` / `height` / `transform`（避免 1px 边抖动） |
+| 卡片背景 | `--ant-color-bg-container` |
+| 卡片边框 | `--ant-color-border` |
+| 主色（已通行 / 活动 / 焦点环） | `--ant-color-primary` |
+| 错误 | `--ant-color-error` |
+| 警告 | `--ant-color-warning` |
+| 弱化文字（标签 / `muted` 色调） | `--ant-color-text-tertiary` |
+| 次要文字（收束出口） | `--ant-color-text-secondary` |
 
-**两条独立的停止开关**（不能互相替代）：
+禁止 `var(--x, #fff)` 形式的 fallback（DESIGN §5.3）；禁止 `rgba()` 硬编码；禁止在 CSS 里写十六进制颜色。
 
-| 开关 | 触发 | 落点 |
-|---|---|---|
-| 用户偏好 | `@media (prefers-reduced-motion: reduce)` | 全部动画 `animation: none`；静态编码（线型 / 线宽 / 形状 / 文字）完整保留 |
-| turn 生命周期 | 实例进入终态 | 进行中格子的呼吸必须停 |
+### 13.2 文案
 
-第二条有一个现状陷阱：**终态时格子可能仍是 `data-state="running"` / `"waiting"`**——`NodeCell` 的 `terminal && node.unfinished` 会加「未完成」徽标，但 `data-state` 保持原值（I55 §6.1 收尾规则：不臆造终态）。因此「终态无动画」**不能**靠「终态没有 running 格子」实现，必须把 `terminal` 落到 DOM（如 `data-terminal="true"`）并在 CSS 里停掉呼吸：
+- 设施自身的键（缩放 / 图例标题 / 相位名 / 出口名）全部走 `t()`，键见 §10.3；
+- 卡片文案由调用方传入（`title` / `subtitle` / `badges[].text`），设施不调用任何内容 i18n 键；
+- 中英双语同步提交：现有 `localeParity.test.ts` 只覆盖 storage 子树，其余键靠人工核对（新增键必须两边同时加）。
 
-```css
-.cell[data-state="running"][data-terminal="true"],
-.cell[data-state="waiting"][data-terminal="true"] { animation: none; }
-```
-
-现状：`NodeCell` 已收 `terminal` prop，但只用于徽标，**没有输出到 DOM**；`observation.module.css` **没有任何** `prefers-reduced-motion` 规则（全项目只有 `settings.css` 两处）。两处都要在 W1b 补上，否则终态实例会一直呼吸（K18 / K19）。
-
-**已考虑并拒绝：`aria-live`**
-
-观测数据随事件流高频更新，给栅格或格子加 `aria-live` 会让读屏每帧播报一次。V1 不加任何 live region，改为「用户主动选中后用 `aria-label` 读取该格摘要」（§12.4）。这条是拒绝，不是遗漏。
-
-### 11.4 时长文案修正
-
-现状 `observation.graph.no_percent` = 「V1 只显示状态，不显示百分比」，但栅格并不显示任何时长，该文案与实现不符。改为：
-
-| 键 | 新值（zh-CN） | 新值（en-US） |
-|---|---|---|
-| `observation.graph.no_percent` | 耗时按事件刷新，不逐秒跳动 | Duration updates on events, not per second |
-
-理由：`nowMs` 取自已观测事件的最大 `atMs`（`projections/graph.ts` 的 `observedNowMs`），只有新事件到达才前进；这正是「不逐秒跳动」的事实，比「不显示百分比」更准确。
-
-**已考虑并拒绝：让时长真正跳动**
-
-| 方案 | 做法 | 拒绝理由 |
-|---|---|---|
-| running-only tick | `useEffect` + `setInterval(1000)`，只在 `status === "running"` 时跑，把 tick 值传给 `NodeCell` 覆盖 `nowMs` | 破坏投影纯函数：`nowMs` 变成外部注入，`GraphView` 不再是 `TurnObservation` 的纯函数（P4） |
-| tick 放进调度层 | `schedule.ts` 加 `tickNow()`，复用同帧合并与订阅者集合 | 投影变成「依赖时钟」，`subscriber.projections` 的缓存语义改变，等于给失效模型加第二个源 |
-
-两个方案都把时间源引进投影层。V1 接受「数字只在事件到达时跳变」，并把感知落差交给文案说明：活动边脉冲负责表达「活着」，数字只负责「不误导」。
-
-### 11.5 不引入 memo（有意取舍）
-
-现状链路：`TurnObservation` 引用变化 → `scheduleFlush` → `flushPending` → 三投影**全量重算**（全部新建对象）→ `listener(setProjections)` → `ObservationPage` 整页 re-render。从投影到 DOM **没有任何 memo 边界**。
-
-| 项 | 结论 |
-|---|---|
-| 规模 | 12 格 + 12 条边（14 个元素）+ 12 个 `button` ≈ 60–70 个 DOM 节点；60fps 全量重渲染可忽略 |
-| 代价 | 加 `React.memo` 要同时维持「稳定回调 + `nodes` 数组引用 + 边数组引用」三层，这三层恰好是引用泄漏与策略漂移的高发区 |
-| 定案 | **有意不加**。触发条件（满足任一即重新评估）：格子数 × 元素数 > 200；或引入 hover / 拖拽这类**每帧必变**的本地状态 |
-| 副作用（已知） | 任一格子状态变化都会让 `timeline` 数组身份变化，`InspectorPanel` 整条时间线全量重渲染，哪怕新事件与当前可见事实无关。12 格规模下接受 |
-
-### 11.6 已知冗余（不是缺陷）
-
-`useProjections` 的 effect 内先 `setProjections(readProjections(...))`，再 `subscribeProjections(...)`，而后者内部会**立即**用同一份投影回调一次。两次都在同一 effect 的同步体内，React 18 自动批处理，**只渲染一次**；但切换实例时必然多算一次三投影。规模无影响，登记为「已知冗余、仅切换时发生、可接受」，不按性能问题处理。
-
----
-
-## 12 主题 / i18n / 可访问性
-
-### 12.1 颜色
-
-| 规则 | 内容 |
-|---|---|
-| 唯一来源 | 全部 `var(--ant-*)`；`observation.module.css` 不得出现 `#xxxxxx` / `rgba(` / `hsl(` |
-| 禁止 fallback | 不得写 `var(--ant-x, #fff)`（DESIGN §5.3）；也不得自造变量名 + 硬编码兜底（如 `var(--radius-md, 8px)`），问题等价 |
-| 本规格用到的 token | 颜色：`--ant-color-primary` / `-primary-bg` / `-text-tertiary` / `-text-quaternary` / `-border` / `-border-secondary` / `-bg-container` / `-bg-layout` / `-error` / `-error-bg` / `-warning` / `-warning-bg` / `-success` / `-success-bg`；圆角：`--ant-border-radius` |
-| 不自造色名 | 不新增 `--canvas-color-*` 之类；`--canvas-*` 只承载尺寸与布局（§6.6） |
-
-### 12.2 尺寸与圆角
-
-见 §6.6。要点复述：`--canvas-*` 进 `global.css` `:root`；删除 `--radius-md` 的硬编码兜底。
-
-### 12.3 i18n 完整性
+### 13.3 可达性
 
 | 项 | 要求 |
 |---|---|
-| 新增键 | 9 个 `observation.legend.*` + 1 个改写值（`observation.graph.no_percent`），`zh-CN` / `en-US` 必须同时存在 |
-| 参数占位 | 复用 `graph.iteration` 的 `{{iteration}}`，图例示例固定传 `2` |
-| 禁止 | 组件内出现任何中文字面量（含 `title` / `aria-label`） |
+| 卡片 | 原生 `<button>`，`Tab` 可达，`aria-pressed` 表达选中 |
+| 视口 | `role="group"` + `aria-label`（`canvas.viewport`），不是 `role="application"`（避免吞掉读屏器快捷键） |
+| 缩放按钮 | 有 `aria-label`，不使用纯符号 |
+| 非颜色编码 | 四相靠线型 + 线宽区分（§7.1） |
+| 减少动效 | `prefers-reduced-motion` 分支保留活动态语义（§7.3） |
+| 焦点可见 | `outline` 2px，缩放后不隐藏 |
 
-### 12.4 可访问性
+### 13.4 性能预算
 
-| 项 | 要求 |
+| 指标 | 目标 |
 |---|---|
-| 栅格容器 | `role="group"` + `aria-label={t("observation.title")}` |
-| 格子元素 | `<button type="button">` + `aria-pressed={selected}` |
-| 格子 `aria-label` 拼接 | `<节点名>` + （`node.iteration > 0` 时）`· ` + `t("observation.graph.iteration", { iteration })` + `· <状态名>` + （带出口时）`· ` + `t("observation.graph.exit")` + ` ` + `<status 名>`；分隔符统一为 ` · `，与可见文字一致；不新增键 |
-| 证据提示 | 从 `title` 迁到图例的 `*_hint`（`title` 在触屏与键盘下都不可达，图例是稳定出口）；格子不再挂 `title` |
-| 对比度 | 所有前景色取 antd 语义 token，不叠加降低对比度的 `opacity`（与 N6 同一处理） |
-| 焦点 | `:focus-visible` 可见；Tab 顺序 = 模板顺序 |
-| 非颜色通道 | 状态靠边框线型 + 文字，边靠线型 + 线宽，出口靠形状 + 位置 |
-| 图例 | 纯展示、`aria-hidden` 不需要——它承载 `*_hint` 文本，必须对读屏可见；因此不得整体 `aria-hidden` |
-| `aria-live` | **不加**。高频事件流会让读屏每帧播报；读取改由用户主动选中触发（§11.3 末段） |
+| 拖拽期间单帧工作 | 1 次 `setState` + 1 次 `transform` 写入 + 子组件 memo 比对 |
+| 内容重算 | 每次 props 变化最多 1 次（内容层帧合并保证） |
+| 内存中常驻布局 | 1 份（调用方常量） |
+| 元素数 | 随内容线性增长，设施不设上限、不补占位 |
 
 ---
 
-## 13 实施拆分（四刀）
+## 14 实施顺序（四刀，可独立验收）
 
-四刀按依赖顺序，每刀可独立合入、独立验收。
+每刀都以「能单独跑通测试 / 能单独看到结果」为边界；顺序不可倒置（后一刀依赖前一刀的类型）。
 
-| 刀 | 范围 | 内容 | 判据 | 依赖 |
-|---|---|---|---|---|
-| W1a | 投影 | `TEMPLATE_EDGES`、`GraphEdgeView.phase`、`GraphView.edges` / `activeEdge` 改引用、`GraphExitView` + 出口判定；删 `templatePredecessor`；扩 `projections.test.ts` | K2 / K3 / K4 / K5 / K8 | — |
-| W1b | 几何与边渲染 | 3 行网格 + 外轨；`CanvasEdge` 子组件按 §6.2 / §6.3 推导放置；`--canvas-*` 变量；删 `opacity` 与 `--radius-md` 兜底 | K1 / K6 / K7 / K9 / K10 / K11 | W1a |
-| W1c | 选择与出口 | `NodeCell` 改 `button` + 选中态 + 出口角标；`ObservationPage` 持 `selectedNodeId`；`GraphCanvas` 透传 `selectedNodeId` / `onSelect` / `exit`；Esc + `aria-label` | K12 / K13 / K14 | W1b |
-| W1d | 图例与文案 | 新增 `LegendPanel.tsx`；9 键 × 2 语言；改 `no_percent` 文案 | K15 / K16 | —（可与 W1b 并行） |
+### 刀 1：纯函数（无 UI）
 
-### 13.1 W1a 细则
-
-| 步骤 | 文件 | 动作 |
+| 产出 | 文件 | 验收 |
 |---|---|---|
-| a1 | `template.ts` | 新增 `TemplateEdgeKind` / `TemplateEdge` / `TEMPLATE_EDGES`（12 条，编译期常量，`satisfies readonly TemplateEdge[]`） |
-| a2 | `projections/graph.ts` | 删 `templatePredecessor`；`activeEdgeOf` 改为返回 `edges` 中的引用；新增 `edgePhaseOf` / `exitOf`；`projectGraph` 产出 `edges` / `activeEdge` / `exit` |
-| a3 | `projections.test.ts` | 新增：边数恒 12、`active` 至多 1 且与 `activeEdge` 同引用、相位表驱动（5 行 + 4 行）、出口 7 行表驱动 |
-| a4 | `GraphCanvas.tsx` | 不改（仍只用 `activeEdge`）——W1a 单独合入后页面行为不变，可先验证投影无回归 |
+| `CanvasBox` / 视图模型类型 | `src/features/canvas/types.ts` | K24（类型不含观测字段） |
+| `layoutTemplate` + `CANVAS_METRICS` | `src/features/canvas/layout.ts` | K1 / K2 / K3 / K21 |
+| `anchorOf` / `edgeGeometryOf` | `src/features/canvas/geometry.ts` | K4 / K5 |
+| `screenToWorld` / `worldToScreen` / `zoomAt` / `panBy` | `src/features/canvas/viewport.ts` | K22 |
 
-### 13.2 W1b 细则
+这一刀不碰 React，`vitest` 全绿即可交付。
 
-| 步骤 | 文件 | 动作 |
+### 刀 2：视口容器
+
+| 产出 | 文件 | 验收 |
 |---|---|---|
-| b1 | `GraphCanvas.tsx` | 栅格从「12 格自动流」改为显式放置；新增 `CanvasEdge`（`kind` + 两端 `row/column` → 内联 `gridColumn` / `gridRow`）；回边渲染三段；边全部来自 `edges`；删 `activeSource` / `activeTarget` 传参；`TOOL_LANE_LABEL_COLUMNS` 改由模板推导；**行内标注 `gridRow` 由 `2` 改为 `3`**（加入外轨后 `row 1` 是第 3 行，不改会盖住 `row 0` 的格子） |
-| b2 | `NodeCell.tsx` | 自放置 `gridRow` 由 `node.row + 1` 改为 `node.row + 2`；删 `activeSource` / `activeTarget` 两个 prop 与两个 `data-*` 属性；把已有的 `terminal` prop 输出为 `data-terminal`（供 §11.3 的终态停动画用） |
-| b3 | `observation.module.css` | 新增 `.edge` / `.edgeForward` / `.edgeCross` / `.loopSeg*` / `[data-phase]` 样式；删格子两处 `opacity`；`pending` 文字色 `quaternary` → `tertiary`；删 `data-active-source` / `data-active-target` 选择器；3 处 `var(--radius-md, 8px)` → `var(--ant-border-radius)`；`.cell` 增 `position: relative`；新增 `[data-state="running"][data-terminal="true"] { animation: none }` 与 `@media (prefers-reduced-motion: reduce)` 规则 |
-| b4 | `global.css` | `:root` 新增 5 个 `--canvas-*` |
-| b5 | `docs/DESIGN.md` | §5.2 前缀表增补 `--canvas-` 一行 |
-| b6 | 结构检查 | 边元素数 = 14（10 同行 + 1 跨行 + 3 回边段），与 `edges.length` 一致（K6） |
+| 三层结构 + `transform` + 头信息行（缩放部分） | `src/features/canvas/CanvasViewport.tsx` | K6 / K7 / K8 |
+| 画布样式与变量 | `src/features/canvas/canvas.module.css`、`src/assets/styles/global.css` | K23 |
+| 缩放 / 平移 / 复位 / 键盘 | 同上 | K7 / K8 |
 
-### 13.3 W1c 细则
+### 刀 3：卡片、边、出口 + 示例内容
 
-| 步骤 | 文件 | 动作 |
+| 产出 | 文件 | 验收 |
 |---|---|---|
-| c1 | `NodeCell.tsx` | `div` → `button type="button"`；保留 `data-state` / `data-source`；新增 `data-selected` / `data-exit`；`onClick`；`aria-pressed`；`aria-label`（节点名 · 状态名 [+ 出口状态]）；删 `title`（证据提示迁到图例） |
-| c2 | `ObservationPage.tsx` | 新增 `selectedNodeId` 与 `toggleSelect`；传给 `GraphCanvas`；切换实例时**不清空**（§9.3） |
-| c3 | `GraphCanvas.tsx` | 透传 `selectedNodeId` / `onSelect` / `exit`；容器 `role="group"` + `aria-label` + `onKeyDown`（Esc） |
-| c4 | `observation.module.css` | `[data-selected="true"]` 样式（outline + `--ant-color-primary-bg`）；`:focus-visible`；出口伪元素样式（`position: absolute`） |
-| c5 | `NodeCell.tsx` 补充 | `button` 需 `appearance: none` 级别的重置：`.cell` 已有 `border` / `background` / `padding`，但要补 `font: inherit`、`color: inherit`、`text-align: start`、`cursor: pointer`，避免浏览器默认按钮样式污染状态编码 |
-| c6 | `ObservationPage.tsx` / `GraphCanvas.tsx` | 抽出 `STATUS_LEVEL`（§8.3），`statusColor()` 与 `STATUS_TAG_COLOR` 改为从它派生；出口色由档位映射 |
-| c7 | `InspectorPanel.tsx` | **不改**（§9.6）。不新增 `observation.inspector.no_node_facts`，不做选中过滤 |
+| 卡片壳 + 选中 + 出口角标 | `src/features/canvas/CanvasCard.tsx` | K11 / K12 / K17 |
+| 边渲染器（三类 route + 四相 + 动画） | `src/features/canvas/CanvasEdge.tsx` | K9 / K10 / K18 |
+| 标签 | `src/features/canvas/CanvasLabel.tsx` | K19 |
+| 示例内容 + 自检页 + 路由装载 | `demo/demoContent.ts` / `demo/CanvasDemoPage.tsx` / `module.ts` / `registry.ts` | K19 / K20 / K25 |
 
-### 13.4 W1d 细则
+### 刀 4：图例与文案
 
-| 步骤 | 文件 | 动作 |
+| 产出 | 文件 | 验收 |
 |---|---|---|
-| d1 | `features/observation/LegendPanel.tsx` | 新增；五组；纯展示；不接任何交互 |
-| d2 | `ObservationPage.tsx` | 在 `GraphCanvas` 之后挂载 `LegendPanel` |
-| d3 | `i18n/locales/{zh-CN,en-US}.json` | 9 个 `observation.legend.*` 新键 + 改写 `observation.graph.no_percent` |
+| 设施两组图例 + 追加组通道 | `src/features/canvas/CanvasLegend.tsx` | K12 / K16 |
+| 设施 14 个键 + 示例键 + 双语 | `src/i18n/locales/*.json` | K15 |
+
+依赖关系：刀 2 需要刀 1 的类型；刀 3 需要刀 2 的视口与布局；刀 4 需要刀 3 的样式类。刀 1 可与刀 2 并行（不同文件）。
 
 ---
 
-## 14 验收判据
+## 15 验收判据
 
-### 14.1 验收分型（测试设施的现实约束）
+> 编号说明：本节 K1–K25 是本规格**自有编号**，与分析文档的 K1–K15（命题级验收）不同，引用时须带「本规格」字样。
 
-| 事实 | 内容 |
+### 15.1 自动化（`vitest`）
+
+| # | 判据 | 断言方式 |
+|---|---|---|
+| K1 | `layoutTemplate` 按 §5.5 公式产出盒子；世界宽高正确 | 表驱动 + 公式比对 |
+| K2 | 布局幂等：同一输入两次调用深相等 | 深比较 |
+| K3 | 布局源码不含 `getBoundingClientRect` / `offsetWidth` / `clientWidth` / `ResizeObserver` | 源码扫描 |
+| K4 | 三类 route 的线段数与坐标符合 §6.4 | 表驱动 |
+| K5 | 边端点落在盒子边框（误差 ≤ 0.5px），不越入盒内 | 数值断言 |
+| K6 | 视口只改世界层 `transform`，卡片/边元素无 `translate` / `scale` | 源码扫描 + 渲染快照 |
+| K7 | `screenToWorld` / `worldToScreen` 互逆（含 `scale = 0.5` / `2`） | 属性测试 |
+| K8 | 缩放锚点公式：锚点下世界坐标在缩放前后不变（误差 ≤ 0.5px） | 数值断言 |
+| K9 | 四相在 `data-phase` 四值下样式互不相同（线型 / 线宽至少一项不同） | 快照比对 |
+| K10 | `active` 有动画、无 `active` 边时无动画 | 快照 + `animation` 字段断言 |
+| K21 | `layoutTemplate` 的 `id` 参数为 `string`；传 `demo-a` 与传任意 id 结果一致 | 类型 + 单测 |
+| K22 | `CanvasCardView` / `CanvasEdgeView` 的 `keyof` 不含观测字段（`state` / `source` / `order` / `iteration`） | 类型断言 |
+| K23 | `CANVAS_METRICS` 与 `global.css` 中 `--canvas-*` 数值一致 | 读 CSS 文本正则比对（不测 DOM） |
+| K24 | `src/features/canvas/`（`demo/` 之外）不含 `AgentNodeId` / `GraphView` / `TurnObservationStatus` / `@/stores/agent` / `@/features/observation` | 源码扫描 |
+| K25 | `demo/` 内不含任何观测 id（`admit` / `prepare` / `branch` …）与观测类型名 | 源码扫描 |
+
+### 15.2 人工（走查，打开 `/canvas-demo`）
+
+| # | 判据 |
 |---|---|
-| 测试环境 | `vitest.config.ts` 的 `include: src/**/*.test.{ts,tsx}`、`setupFiles: src/testSetup.ts`，**没有** `environment: 'jsdom'` |
-| `testSetup.ts` | 只把 `window` mock 成 `{}`，**无 DOM** |
-| 依赖 | `package.json` 无 `@testing-library/react`、无 jsdom、无 happy-dom |
-| 既有决定 | I48 §12 第 7 条已明确「不为此引入 jsdom / testing-library 依赖」，并把组件级时序降级为人工清单（§9.3）；I43 §9 同样把 DOM 渲染类条目列为手工验收 |
-| 禁止 | **不得**为 W1 引入 jsdom / RTL / happy-dom |
-
-因此验收分两型，判据表「方式」列已按此标注：
-
-| 型 | 刀 | 可验证内容 |
-|---|---|---|
-| 自动化（vitest 纯函数） | W1a | `TEMPLATE_EDGES` 一致性、`activeEdge` 同引用、`edgePhaseOf` 四态、`exitOf` 各 status |
-| 人工（人眼 + code review） | W1b / W1c / W1d | 边元素位置、回边不穿格、出口不撞 ⑦→⑧ 边、选中环与焦点环叠加、暗色三档对比度、reduced-motion 降级、Tab 序、读屏摘要 |
-
-| # | 判据 | 方式 |
-|---|---|---|
-| K1 | 无观测数据时仍渲染 12 格，全部 `pending` + `derived` | 现有 vitest 断言保留 |
-| K2 | `TEMPLATE_EDGES` 恒 12 条：11 条正向覆盖 `order` 1..11，1 条回边 `after-iteration → admit`；几何分类为 10 同行 + 1 跨行 + 1 回边 | vitest |
-| K3 | `edges` 中 `phase === "active"` 恰 0 或 1 条，且 `activeEdge === 该元素`（引用相等） | vitest |
-| K4 | 出口判定 7 行表驱动全覆盖（§5.4 的 5 个场景 + 唯一 + 无出口） | vitest |
-| K5 | `status === "running"` 时 `exit === null`；6 个终态各有出口 | vitest |
-| K6 | 栅格内边元素数 = 14；无「只渲染 activeEdge」的旧路径残留 | 代码审查 + 结构检查 |
-| K7 | 回边三段同相位、可见段位于顶部外轨、横段带唯一左向箭头 | 人工（截图比对） |
-| K8 | `GraphEdgeView` 无 `id` / `handle` / `label`；`exit` 不在 `edges` 中 | typecheck + 代码审查 |
-| K9 | `src/features/observation/` 无 `getBoundingClientRect` / `offsetWidth` / `clientWidth` / `ResizeObserver` | `rg` 检查为空 |
-| K10 | `observation.module.css` 无 `#` / `rgba(` / `hsl(` | `rg` 检查为空 |
-| K11 | 无 `var(--ant-*, <兜底>)`；无 `var(--radius-md, …)`；格子规则无 `opacity` | `rg` 检查为空 |
-| K12 | 12 个格子均为 `button` 且带 `aria-pressed` / `aria-label` | 代码审查 + 键盘实测 |
-| K13 | Tab 顺序为 ①→⑫；`Esc` 取消选中；焦点环可见 | 键盘实测 |
-| K14 | 选中变化不触发 `projectGraph` 重算；`selectedNodeId` 不在 `GraphView` | 代码审查（入参核对） |
-| K15 | 图例五组齐全，条目与 §7 / §8 实际渲染一一对应 | 人工比对 |
-| K16 | `zh-CN` / `en-US` 键集合完全一致，无缺键 | diff 两份 locale 的 `observation.legend.*` |
-| K17 | `npm run typecheck`、`npm run lint`、`npm run test` 全绿 | 命令 |
-| K18 | `prefers-reduced-motion: reduce` 下无任何动画，且静态编码（线型 / 线宽 / 形状 / 文字）完整保留 | 系统设置实测 |
-| K19 | 终态实例（6 种）页面上不存在 `data-phase="active"` 元素；**允许** `data-state="running"` / `"waiting"` 的未完成格子存在，但它们必须带 `data-terminal="true"` 且动画已停 | 代码审查 + 实测 |
-| K20 | `pending` 格子文字色为 `tertiary`；`--ant-color-error` 只出现在 `state === "error"` 与 `status === "failed"` | `rg` 检查 + 人工比对 |
+| K11 | 无卡片使用 `opacity < 1`；无 `var(--x, fallback)` |
+| K12 | 五类元素（卡片 / 边 / 标签 / 出口角标 / 图例）与图例共用同一 CSS 类；改一处即两处变 |
+| K13 | `features/canvas/` 无 store 写入、无 `invoke`、无事件订阅 |
+| K14 | 选中任意卡片后，内容数据、边相位、出口均不变（N2）；视口/选中不进任何 DTO |
+| K15 | 设施图例两组齐全，中英切换无缺失 |
+| K16 | 图例线样与画布元素完全一致 |
+| K17 | 出口角标不进入 `Tab` 序列 |
+| K18 | 缩放 0.5 / 1 / 2 下四相仍可区分；`active` 动画在 `prefers-reduced-motion` 下改为虚线描边 |
+| K19 | 示例页显示「示例内容 · 非真实数据」标记；删除 `demo/` 后其余代码编译通过 |
+| K20 | 删除 `demo/` 与 `module.ts` 后，`registry.ts` 去掉装载段即可编译，无残留引用 |
+| K26 | 无活动边时页面零动画（DevTools Animations 面板为空） |
+| K27 | 拖拽平移不改变选中；拖拽期间内容不重算（React DevTools 提交次数） |
+| K28 | 缩放/平移后重挂载视口保留、选中清空 |
 
 ---
 
-## 15 已拒绝方案
+## 16 已拒绝的方案
 
 | # | 方案 | 拒绝理由 |
 |---|---|---|
-| D-1 | 出口悬空短桩置于格外 | 见 §1.3 D-1 |
-| D-2 | 回边走行间隙 | 见 §1.3 D-2 |
-| D-3 | 端口桩表达「可接」 | 观测面不可接，桩暗示可连线（§1.3 D-3） |
-| D-4 | 百分比进度 | 无时钟源，必然伪造（§1.3 D-4） |
-| D-5 | SVG / Canvas 画边 | 第二套坐标系与主题体系（§1.3 D-5） |
-| D-6 | `ResizeObserver` 自动缩放列宽 | 违反 N7（§1.3 D-6） |
-| D-7 | 选中「节点 × 圈」 | 同屏只有一个圈，自由度无意义（§1.3 D-7） |
-| D-8 | 卡片 / 标记两级缩放形态 | V1 只做格子；另两级为反原语（§2.6） |
-| D-9 | 图例做显隐开关 | 把只读标注变成控件（§10.4） |
-| D-10 | 用 `opacity` 表达证据等级 | 会透出下层边线，与 N6 冲突（§6.5） |
-| D-11 | 边加 `z-index` 覆盖格子 | 边会横穿文字（§6.8） |
-| D-12 | 全局注册 `Esc` 快捷键 | 只需容器内响应；全局注册会与弹窗/输入框的 Esc 冲突（§3 软约束） |
-| D-13 | 让耗时数字真正逐秒跳动 | 需给投影注入时钟源，破坏 `GraphView` 的纯函数性（§11.4） |
-| D-14 | 选中后过滤 InspectorPanel + 新增 `observation.inspector.no_node_facts` | 属 OQ-3 联动，V1 不做；需新键与新空态语义（§9.6） |
-| D-15 | 给 `NodeCell` / `CanvasEdge` 加 `React.memo` | 12 格规模下全量重渲染可忽略，memo 引入三层引用维持成本（§11.5） |
-| D-16 | 栅格加 `aria-live` 播报更新 | 高频事件流会让读屏每帧播报（§11.3、§12.4） |
-| D-17 | evicted 实例也渲染栅格（靠画布自行判断） | `summarize()` 已清空 `cells`，投影恒输出全 pending，画布无法区分摘要态与真全 pending（§8.5） |
+| R1 | 继续用 CSS Grid 摆格子（现状 `GraphCanvas`） | 无坐标系、无法缩放平移；且「观测栅格」不是本规格交付物（§1.3 D-2） |
+| R2 | 引入 reactflow / d3 / dagre | 自带坐标系与测量，会与本规格的 `layoutTemplate` 形成两套几何（N7） |
+| R3 | 用 SVG 画边 | 引入 `viewBox` 第二套尺寸体系；直线边用绝对定位 div 足够 |
+| R4 | `ResizeObserver` 自动缩放列宽 / 自动 fit | 需测量，违反 N7（§1.2 第 9 条） |
+| R5 | 视口用 ref + 命令式写 DOM（绕过 React） | 会与「状态驱动」冲突；改为 state + memo 子组件（§12.5） |
+| R6 | 卡片/边用 `opacity` 表达弱化 | 压暗文字、降低对比度（N6）；改用线型与线宽 |
+| R7 | 出口画成第 13 张卡片 | 出口是汇点不是卡片；会污染边集与焦点序列（N8） |
+| R8 | 每帧 `setState` 之外再订阅事件流 | 同一事实两条更新路径（§12.3） |
+| R9 | 前端手写全局快捷键 | 生成源在 Rust，手改会被 `contract:verify` 拦下（§3） |
+| R10 | 用 `zoom` 属性或百分比尺寸做缩放 | 会改变布局盒尺寸，破坏「世界坐标恒定」（§6.7） |
+| R11 | **把观测的 12 个节点当 W1 示例内容** | 示例即真实内容：W2 换内容要重写示例与测试（重蹈覆辙）；卡片数 12 会被写进设施验收，模板一变就红；示例 import 观测模块会反转依赖方向（§1.7 / K24） |
+| R12 | W1 不提供任何示例，只交纯函数与空画布 | 视口、memo、动画、焦点环、出口角标都无法走查；W1 的「设施可用」没有证据（§1.7） |
+| R13 | 示例内容放在 `src/features/observation/` 里 | 示例会被读成真实内容的一部分，且 W2 无法「整体删除」（§11.3） |
 
 ---
 
-## 16 未决问题
+## 17 未决问题
 
-| # | 问题 | 现状 | 去向 |
+| # | 问题 | 影响 | 建议 |
 |---|---|---|---|
-| OQ-1 | ① 在第一圈运行时没有活动边（前驱为空） | 已知缺口，`activeEdge === null`；画面表现为「无活动边」而非错误 | 接受。若要补，需引入「turn 起点」伪节点，会破坏「出口不是节点」的对称性 |
-| OQ-2 | 多实例并排对比 | 现为单实例 + 实例列表 | 后续规格 |
-| OQ-3 | 时间线 ↔ 格子联动 | V1 不做（§9.6） | 后续规格 |
-| OQ-4 | 12 个按钮进 Tab 序是否过重 | V1 接受 | W3 评估 roving tabindex |
-| OQ-5 | 出口多候选并列展示（如 `stopped` 三个候选都 `finished`） | V1 只标一个（最后到达者） | 若出现歧义诉求，再议 |
-| OQ-6 | 极窄窗口下的横向滚动体验 | 接受滚动条（§6.7） | 视使用反馈 |
-| OQ-7 | 暗色主题下 `warning` / `success` / `text-tertiary` 三档出口色的实际对比度 | 三档取 antd 语义 token，理论上达标；但 `warning` 与中性灰在暗底上的区分度未实测 | W1d 完成后用 `[data-theme="dark"]` 实测；不达标则改用形状/文字后缀区分，不引入新色值 |
+| OQ-1 | 示例内容是否允许进生产包（`deepLinkOnly` 路由仍在产物里） | 产物多一个懒加载 chunk 与示例文案键 | W1 接受（仅 deep-link，无侧栏入口）；W2 删除后归零 |
+| OQ-2 | 多实例 / 多内容层是否要并排对比 | 会影响画布是否引入「分屏视口」 | 另立规格；W1 单内容层 |
+| OQ-3 | 时间线与卡片联动高亮 | 需要跨面板 hover 与双向选中 | 暂不做；若做，需定义「悬停是否算选中」 |
+| OQ-4 | `Tab` 走全部卡片是否太长（W2 起 12 张） | 可达性体验 | 可考虑 roving tabindex（方向键移动），但会增加自定义键盘逻辑；先按原生 `Tab` |
+| OQ-5 | 示例形状是否够覆盖设施 | 走查充分性 | 6 卡片 + 两行 + 三类 route中的两类 + 四相 + 出口；若走查发现缺口，只加示例条目，不改设施 |
+| OQ-6 | 编辑模式（拖拽 / 连线 / 参数表单）何时立项 | 决定本规格的坐标模型是否够用 | 需要 L2 数据模型（`WorkflowNode` / 参数 schema / 交接类别）先定案；本规格已按盒子建坐标，预计可直接接 |
+| OQ-7 | 暗色主题下四相与出口三态的对比度 | 可读性 | 走查时用 DESIGN §5 的暗色变量实测；不足则调整线宽而非加透明度 |
+| OQ-8 | 是否允许「交互中测量」做 fit-to-view | 与 N7 的边界 | N7 约束几何来源，不约束交互；若将来做 fit，只能在按钮处理器里读一次容器尺寸，不得进入布局函数 |
+| OQ-9 | 内容是否应收进「容器卡片」（子图），而非平铺 | 若收，则画布变成嵌套结构，`layoutTemplate` 需算内外两层盒子，选中与焦点语义也要分层 | W1 按平铺（词表把容器卡片标为「先占名、未立项」）；若 L2 立项后要收，按 §6 的盒子模型扩一层即可，不改数据形状 |
 
 ---
 
-## 17 实施偏差记录
+## 18 偏差记录（实施时回填）
 
-实现期间若与上述任一硬约束或判据发生偏离，在此登记；无偏差则保持空表。
-
-| 日期 | 刀 | 偏差 | 理由 | 判据影响 |
+| 日期 | 章节 | 计划 | 实际 | 原因 |
 |---|---|---|---|---|
-| — | — | — | — | — |
+| — | — | — | — | 实施后回填；无偏差时写「无」 |
+
+---
+
+## 19 与其他文档的关系
+
+| 文档 | 关系 |
+|---|---|
+| `docs/analysis/AGENT-CANVAS-RENDERING-ANALYSIS.md` | 命题与缺口的来源；本规格在 §1.3 记录了 9 处有意校正 |
+| `docs/analysis/ORCHESTRATION-CONCEPT-SEMANTIC-TRANSFER.md` | 术语唯一出处；本规格不新增用户词 |
+| `docs/store/I68-agent-canvas-preset-spec.md` | W2：真实内容映射 + 预设摆放 + 宿主接线；消费本规格全部设施，删除 §11 示例内容 |
+| I55 Agent 轮次观测规格（已归档） | 真实内容拓扑与出口表的来源；权威仍是内核 Rust |
+| `docs/DESIGN.md` §5 | 主题变量与 fallback 禁令 |
+| 工作流画布规格（未立项） | 承接 OQ-6 的编辑模式；两者共用画布设施（视口 / 渲染器 / 失效调度），不共用内容视图模型 |

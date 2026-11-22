@@ -1,5 +1,10 @@
 import { currentIterationOf } from "../reducer";
-import { AGENT_NODE_TEMPLATE, templateOrderOf } from "../template";
+import {
+  AGENT_NODE_TEMPLATE,
+  TEMPLATE_EDGES,
+  type TemplateEdge,
+  type TemplateEdgeKind,
+} from "../template";
 import {
   cellKey,
   type AgentNodeDetail,
@@ -29,11 +34,21 @@ export interface GraphNodeView {
   unfinished: boolean;
 }
 
+/** 边的相位：回边是否发生、正向边是否已走完（I66 §5.2）。 */
+export type EdgePhase = "untaken" | "idle" | "passed" | "active";
+
 /** 图上的边：正向边按模板顺序，回边 A 由 ⑫ 回到 ①（I55 §3.1）。 */
 export interface GraphEdgeView {
   from: AgentNodeId;
   to: AgentNodeId;
-  kind: "forward" | "loop";
+  kind: TemplateEdgeKind;
+  phase: EdgePhase;
+}
+
+/** 出口标注：只由 `status` 与格子状态推出，不是节点（I66 §5.4）。 */
+export interface GraphExitView {
+  node: AgentNodeId;
+  status: TurnObservationStatus;
 }
 
 export interface GraphView {
@@ -45,8 +60,15 @@ export interface GraphView {
   /** 已观测到的最大 `atMs`：V1 用它算进行中时长（`atMs` 差，不引入时钟）。 */
   nowMs: number;
   nodes: GraphNodeView[];
-  /** 当前活动边：进入「最靠后的进行中格子」的那条边；无进行中格子为 `null`。 */
+  /** 12 条边恒定输出，相位由格子状态推出（I66 §5.2）。 */
+  edges: GraphEdgeView[];
+  /**
+   * 当前活动边：`edges` 中相位为 `active` 的那一条（**同一引用**）；
+   * 无进行中格子时为 `null`（I66 §5.3）。
+   */
   activeEdge: GraphEdgeView | null;
+  /** 出口标注；`running` / `waiting` 时为 `null`（I66 §5.4）。 */
+  exit: GraphExitView | null;
 }
 
 /**
@@ -75,6 +97,12 @@ export function projectGraph(obs: TurnObservation): GraphView {
     } satisfies GraphNodeView;
   });
 
+  const active = activeEdgeOf(nodes, iteration);
+  const edges: GraphEdgeView[] = TEMPLATE_EDGES.map((edge) => ({
+    ...edge,
+    phase: edgePhaseOf(edge, nodes, iteration, active),
+  }));
+
   return {
     conversationId: obs.conversationId,
     turnId: obs.turnId,
@@ -82,7 +110,9 @@ export function projectGraph(obs: TurnObservation): GraphView {
     iteration,
     nowMs: observedNowMs(obs),
     nodes,
-    activeEdge: activeEdgeOf(obs, iteration),
+    edges,
+    activeEdge: edges.find((edge) => edge.phase === "active") ?? null,
+    exit: exitOf(obs.status, nodes),
   };
 }
 
@@ -108,39 +138,108 @@ function isUnfinishedState(state: string): boolean {
  * `admit` / `prepare` 的 `iteration` 恒为 0（§5.4 第 1 条），故回边用圈数判定。
  */
 function activeEdgeOf(
-  obs: TurnObservation,
+  nodes: readonly GraphNodeView[],
   iteration: number,
-): GraphEdgeView | null {
-  let active: { id: AgentNodeId; iteration: number; order: number } | null =
-    null;
+): TemplateEdge | null {
+  let active: GraphNodeView | null = null;
 
-  for (const entry of AGENT_NODE_TEMPLATE) {
-    const cellIteration = entry.inIteration ? iteration : 0;
-    const cell = obs.cells.get(cellKey(entry.id, cellIteration));
-    if (!cell || !isUnfinishedState(cell.state)) continue;
+  for (const node of nodes) {
+    if (!node.unfinished) continue;
     if (
       active === null ||
-      cell.iteration > active.iteration ||
-      (cell.iteration === active.iteration && entry.order > active.order)
+      node.iteration > active.iteration ||
+      (node.iteration === active.iteration && node.order > active.order)
     ) {
-      active = { id: entry.id, iteration: cell.iteration, order: entry.order };
+      active = node;
     }
   }
 
   if (active === null) return null;
   if (active.id === "admit" && iteration > 1) {
-    return { from: "after-iteration", to: "admit", kind: "loop" };
+    return TEMPLATE_EDGES.find((edge) => edge.kind === "loop") ?? null;
   }
 
-  const predecessor = templatePredecessor(active.id);
-  if (predecessor === null) return null;
-  return { from: predecessor, to: active.id, kind: "forward" };
+  return (
+    TEMPLATE_EDGES.find(
+      (edge) => edge.kind === "forward" && edge.to === active.id,
+    ) ?? null
+  );
 }
 
-function templatePredecessor(node: AgentNodeId): AgentNodeId | null {
-  const order = templateOrderOf(node);
-  if (order === null || order === 0) return null;
-  return (
-    AGENT_NODE_TEMPLATE.find((entry) => entry.order === order - 1)?.id ?? null
-  );
+/**
+ * 边的相位（I66 §5.2）：`active` 由活动边判定结果直接给出；
+ * 其余按「格子是否触达」推导，规则表见 I66 §5.2。
+ */
+export function edgePhaseOf(
+  edge: TemplateEdge,
+  nodes: readonly GraphNodeView[],
+  iteration: number,
+  active: TemplateEdge | null,
+): EdgePhase {
+  if (
+    active !== null &&
+    edge.from === active.from &&
+    edge.to === active.to &&
+    edge.kind === active.kind
+  ) {
+    return "active";
+  }
+
+  const from = nodeOf(nodes, edge.from);
+  const to = nodeOf(nodes, edge.to);
+  if (from === null || to === null) return "untaken";
+
+  if (edge.kind === "loop") {
+    if (iteration >= 2) return "passed";
+    if (from.state !== "pending") return "idle";
+    return "untaken";
+  }
+
+  if (to.state === "skipped") return "untaken";
+  if (to.state !== "pending") return "passed";
+  if (from.state !== "pending") return "idle";
+  return "untaken";
+}
+
+/** 出口候选：状态 → 可能停在的节点（I66 §5.4 表）。 */
+const EXIT_CANDIDATES: Partial<
+  Record<TurnObservationStatus, readonly AgentNodeId[]>
+> = {
+  completed: ["branch"],
+  wrap_up: ["branch"],
+  halted_by_budget: ["brake"],
+  stopped: ["brake", "after-tool", "after-iteration"],
+  cancelled: ["ladder", "model", "pipeline"],
+  failed: ["ladder", "model", "persist-assistant"],
+};
+
+/**
+ * 出口标注（I66 §5.4）：候选内先比 `iteration` 降序、再比 `order` 降序，
+ * 取首个非 `pending` 格子；全为 `pending` 时取 `order` 最小的候选。
+ */
+export function exitOf(
+  status: TurnObservationStatus,
+  nodes: readonly GraphNodeView[],
+): GraphExitView | null {
+  const candidates = EXIT_CANDIDATES[status];
+  if (candidates === undefined) return null;
+
+  const rows = candidates
+    .map((id) => nodeOf(nodes, id))
+    .filter((node): node is GraphNodeView => node !== null);
+  if (rows.length === 0) return null;
+
+  const reached = [...rows]
+    .sort((a, b) => b.iteration - a.iteration || b.order - a.order)
+    .find((node) => node.state !== "pending");
+  const chosen = reached ?? [...rows].sort((a, b) => a.order - b.order)[0];
+
+  return { node: chosen.id, status };
+}
+
+function nodeOf(
+  nodes: readonly GraphNodeView[],
+  id: AgentNodeId,
+): GraphNodeView | null {
+  return nodes.find((node) => node.id === id) ?? null;
 }
