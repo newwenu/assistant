@@ -8,6 +8,7 @@ pub struct LinuxUnlockDialog {
     backend: LinuxBackend,
 }
 
+#[derive(Clone, Copy)]
 enum LinuxBackend {
     Zenity,
     Kdialog,
