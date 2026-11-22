@@ -167,12 +167,14 @@ pub(crate) use mounted::{init, on_exit, on_setup};
 |---|---|---|---|
 | P13 | `config/features.json` | +1 条目 `"clock": { "default": true }`（只写 `default`） | 单一真源：`vite.config.ts`、`feature-build.ps1`、`coreBoundary.test.ts`、`assembly_contract.rs` 四处自动派生（R1–R6），不得手写 `cargoFeature` / `env` |
 | P14 | `src/vite-env.d.ts` | +1 行 `declare const __CLOCK_ENABLED__: boolean;` | 门禁正则要求 `declare const __CLOCK_ENABLED__\s*:\s*boolean` |
-| P15 | `src/features/clock/module.ts`（新建） | `import type { FeatureModule } from "../types";` + `export const clockModule: FeatureModule = { id: "clock" };` | 声明桩：时钟不带设置页/路由/侧栏/配置槽，`FeatureModule` 全部字段可选，`{ id }` 即合法；**不得** import `@/types/protocol.contract`（F 断言：特性自有契约不回流主契约） |
+| P15 | `src/features/clock/module.ts`（新建） | `import type { FeatureModule } from "../types";` + `export const clockModule: FeatureModule = { id: "clock", ipc: { namespace: "clock" } };` | 声明桩：时钟不带设置页/路由/侧栏/配置槽，`FeatureModule` 全部字段可选；**不得** import `@/types/protocol.contract`（F 断言：特性自有契约不回流主契约）。`ipc.namespace` 必须声明：命令迁入 `clock_plugin.rs` 后宿主注册表不再有裸命令名，前端须经 `featureInvoke(clockModule)` 拼出 `plugin:clock\|<cmd>`，否则运行期报 `Command clock_snapshot not found` |
 | P16 | `src/features/registry.ts` | 在 `if (__VAULT_ENABLED__)` 块后插入：`if (__CLOCK_ENABLED__) { const { clockModule } = await import("./clock/module"); modules.push(clockModule); }` | 只允许「编译期字面量守卫 + 动态 import」（R14）；必须逐字包含 `await import("./clock/module")` |
 | P17 | `src/tools/framework/registry.ts` | 把 `const clock = defineTool({...})` 改为 `const clockTools: ToolDefinition[] = __CLOCK_ENABLED__ ? [defineTool({...})] : [];`；`tools` 数组里 `clock,` → `...clockTools` | 守卫必须在**模块顶层表达式**里，Rollup 才能把 `false ? [...] : []` 的死分支连同 `() => import("../clock")` 一起折叠；否则关闭态仍产出 `src/tools/clock/` chunk → F7 失败。`toolsMap` 由 `tools` 派生，无需改 |
 | P18 | `vitest.config.ts`（+ 建议抽 `scripts/feature-manifest.mjs`） | 增 `define: { __CLOCK_ENABLED__: ... }`，取值与 `vite.config.ts` 同一派生规则（读 `config/features.json`） | 硬前置：守卫在模块顶层求值，`src/tools/__tests__/categories.test.ts` import `tools` → 缺 define 时 `npm run test` 直接 ReferenceError。建议把 `vite.config.ts` 现有的「清单 → defines / disabledIds」解析抽成 `scripts/feature-manifest.mjs`，两处 config 共用，避免第二份派生规则（R3/R4 的同类风险） |
 
 > P15 与 P17 的分工：`src/features/clock/module.ts` 满足**特性边界契约**（每个特性一个前端模块），`src/tools/clock/**` 是**工具实现**。二者不合并——合并会把 814 行 UI 搬进特性目录，违背 R19 的「工具实现归工具注册表」边界，也让后续便签工具无法复用同一模板。
+
+> 实施偏差（已落地）：`src/tools/clock/clock.service.ts` 由 `tauriInvoke` 直调裸命令名改为 `const invoke = featureInvoke(clockModule)`，命令名逐字不变、仅由 `featureIpc.ts` 补 `plugin:clock|` 前缀。P5 的「命令名与签名逐字不变」仍然成立，但「前端按名匹配」改为「前端按名匹配 + 插件前缀」；不改则运行期报 `Command clock_snapshot not found`。
 
 ### 3.3 门禁与脚本扩展 G1–G4
 
