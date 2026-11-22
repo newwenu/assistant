@@ -1,7 +1,7 @@
 //! 中间件链（I36 spec Step 4）。
 //!
 //! P4 只注册 1、3、4、5、6、7、8 七项；② `SummarizeMiddleware` 随续跑式压缩同批
-//! 落地（I38b D13），此处不注册、不预留空位、不留 TODO 桩。
+//! 落地（I38b D13），此处不注册、不预留空位。
 //!
 //! 顺序是语义：③ 必须在 ② 之后（P4 无 ②），④ 必须在 ③ 之后（否则还原的是空内容），
 //! `after_tool` 内部顺序固定为 D26（豁免）→ D25（分类预算）→ D19（通用 2/3 阶梯）。
@@ -29,21 +29,17 @@ pub const P4_MIDDLEWARE_ORDER: [&str; 7] = [
     "repeated-failure",
 ];
 
-/// 同一调用同参连续失败达到该次数时注入纠正提示（D19）。
 pub const REPEATED_FAILURE_NUDGE_AT: u32 = 2;
-/// 同一调用同参连续失败达到该次数时 halt（D19）。
 pub const REPEATED_FAILURE_HALT_AT: u32 = 3;
-/// 单条工具结果字符上限（I38a P2-C6 的 `per_tool_limit_chars`，作为运行时兜底）。
+/// 运行时兜底（I38a P2-C6 的 `per_tool_limit_chars`）。
 pub const TOOL_OUTPUT_CAP_CHARS: usize = 50_000;
-/// 豁免「同参重复」判定的工具（轮询类工具的同参重复是合法进展）。
-///
-/// P4 无此类工具；P8 引入 `wait_subagent` 时只需在此加一行（D26）。
+/// 豁免「同参重复」判定的工具：轮询类工具的同参重复是合法进展（D26）。
 pub const EXEMPT_TOOLS: &[&str] = &[];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MiddlewareOutcome {
     Continue,
-    /// `middleware` 只用于日志与遥测；`reason` 是用户可见正文，不得混入内部标识（§5.1 / A21b）。
+    /// `middleware` 只用于日志与遥测；`reason` 是用户可见正文，不得混入内部标识（I38b §5.1 / A21b）。
     StopTurn {
         middleware: &'static str,
         reason: String,
@@ -103,7 +99,7 @@ pub trait TurnMiddleware: Send + Sync {
     }
 }
 
-/// ⑧ 捕获的单个工具结果摘要，供 `RoundOutcome` / `TurnOutcome` 汇总。
+/// ⑧ 捕获的工具结果摘要，供 `RoundOutcome` / `TurnOutcome` 汇总。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CapturedToolOutcome {
     pub call_id: String,
@@ -112,7 +108,7 @@ pub struct CapturedToolOutcome {
     pub arguments: String,
 }
 
-/// D25 的失败分类；`None` 表示落 D19 通用阶梯。
+/// D25 的失败分类。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum FailureClass {
     Validation,
@@ -122,7 +118,7 @@ pub enum FailureClass {
 }
 
 impl FailureClass {
-    /// 允许重试次数（nudge 之后）；首次失败即 halt 的类别为 0。
+    /// 允许重试次数（nudge 之后）。
     pub fn retry_budget(self) -> u32 {
         match self {
             Self::Validation => 1,
@@ -187,20 +183,15 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 
 #[derive(Default)]
 struct FailureLedger {
-    /// (工具名, 同参指纹) → 连续失败次数（D19 通用阶梯）。
-    ///
     /// 必须带工具名：参数文本跨工具不唯一，只按指纹会让两个不同工具的同一段
     /// 参数（含解析失败的 `{}`）共用计数，误判成「重复了同一调用」。
     generic: HashMap<(String, String), u32>,
-    /// (分类, 工具, scope) → 已失败次数（D25 分类预算）。
     classified: HashMap<(FailureClass, String, String), u32>,
-    /// 本迭代已计过数的通用键：同一批次内同键多次失败只算 1 次。
     generic_counted_this_iteration: HashSet<(String, String)>,
     /// 本迭代已计过数的分类键：同一批次内同键多次失败只算 1 次。
     ///
-    /// 并行批次里两个同键失败若各计 1 次，`Validation`（预算 1）会在**同一次**迭代
-    /// 内直接耗尽预算，模型连 nudge 都看不到就被 halt；按迭代去重后，「连续失败」
-    /// 至少跨两次模型请求，nudge 才有被消费的机会。
+    /// 否则并行批次里的同键失败会让 `Validation`（预算 1）在同一次迭代内耗尽预算，
+    /// nudge 来不及被消费就被 halt（连续 = 跨请求）。
     classified_counted_this_iteration: HashSet<(FailureClass, String, String)>,
     nudges: Vec<String>,
     halt: Option<String>,
@@ -214,7 +205,7 @@ pub struct SharedTurnState {
     failures: Mutex<FailureLedger>,
 }
 
-/// ① 阶梯：调用现有 `offload_if_over_budget`，不重写阈值。
+/// ① 阶梯：沿用既有 offload 预算口径，不重写阈值。
 struct ProjectionMiddleware;
 
 #[async_trait]
@@ -228,8 +219,7 @@ impl TurnMiddleware for ProjectionMiddleware {
         req: &mut ModelRequestView<'_>,
         _ctx: &TurnCtx<'_>,
     ) -> MiddlewareOutcome {
-        // ① 沿用既有 offload 预算口径（窗口 - 输出预留），不叠加安全裕度，
-        // 安全裕度只属于阶梯 ③④⑤（I36 spec §4.3）。
+        // ① 沿用既有 offload 预算口径，不叠加安全裕度（裕度只属于 ③④⑤，I36 spec §4.3）。
         let budget =
             crate::kernel::request::offload_budget_of(req.context_window_tokens, req.max_tokens);
         offload_if_over_budget(req.messages, budget, ProjectionPurpose::Send);
@@ -355,7 +345,7 @@ fn cap_chars(text: &str, cap: usize) -> Option<String> {
     Some(format!("{}\n...\n{}", head_text, tail_text))
 }
 
-/// ⑦ 捕获结果摘要（success / call_id / 原始参数），供 `TurnOutcome` 汇总。
+/// ⑦ 捕获结果摘要（success / call_id / 原始参数）。
 struct ToolOutcomeCaptureMiddleware {
     shared: Arc<SharedTurnState>,
 }
@@ -515,17 +505,14 @@ impl ResultSnapshot {
     }
 }
 
-/// 固定顺序中间件链：顺序由 [`P4_MIDDLEWARE_ORDER`] 决定，不做运行时排序。
+/// 固定顺序中间件链：不做运行时排序。
 pub struct MiddlewareChain {
     order: Vec<Arc<dyn TurnMiddleware>>,
     shared: Arc<SharedTurnState>,
 }
 
 impl MiddlewareChain {
-    /// P4 实际链：1、3、4、5、6、7、8 共七项，② 不注册。
-    ///
-    /// 顺序完全由 [`P4_MIDDLEWARE_ORDER`] 决定：按常量数组逐项实例化，
-    /// 不做运行时排序，也不允许常量与实例顺序分叉。
+    /// P4 实际链：1、3、4、5、6、7、8 共七项，② 不注册；常量与实例顺序不允许分叉。
     pub fn p4(microcompact_keep_recent: usize) -> Self {
         let shared = Arc::new(SharedTurnState::default());
         let order: Vec<Arc<dyn TurnMiddleware>> = P4_MIDDLEWARE_ORDER
@@ -553,9 +540,7 @@ impl MiddlewareChain {
         Self { order, shared }
     }
 
-    /// 仅 ① 投影（`spec.ladder = ProjectionOnly`）：③④⑤ 不注册。
-    ///
-    /// 阶梯与 `spec.ladder` 绑定，executor 不做运行时分支。
+    /// 仅 ① 投影（`spec.ladder = ProjectionOnly`）：③④⑤ 不注册，executor 不做运行时分支。
     pub fn projection_only() -> Self {
         Self {
             order: vec![Arc::new(ProjectionMiddleware) as Arc<dyn TurnMiddleware>],
@@ -563,16 +548,13 @@ impl MiddlewareChain {
         }
     }
 
-    /// 已注册的中间件名，顺序即执行顺序。
     pub fn names(&self) -> Vec<&str> {
         self.order.iter().map(|mw| mw.name()).collect()
     }
 
     /// 返回 `(结果, 实际改写过请求的中间件名)`。
     ///
-    /// `applied` 只记**真正改动过请求**的项（I55 Q2）：每个中间件执行前后各取一次快照，
-    /// 三项（消息条数 / `context_window_tokens` / `max_tokens`）任一变化才记入，
-    /// 因此既不需要新造「阶梯清单常量」，也不需要给 `TurnMiddleware` 加返回值。
+    /// `applied` 只记真正改动过请求的项（I55 Q2）：执行前后快照三项任一变化才记入。
     pub async fn before_model(
         &self,
         req: &mut ModelRequestView<'_>,
@@ -600,8 +582,7 @@ impl MiddlewareChain {
 
     /// 返回 `(结果, 本结果上各中间件的判定)`。
     ///
-    /// 判定只记**有信息量**的两类：`stop`（携带原因）与真正改动过结果的 `continue`
-    /// （内容长度或错误标记变化）。恒 `continue` 且无改写的中间件不入列，
+    /// 判定只记 `stop` 与真正改动过结果的 `continue`；恒 `continue` 且无改写的不入列，
     /// 否则每个结果会固定塞入 7 条空判定，把 `after-tool` 的 detail 变成噪声。
     pub async fn after_tool(
         &self,
@@ -658,12 +639,11 @@ impl MiddlewareChain {
         MiddlewareOutcome::Continue
     }
 
-    /// 取出本迭代累积的 nudge；nudge 只进下一次请求，绝不写回 `messages` 表。
+    /// 取出本迭代累积的 nudge；只进下一次请求，绝不写回 `messages` 表。
     pub fn take_pending_nudges(&self) -> Vec<String> {
         std::mem::take(&mut lock(&self.shared.failures).nudges)
     }
 
-    /// ⑦ 捕获的结果摘要（按执行顺序）。
     pub fn captured_outcomes(&self) -> Vec<CapturedToolOutcome> {
         lock(&self.shared.captured).clone()
     }

@@ -46,8 +46,7 @@ export interface TurnEnvPort {
 /**
  * 观测端口：编排层**只写不读**（I55 §6.5 / O6）。
  *
- * 刻意在这里声明结构类型而不 import 观测模块：控制路径（`send` / `cancel`）必须对
- * 观测存储零依赖（G7），实现由组合层注入（`stores/chat/chatStorePorts.ts`）。
+ * 刻意用结构类型而不 import 观测模块：控制路径必须对观测存储零依赖（G7），由组合层注入。
  */
 export interface ObservationSinkPort {
   applyNodeEvent: (event: AgentNodeEvent) => void;
@@ -78,7 +77,6 @@ export interface TurnOrchestratorDeps {
     args: SendChatMessageArgs,
     kind: TurnKind,
   ) => Promise<void>;
-  /** 取消命令分派：同样按链路由组合层选择。 */
   cancelTurn: (conversationId: string) => Promise<void>;
   listProviders: () => Promise<Provider[]>;
   createConversation: (
@@ -113,20 +111,15 @@ export interface TurnOrchestrator {
     turnIndex: number | null,
   ) => void;
   onAgentToolCall: (call: AgentToolCall) => void;
-  /** 节点观测事件：只写观测存储，不做活跃会话判断（I55 §6.3 第 1 条）。 */
   onAgentNodeEvent: (event: AgentNodeEvent) => void;
   onSessionState: (payload: SessionStateChangedPayload) => void;
   /**
    * 切换会话：**不取消**后台 turn，只把本地流式视图换成目标会话的 phase（C5.2 / A4）。
-   * 目标会话仍在运行时恢复流式视图，`messageId` 由后续 delta 补全。
    */
   onConversationSwitch: (conversationId: string) => void;
   /**
-   * 补拉快照回填：会话仍有挂起的工具调用（当前只有 `ask_user`）。
-   *
-   * 窗口重载后 `phaseByConversation` / `turnIdByConversation` 是空的，
-   * 只靠事件无法得知轮次仍在进行，切回时会被判成 `idle` 而不恢复流式视图；
-   * 快照是唯一的兜底来源，用它恢复 phase 与段表，否则作答后的事件会落到新开的占位气泡。
+   * 补拉快照回填：只补「轮次仍在进行」这一事实，卡片由调用方回挂到消息上。
+   * `messageId` 为 `null` 时退回 `onConversationSwitch` 的未知段语义。
    */
   onPendingToolCalls: (
     conversationId: string,
@@ -155,7 +148,6 @@ export function createTurnOrchestrator(
     phase = next;
   }
 
-  /** 运行中 = 除 `idle` / `error` 之外的 phase。 */
   function isRunning(next: ChatPhase): boolean {
     return next !== "idle" && next !== "error";
   }
@@ -183,7 +175,6 @@ export function createTurnOrchestrator(
 
   /**
    * 切回运行中的会话时 `messageId` 未知，由首个增量补全。
-   * 仅在 `streamingMessageId` 为空（恢复场景）时执行，避免覆盖已有绑定。
    */
   function resolveStreamingMessageId(attemptId: string, messageId: string) {
     if (deps.env.getStreamingMessageId() !== null) return;
@@ -258,8 +249,7 @@ export function createTurnOrchestrator(
       }
 
       // 身份指示与落库后保持一致（I43 §4.1）：乐观消息必须带 `modeId` / `providerId` /
-      // `modelId`，否则流式首屏与落库回读不同源、视觉会跳。读取因此前移到消息构造之前，
-      // 后续复用同一组局部变量，禁止重复调用 env 端口。
+      // `modelId`，否则流式首屏与落库回读不同源、视觉会跳。
       const route = deps.env.getConversationRoute(convId);
       const selectedProviderId = deps.env.getSelectedProviderId();
       const selectedModelId = deps.env.getSelectedModelId();
@@ -444,7 +434,6 @@ export function createTurnOrchestrator(
   }
 
   /**
-   * 文本增量按会话路由：后台会话的增量不落到当前会话的流式缓冲（C5.2）。
    * phase 由 `session-state-changed` 驱动，这里不再自行推导（C5.3）。
    */
   function onTextDelta(chunk: StreamTextChunk) {
@@ -475,7 +464,7 @@ export function createTurnOrchestrator(
     if (turnIndex !== null && iteration !== null) {
       deps.state.setMessageCoords(messageId, turnIndex, iteration);
     }
-    // 占位消息换成真实行 id 时，策略侧（agent 段表）需要同步改名（§3.7）
+    // 占位消息换成真实行 id 时，策略侧（agent 段表）需要同步改名（I38d §3.7）。
     if (previousId !== null && previousId !== messageId) {
       strategyFor(conversationId).onMessageIdResolved(previousId, messageId);
     }
@@ -490,12 +479,11 @@ export function createTurnOrchestrator(
   }
 
   /**
-   * `agent-tool-call` 事件只负责实时渲染，不作为事实源（I38d §2.1）。
-   * 事件不带 `messageId`，因此按 `turnId` 校验轮次、按 `iteration` 归到发起该调用的那条消息
-   * （气泡边界 = 迭代，§3.1.1）；旧轮（`turnId` 与当前 attempt 不符）的迟到事件直接丢弃。
+   * `agent-tool-call` 只做实时渲染，不作为事实源（I38d §2.1）：不带 `messageId`，
+   * 按 `turnId` 校验轮次、按 `iteration` 归到发起行（气泡边界 = 迭代，I38d §3.1.1）。
    *
-   * 传输层已取消活跃会话过滤（N10），因此这里分两步：**总是**写观测存储（后台 turn 的
-   * 等待事实不能丢，I55 §6.3 第 2 条），只有当前会话才进策略渲染。
+   * 传输层已取消活跃会话过滤（N10）：**总是**写观测存储（后台 turn 的等待事实不能丢，
+   * I55 §6.3 第 2 条），只有当前会话才进策略渲染。
    */
   function onAgentToolCall(call: AgentToolCall) {
     deps.observation.applyToolCall(call);
@@ -549,7 +537,6 @@ export function createTurnOrchestrator(
     }
   }
 
-  /** 切会话：不取消后台 turn，只把本地流式视图换成目标会话的状态（A4）。 */
   function onConversationSwitch(conversationId: string) {
     const next = phaseByConversation.get(conversationId) ?? "idle";
     setPhase(next);
@@ -561,10 +548,6 @@ export function createTurnOrchestrator(
     }
   }
 
-  /**
-   * 补拉快照回填：只补「轮次仍在进行」这一事实，卡片本身由调用方回挂到消息上。
-   * `messageId` 为 `null`（历史没加载到发起行）时退回 `onConversationSwitch` 的未知段语义。
-   */
   function onPendingToolCalls(
     conversationId: string,
     turnId: string,

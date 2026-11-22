@@ -3,7 +3,7 @@ use ts_rs::TS;
 
 use super::os_tool::ToolErrorKindDto;
 
-/// 工具层级（wire 侧）。与 `assistant_tools::ToolTier` 同形，但内部类型不外泄到契约。
+/// 与内部 `ToolTier` 同形；内部类型不外泄到契约。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 pub enum ToolTierDto {
@@ -12,9 +12,7 @@ pub enum ToolTierDto {
     External,
 }
 
-/// 审批级别。`snake_case` 与 I38d §4.2 的 `'none' | 'dangerous_only' | 'all_os_tools'` 对齐。
-///
-/// P5 只承载不消费：级别 → Policy 规则的映射由 P6 完成。
+/// 取值与 I38d §4.2 的 `'none' | 'dangerous_only' | 'all_os_tools'` 对齐；级别 → Policy 规则的映射不在本 DTO 承担。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 pub enum ApprovalLevelDto {
@@ -34,8 +32,6 @@ impl From<&str> for ApprovalLevelDto {
     }
 }
 
-/// 一次发送携带的工具配置（前端内存态，随请求下发）。
-///
 /// 空白名单即 deny-by-default：模型看不到任何工具。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -47,8 +43,7 @@ pub struct ConversationToolConfigDto {
 }
 
 impl Default for ConversationToolConfigDto {
-    /// 未下发配置时的 fail-closed 兜底（I38d §4.4）：沙箱层级、不额外审批，
-    /// 名单留空 → 解析出空工具集（模型看不到工具），而不是自动全量注入。
+    /// 未下发配置时的 fail-closed 兜底（I38d §4.4）：名单留空，不自动全量注入。
     fn default() -> Self {
         Self {
             max_tool_tier: ToolTierDto::Sandbox,
@@ -59,13 +54,8 @@ impl Default for ConversationToolConfigDto {
     }
 }
 
-/// 工具装配清单条目（`ToolConfigPanel` 渲染用，I38d §4.7）。
-///
-/// 只含面板需要的事实：`id` 是白名单取值，`name` 是展示名，`tier` 决定分组。
-/// 不下发 `inputSchema`：装配面板不展示参数结构，且它体积大。
-///
-/// `companionOf` 非 null 表示这是伴随工具（I58 §3.6）：面板把它归入「超级工具」分组，
-/// 勾选状态镜像基工具，用户不需要单独勾选。输出 DTO，键恒在、值可为 `null`。
+/// `ToolConfigPanel` 渲染用（I38d §4.7）：不下发 `inputSchema`；`companionOf` 非 null
+/// 表示伴随工具（I58 §3.6），归「超级工具」分组、勾选镜像基工具。
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ToolDescriptorDto {
@@ -76,9 +66,9 @@ pub struct ToolDescriptorDto {
     pub companion_of: Option<String>,
 }
 
-/// 工具结果的展示投影（wire 侧）：渲染与历史重载的唯一事实源（I46 compact §3.4）。
+/// 渲染与历史重载的唯一事实源（I46 compact §3.4）。
 ///
-/// 输出 DTO：所有 `Option` 键恒在、值为 `null`（不加 `skip_serializing_if`）。
+/// 输出 DTO：`Option` 键恒在、值为 `null`。
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ToolResultCompactDto {
@@ -168,8 +158,7 @@ pub enum AgentToolCallPayloadDto {
     },
     /// 等待被结束（超时或 turn 取消），卡片必须转为不可操作。
     ///
-    /// 后端在 drop 点无法区分两者（超时是网关丢弃 future，取消是任务被丢弃），
-    /// 因此只表达「这张卡已失效」，不冒充「用户拒绝了」。
+    /// drop 点无法区分两者，因此只表达「这张卡已失效」，不冒充「用户拒绝了」。
     ApprovalClosed {
         #[serde(rename = "timeoutMs")]
         timeout_ms: u64,
@@ -179,7 +168,6 @@ pub enum AgentToolCallPayloadDto {
     },
 }
 
-/// 权限意图（wire 侧）。与 `assistant_tools::PermissionIntent` 同形，内部类型不外泄到契约。
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PermissionIntentDto {
@@ -187,7 +175,7 @@ pub struct PermissionIntentDto {
     pub resources: Vec<String>,
 }
 
-/// 工具行为提示（wire 侧）：卡片据此回答「能不能撤销」。
+/// 卡片据此回答「能不能撤销」。
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ToolBehaviorDto {
@@ -218,7 +206,7 @@ pub enum ApprovalReasonDto {
     Advisor { rationale: String },
 }
 
-/// 一句话量级摘要。整体为 `null` 表示「未知」，与「零」可区分。
+/// 整体为 `null` 表示「未知」，与「零」可区分。
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ApprovalPreviewDto {
@@ -245,7 +233,6 @@ pub enum ApprovalExtensionSeverityDto {
     Danger,
 }
 
-/// 审批请求（`agent-tool-call` 的 `awaitingApproval` 载荷）。
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ToolApprovalRequestDto {
@@ -269,7 +256,6 @@ pub enum ToolApprovalKindDto {
     AllowAlways,
 }
 
-/// 审批决策（输入 DTO）。
 #[derive(Debug, Clone, Deserialize, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ToolApprovalDecisionDto {
@@ -280,22 +266,17 @@ pub struct ToolApprovalDecisionDto {
     pub reason: Option<String>,
 }
 
-/// 授权作用域（封闭两档，与卡片按钮一一对应）。
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, TS)]
 #[serde(rename_all = "camelCase")]
 pub enum GrantScopeDto {
-    /// 仅 `conversationId` 相同的会话。
     Session,
-    /// 所有会话。
     Global,
 }
 
 /// 已授权操作（`permission_grants` 的一行）。
 ///
-/// `grantKey` 是审批缓存的精确主键（作用域前缀 + `ApprovalKey` 的规范 JSON），
-/// 撤销时原样回传；`scopeSummary` 由后端归一成人可读文本，前端**不得**解析
-/// `grantKey` 内部结构——作用域形状会随工具增长，解析逻辑只保留在 Rust 侧一处。
-/// `scope` / `conversationId` 由后端解析前缀得出，历史无前缀行按 `global` 兼容。
+/// `grantKey` 是审批缓存主键（作用域前缀 + `ApprovalKey` 规范 JSON），撤销时原样回传；
+/// 前端**不得**解析其内部结构，`scopeSummary` / `scope` / `conversationId` 均由后端归一。
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PermissionGrantDto {
@@ -309,12 +290,9 @@ pub struct PermissionGrantDto {
 
 /// 工具权限审计的一行（`permission_audit`）。
 ///
-/// 只承载决策事实：`tool` / `action` / `resource` / `outcome` 都是后端落库的原始串，
-/// 前端按封闭词表映射文案、未命中时原样展示（规格 §6）。`id` 与自增序不外发：
-/// 追溯面板按 `atMillis` 倒序展示，主键对用户无意义。
-///
-/// `conversationId` / `turnId` / `iteration` 是归属坐标：`null` 表示该行不属于任何
-/// 会话（ToolBox 直调、授权管理动作）。它们是审计可定位的前提，前端不自行推断。
+/// 只承载决策事实：四个串字段是后端落库的原始串，前端按封闭词表映射、未命中原样展示
+/// （I50 §6）。`id` 与自增序不外发（追溯面板按 `atMillis` 倒序）。`conversationId` /
+/// `turnId` / `iteration` 为归属坐标，`null` = 不属于任何会话（ToolBox 直调、授权管理）。
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct PermissionAuditEntryDto {
@@ -330,8 +308,7 @@ pub struct PermissionAuditEntryDto {
 
 /// 权限审计的一页（`list_permission_audit` 的返回体）。
 ///
-/// `hasMore` 必须由后端给出：`limit` 恰好等于窗口内总数时，「本页条数 == limit」与
-/// 「还有更早记录」同形，前端无法自行区分，猜错就会让用户误以为「只有这些条目」。
+/// `hasMore` 必须由后端给出：本页条数 == `limit` 与「还有更早记录」同形，前端无法自行区分。
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct PermissionAuditPageDto {
@@ -339,7 +316,7 @@ pub struct PermissionAuditPageDto {
     pub has_more: bool,
 }
 
-/// 修改授权作用域（输入 DTO）。`scope = session` 时 `conversationId` 必填。
+/// `scope = session` 时 `conversationId` 必填。
 #[derive(Debug, Clone, Deserialize, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SetGrantScopeArgsDto {
@@ -349,7 +326,6 @@ pub struct SetGrantScopeArgsDto {
     pub conversation_id: Option<String>,
 }
 
-/// 提问请求（`agent-tool-call` 的 `awaitingAnswer` 载荷）。
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AgentQuestionRequestDto {
@@ -376,7 +352,7 @@ pub struct AgentQuestionOptionDto {
     pub description: String,
 }
 
-/// 提问回答（输入 DTO）。`answers` 长度必须等于 `questions`。
+/// `answers` 长度必须等于 `questions`。
 #[derive(Debug, Clone, Deserialize, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AgentQuestionAnswerDto {
@@ -397,12 +373,11 @@ pub struct AgentQuestionAnswerItemDto {
 // ---------------------------------------------------------------------------
 // turn 节点观测（I55 §4.2）：`agent-node-event` 的 wire 投影。
 //
-// 内部类型（`AgentNode` / `NodeState`）不外泄到契约：DTO 一律独立定义并做显式转换，
-// 生成的前端类型只认 DTO。`parentTurnId` 与 `detail` 的键恒在（值为 `null`），
-// `transition` 为必填布尔——三者都参与前端的状态迁移判定，不能缺省。
+// 内部类型（`AgentNode` / `NodeState`）不外泄到契约，DTO 独立定义并显式转换。
+// `parentTurnId` / `detail` 键恒在（值 `null`），`transition` 必填——三者都参与前端状态迁移判定。
 // ---------------------------------------------------------------------------
 
-/// turn 模板节点（I55 §3.1），`kebab-case` 与内部 `AgentNode` 1:1。
+/// 与内部 `AgentNode` 1:1（I55 §3.1）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "kebab-case")]
 pub enum AgentNodeDto {
@@ -420,7 +395,7 @@ pub enum AgentNodeDto {
     AfterIteration,
 }
 
-/// 节点状态 7 值闭集（I55 §4.3）。后端只发 `running` / `waiting` / 三个终态。
+/// 后端只发 `running` / `waiting` / 三个终态（I55 §4.3）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "lowercase")]
 pub enum NodeStateDto {
@@ -433,7 +408,7 @@ pub enum NodeStateDto {
     Cancelled,
 }
 
-/// 工具流水线阶段 5 值（复用内部 `ToolStage`，不新造枚举）。
+/// 复用内部 `ToolStage`，不新造枚举。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub enum PipelineStageDto {

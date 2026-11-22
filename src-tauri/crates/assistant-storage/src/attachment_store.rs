@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 use tokio::fs;
 
-/// 附件 ID 锁的桶数（§5.5）：同一 ID 必落同一桶，桶碰撞只增加争用。
+/// 同一 ID 必落同一桶，桶碰撞只增加争用（I61 §5.5）。
 const ID_LOCK_BUCKETS: usize = 64;
 
 pub struct AttachmentStoreConfig {
@@ -38,10 +38,7 @@ pub enum AttachmentError {
     InvalidId(String),
 }
 
-/// 附件 id 即文件名，只允许单层普通文件名。
-///
-/// 拒绝空串、隐藏名、`.` / `..`、`.tmp` 中间态、路径分隔符、盘符与 ADS（`:`）、
-/// NUL 与控制字符。判据与路径构造在同一处，调用方无法绕过。
+/// 判据与路径构造在同一处，调用方无法绕过。
 pub fn is_plain_file_name(id: &str) -> bool {
     if id.is_empty()
         || id.starts_with('.')
@@ -68,17 +65,15 @@ fn ensure_plain(id: &str) -> Result<(), AttachmentError> {
     }
 }
 
-/// 稳定哈希选桶：同一 ID 在进程内恒落同一桶（`DefaultHasher::new` 用固定键）。
 fn lock_bucket(id: &str) -> usize {
     let mut hasher = DefaultHasher::new();
     id.hash(&mut hasher);
     usize::try_from(hasher.finish()).unwrap_or(usize::MAX) % ID_LOCK_BUCKETS
 }
 
-/// 伴生文件后缀（§3.9）：部分写入残留，不计入条目数字，由 owner 回收时一并清理。
+/// 部分写入残留，不计入条目数字，由 owner 回收时一并清理（I61 §3.9）。
 const COMPANION_SUFFIXES: [&str; 5] = ["-journal", "-wal", "-shm", ".tmp", ".lock"];
 
-/// 伴生文件（`.tmp` 中间态、SQLite 旁路日志等）不计入统计（§3.9 包含范围）。
 fn is_companion_file(path: &Path) -> bool {
     let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
         return false;
@@ -129,7 +124,6 @@ pub struct DerivedEntry {
     pub orphan: bool,
 }
 
-/// `purge_derived_orphans` 的结果：删除数 / 删除字节 / 失败数 / 判据排除数。
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct DerivedPurgeReport {
     pub removed: u64,
@@ -138,7 +132,6 @@ pub struct DerivedPurgeReport {
     pub skipped: u64,
 }
 
-/// `delete_orphans_by_ids` 的结果（`E1` 的 `A1`）：删除数 / 删除字节 / 失败数 / 判据排除数。
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct OrphanPurgeReport {
     pub removed: u64,
@@ -147,9 +140,7 @@ pub struct OrphanPurgeReport {
     pub skipped: u64,
 }
 
-/// `derived/{stem}.{EXTRACTOR_VERSION}.txt` → `stem`；其它命名按文件名去扩展名处理。
-///
-/// 判据与 [`AttachmentStore::derived_path`] 的拼接规则同源：改名规则只能有一处。
+/// 与 [`AttachmentStore::derived_path`] 的拼接规则同源：改名规则只能有一处。
 fn derived_stem(name: &str) -> String {
     let suffix = format!(".{}.txt", EXTRACTOR_VERSION);
     match name.strip_suffix(&suffix) {
@@ -217,12 +208,10 @@ impl AttachmentStore {
         }
     }
 
-    /// 附件 ID 锁（§5.5）：`insert_attachment_refs` / `delete_attachments` / `A1`
-    /// 三处共用同一把，保证「引用写入」与「文件删除」对同一 ID 互斥。
+    /// 附件 ID 锁（I61 §5.5）：`insert_attachment_refs` / `delete_attachments` / `A1` 共用，
+    /// 保证「引用写入」与「文件删除」对同一 ID 互斥。临界区内禁止 `.await`。
     ///
-    /// 用 `std::sync::Mutex` 而非 `tokio::sync::Mutex`：引用写入路径是同步函数
-    /// （已持 `&Connection`，调用方在 async 命令内无法 `.await`），`blocking_lock()`
-    /// 在运行时线程内会 panic。临界区内禁止 `.await`，只用同步 IO。
+    /// 用 `std::sync::Mutex` 而非 `tokio`：调用方已持 `&Connection`，`blocking_lock()` 会 panic。
     pub fn id_guard(&self, id: &str) -> MutexGuard<'_, ()> {
         let bucket = lock_bucket(id);
         self.locks[bucket]
@@ -271,17 +260,13 @@ impl AttachmentStore {
         Ok(fs::read(&path).await?)
     }
 
-    /// 附件原文件的绝对路径，供 PDF 抽取等只读派生流程使用。
-    ///
     /// 入口即校验 id：非法 id 返回 `InvalidId`，不产出任何可 join 的路径。
     pub fn file_path(&self, id: &str) -> Result<PathBuf, AttachmentError> {
         ensure_plain(id)?;
         Ok(self.config.dir.join(id))
     }
 
-    /// PDF 文本层侧车路径：`derived/{sha}.extract-v1.txt`。
-    ///
-    /// 保持私有：外部只能通过下面的侧车方法读写，避免多一条未校验的路径入口。
+    /// 保持私有：外部只能通过侧车方法读写，避免多一条未校验的路径入口。
     fn derived_path(&self, id: &str) -> Result<PathBuf, AttachmentError> {
         ensure_plain(id)?;
         let stem = Path::new(id)
@@ -295,7 +280,7 @@ impl AttachmentStore {
             .join(format!("{}.{}.txt", stem, EXTRACTOR_VERSION)))
     }
 
-    /// 读取侧车文本；不存在、读取失败或 id 非法都返回 `None`，由调用方回退。
+    /// 不存在 / 读取失败 / id 非法一律 `None`，由调用方回退。
     pub async fn read_derived_text(&self, id: &str) -> Option<String> {
         let path = self.derived_path(id).ok()?;
         match fs::read_to_string(&path).await {
@@ -325,9 +310,8 @@ impl AttachmentStore {
         Ok(())
     }
 
-    /// 派生侧车目录的观测（`E2`）：只认常规文件，符号链接与非常规文件跳过、不降级。
-    ///
-    /// 目录不存在是正常空态（从未抽取过 PDF 文本层），返回全零而不是错误。
+    /// 派生侧车目录的观测（`E2`）：只认常规文件，符号链接与非常规文件跳过、不降级；
+    /// 目录不存在是正常空态，返回全零而非错误。
     pub async fn derived_stats(&self) -> Result<AttachmentDirStats, AttachmentError> {
         let entries = self.list_derived().await?;
         let mut stats = AttachmentDirStats::default();
@@ -380,11 +364,9 @@ impl AttachmentStore {
 
     /// 删除 `derived/` 下被计划点名的孤儿侧车（I61 `E2` / `A5`）。
     ///
-    /// 执行侧重新校验，不信任计划里的数量：
-    /// ①文件名必须是单段名字（不含分隔符、非伴生后缀），否则 `skipped`；
-    /// ②`mtime` 取不到、或 `>= sampledAt`（计划后被写过）→ `skipped`（fail-closed）；
-    /// ③符号链接 / 非普通文件 → `skipped`；删除失败 → `failed`。
-    /// 顺带清掉 `derived/` 下的伴生残留（`*.tmp` 等，§3.9），计入 `removed`。
+    /// 执行侧重新校验、不信任计划里的数量：非单段文件名 / 伴生后缀 / 符号链接 / 非常规文件
+    /// → `skipped`；`mtime` 取不到或 `>= sampledAt`（计划后被写过）→ `skipped`（fail-closed）；
+    /// 删除失败 → `failed`。顺带清掉 `derived/` 下的伴生残留（I61 §3.9），计入 `removed`。
     pub async fn purge_derived_orphans(
         &self,
         names: &[String],
@@ -513,7 +495,7 @@ impl AttachmentStore {
         Ok(fs::remove_file(&path).await?)
     }
 
-    /// 同步删除（§5.5）：调用方必须已持有该 ID 的 [`AttachmentStore::id_guard`]，
+    /// 同步删除（I61 §5.5）：调用方必须已持有该 ID 的 [`AttachmentStore::id_guard`]，
     /// 临界区内禁止 `.await`，因此这里只用 `std::fs`。
     ///
     /// `Ok(Some(len))` = 已删并返回原文件字节；`Ok(None)` = 文件已不存在（不是错误）；
@@ -536,13 +518,12 @@ impl AttachmentStore {
         }
     }
 
-    /// `E1` 的 `A1`：按 ID 删孤儿（§5.2 第 4 条 / §5.5）。
+    /// `E1` 的 `A1`：按 ID 删孤儿（I61 §5.2 第 4 条 / I61 §5.5）。
     ///
-    /// 同步方法：锁内要查 DB，不能 async。每个 id 固定为
-    /// 取 `id_guard` → **锁内**查引用（走 `idx_attachment_refs_att`）→ 仍被引用即 `skipped`
-    /// → 确认存在且为常规文件 → `mtime` 不早于 `sampledAt` 即 `skipped`（挡住采样后
-    /// 新导入、引用尚未落库的窗口）→ `delete_blocking` 累加字节；ID 非法 `skipped`，
-    /// 单条失败只计 `failed` 不中断。
+    /// 同步方法：锁内要查 DB，不能 async。每个 id 固定为：取 `id_guard` → **锁内**查引用
+    /// （走 `idx_attachment_refs_att`）→ 仍被引用即 `skipped` → 确认存在且为常规文件 →
+    /// `mtime` 不早于 `sampledAt` 即 `skipped`（挡住采样后新导入、引用尚未落库的窗口）→
+    /// `delete_blocking` 累加字节；ID 非法 `skipped`，单条失败只计 `failed` 不中断。
     pub fn delete_orphans_by_ids(
         &self,
         conn: &Connection,
@@ -632,10 +613,8 @@ fn is_attachment_referenced(conn: &Connection, id: &str) -> Result<bool, String>
     }
 }
 
-/// 写引用（§5.5）：与删除共用同一 ID 锁，且锁内确认文件仍在。
-///
-/// 文件已不存在 → 整条写入失败，**不**落悬空引用（内容寻址去重下「先删后写」的兜底）。
-/// 锁顺序恒为「DB 连接锁 → 附件 ID 锁」：调用方已持 `conn`，这里只加 ID 锁。
+/// 写引用（I61 §5.5）：与删除共用同一 ID 锁，且锁内确认文件仍在，否则整条写入失败、
+/// **不**落悬空引用（内容寻址去重下「先删后写」的兜底）。锁顺序恒为「DB 连接锁 → 附件 ID 锁」。
 pub fn insert_attachment_refs(
     store: &AttachmentStore,
     conn: &Connection,

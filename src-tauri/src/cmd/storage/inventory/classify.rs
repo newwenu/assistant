@@ -4,7 +4,9 @@ use crate::app_dirs::registry::{self, RootScope};
 use crate::cmd::storage::entries::EntryView;
 use crate::protocol::dto::{StorageInventoryClassDto, StorageLayerDto};
 
-/// 伴生后缀（§3.11.3）：计入扫描字节，但永远不计入登记值。
+/// 伴生后缀（§3.11.3）：计入扫描字节。对账只对**首层**按名字分类，故首层伴生文件
+/// （如 `assistant.db-wal`，其 owner 是只观测自身的文件条目）不带登记值，表现为该节点的
+/// `residualBytes`；落在已登记子树内部的伴生文件由 owner 的 `tree_stats` 一并计入。
 pub(super) const COMPANION_SUFFIXES: &[&str] = &["-journal", "-wal", "-shm", ".tmp", ".lock"];
 
 /// 首层分类（§3.11.3，互斥且穷尽）：纯函数，便于逐条断言。
@@ -29,9 +31,10 @@ pub fn classify(
     if registry::IGNORED_NAMES.contains(&name) {
         return (StorageInventoryClassDto::Ignored, None);
     }
-    // 伴生后缀大小写不敏感（§3.11.3）：四个 owner 侧判定都先 `to_ascii_lowercase()`，
-    // 管理器若按原样比对，`assistant.db-WAL` 就会从 `companion` 掉进 `unregistered`，
-    // 变成「未登记」假告警。行为等价要求两侧同一口径（V21），这里对齐 owner 侧。
+    // 伴生后缀大小写不敏感（§3.11.3）：owner 侧判定（tools / 密码库域 / crash）都先
+    // `to_ascii_lowercase()` 跳过伴生文件，管理器若按原样比对，`assistant.db-WAL` 就会从
+    // `companion` 掉进 `unregistered`，变成「未登记」假告警。行为等价要求两侧同一口径（V21），
+    // 这里对齐 owner 侧。
     let lowered = name.to_ascii_lowercase();
     if COMPANION_SUFFIXES
         .iter()

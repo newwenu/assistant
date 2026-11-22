@@ -1,13 +1,11 @@
-//! 可选功能分区契约（I61 §3.10「可选功能分区自注册」）：core 与功能 crate 之间唯一的 feature 缝。
+//! 可选功能分区契约（I61 §3.10）：core 与功能 crate 之间唯一的 feature 缝。
 //!
-//! 本文件**无条件编译**：trait、类型与注册表在两种构建里都存在，关闭特性时靠「没有任何分区
-//! 注册」走零分区路径，而不是靠编译期裁剪。因此这里不得出现任何功能 crate 类型、feature 名、
-//! 能力名或条目 `key` 字面量（G1 / G16 / G19）。
+//! 本文件无条件编译：关闭特性时靠「没有任何分区注册」走零分区路径，而非编译期裁剪；
+//! 因此不得出现任何功能 crate 类型、feature 名、能力名或条目 `key` 字面量（G1 / G16 / G19）。
 //!
-//! 三条形状纪律：①方法一律**同步阻塞**（`async fn` 在 trait 里不对象安全，且这些 owner 入口
-//! 本身就是同步 `metadata` / 目录枚举），由管理器在 `spawn_blocking` 内调用；②参数与返回值
-//! 只用普通数据（`protocol::dto::storage` 的 DTO 或纯 `u64/i64`）；③条目清单、策略、资格判据、
-//! 回收入口全部由分区自述，core 只做通用接收与按 `key` 路由，不写任何功能条目知识。
+//! 三条形状纪律：①方法同步阻塞（`async fn` 不对象安全，owner 入口本身是同步 `metadata` /
+//! 目录枚举），由管理器在 `spawn_blocking` 内调用；②参数与返回值只用普通数据（`protocol::dto::storage`
+//! 的 DTO 或纯 `u64/i64`）；③条目清单、策略、资格判据、回收入口全部由分区自述，core 只按 `key` 路由。
 
 use std::sync::{Arc, Mutex, MutexGuard};
 
@@ -17,9 +15,9 @@ use crate::protocol::dto::{
     StorageReclaimActionDto, StorageReclaimReasonDto,
 };
 
-/// 分区条目的观测四元组：与 core 条目、各 owner 的 `DirStats` 同形状（§3.9）。
+/// 分区条目的观测四元组：与 core 条目、各 owner 的 `DirStats` 同形状（I61 §3.9）。
 ///
-/// `oldest_at` / `newest_at` 在无文件时为 `None`，不是 `0`；`bytes` / `count` 是实测值，
+/// `oldest_at` / `newest_at` 无文件时为 `None`（不是 `0`）；`bytes` / `count` 是实测值，
 /// 「取不到」由 [`SectionError`] 表达，不用 `0` 冒充（G6）。
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct SectionStats {
@@ -29,7 +27,7 @@ pub struct SectionStats {
     pub newest_at: Option<i64>,
 }
 
-/// 取数失败的封闭类别（§7.1）。
+/// 取数失败的封闭类别（I61 §7.1）。
 ///
 /// 类别由 core 映射成 `availability`（`locked` / `unavailable` / `unreadable`）；
 /// 错误细节由分区写自己的日志，不进契约（R-16）。
@@ -39,7 +37,6 @@ pub enum SectionError {
     Locked,
     /// 文件正被替换 / 迁移：下一步是重试。
     Unavailable,
-    /// 权限 / IO 失败。
     Unreadable,
 }
 
@@ -62,7 +59,7 @@ pub struct SectionReclaimReport {
     pub failed: u64,
 }
 
-/// 条目风险档（§3.6 硬约束 5–6）：core 据此派生 `confirmation`，**不进 wire**。
+/// 条目风险档（I61 §3.6 硬约束 5–6）：core 据此派生 `confirmation`，**不进 wire**。
 ///
 /// 与 `action` 无关：风险档是「删这个东西有多危险」的登记事实，不是「这个动作需要多强确认」。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -74,7 +71,7 @@ pub enum RiskTier {
     Forbidden,
 }
 
-/// 分区条目的静态声明：语义与 §3.2 的 core 条目字段一一对应。
+/// 分区条目的静态声明：语义与 I61 §3.2 的 core 条目字段一一对应。
 #[derive(Debug, Clone, PartialEq)]
 pub struct EntryDecl {
     /// 该条目的唯一动作（`none` 表示不提供手动入口）。
@@ -184,10 +181,10 @@ pub trait StorageSection: Send + Sync {
 /// 注入与取用必须用同一别名：`dyn` 不满足 `Sized`，`Arc` 同时满足 `Send + Sync + 'static`。
 pub type StorageSectionHandle = Arc<dyn StorageSection>;
 
-/// 分区的唯一通用接收槽（G18）：注册表**永远存在**，与特性开关无关。
+/// 分区的唯一通用接收槽（G18）：注册表永远存在，与特性开关无关。
 ///
-/// 关闭特性时没有任何分区注册，查询一律落空 → `entries` 只剩 core 条目、
-/// 对账把可选首段归 `optionalNotMounted`，不需要 `#[cfg]` 分支。
+/// 关闭特性时无分区注册，查询一律落空 → `entries` 只剩 core 条目、对账把可选首段归
+/// `optionalNotMounted`，不需要 `#[cfg]` 分支。
 #[derive(Default)]
 pub struct SectionRegistry {
     sections: Mutex<Vec<StorageSectionHandle>>,
@@ -198,11 +195,10 @@ impl SectionRegistry {
         Self::default()
     }
 
-    /// 注册一个分区：只做**结构校验**，失败返回 `Err` 且不覆盖先注册者。
+    /// 注册一个分区：只做结构校验（V22 / V23），失败返回 `Err` 且不覆盖先注册者。
     ///
-    /// 校验项（V22 / V23）：分区标识非空且唯一、条目清单非空、每条 `key == segments.join("/")`、
-    /// 首段命中 core 的 `OPTIONAL_SEGMENTS` 磁盘事实、条目 id / `key` 不与 core 条目或其它
-    /// 已注册分区重名。**不**校验策略数值或资格判据——那些是分区自己的事。
+    /// 校验分区标识 / 条目清单 / `key == segments.join("/")` / 首段命中 `OPTIONAL_SEGMENTS` /
+    /// 与 core 或其它分区不重名；策略数值与资格判据归分区自述，这里不校验。
     pub fn register(&self, section: StorageSectionHandle) -> Result<(), String> {
         let id = section.id();
         if id.is_empty() {
@@ -276,15 +272,11 @@ impl SectionRegistry {
         Ok(())
     }
 
-    /// 取一份当前已注册分区的快照（克隆 `Vec<Arc<…>>` 后立即释放锁）。
-    ///
-    /// 注册只发生在 `setup` 阶段，扫描 / 采样期间不再变化；快照保证调用方不会在
-    /// 遍历条目清单时持锁。
+    /// 取当前已注册分区的快照（克隆后立即释放锁）；注册只在 `setup` 阶段发生，扫描期间不再变化。
     pub fn snapshot(&self) -> Vec<StorageSectionHandle> {
         self.lock().clone()
     }
 
-    /// 是否没有任何分区注册（关闭特性构建的常态）。
     pub fn is_empty(&self) -> bool {
         self.lock().is_empty()
     }
@@ -296,7 +288,6 @@ impl SectionRegistry {
     }
 }
 
-/// 无策略：`source = none`，三个数值全 `None`，`failClosed` 保持 `true`。
 pub const fn no_policy() -> ReclaimPolicyDto {
     ReclaimPolicyDto {
         source: StoragePolicySourceDto::None,
@@ -309,7 +300,6 @@ pub const fn no_policy() -> ReclaimPolicyDto {
     }
 }
 
-/// 常量策略：数值由 owner 常量固定，用户不可改。
 pub const fn constant_policy(keep_count: Option<u32>) -> ReclaimPolicyDto {
     ReclaimPolicyDto {
         source: StoragePolicySourceDto::Constant,
@@ -322,7 +312,7 @@ pub const fn constant_policy(keep_count: Option<u32>) -> ReclaimPolicyDto {
     }
 }
 
-/// owner 自述策略：数值是 owner 的私有常量，管理器不自填默认值（G3）。
+/// 数值由 owner 私有常量给出，管理器不自填默认值（G3）。
 pub const fn owner_policy() -> ReclaimPolicyDto {
     ReclaimPolicyDto {
         source: StoragePolicySourceDto::Owner,
@@ -335,7 +325,7 @@ pub const fn owner_policy() -> ReclaimPolicyDto {
     }
 }
 
-/// 配置策略：天数来自配置，可热更新（`effective_since` 由分区在运行期补）。
+/// `effective_since` 由分区在运行期补。
 pub const fn config_policy(retention_days: Option<u32>, mutable: bool) -> ReclaimPolicyDto {
     ReclaimPolicyDto {
         source: StoragePolicySourceDto::Config,

@@ -162,7 +162,8 @@ pub async fn collect_with(inputs: SampleInputs<'_>) -> Sampled {
         })));
     }
 
-    // E12：日志由插件自持轮转（插件无 stats API），路径是应用自有目录，按 §3.9 口径只读遍历。
+    // E12：日志由插件自持轮转（插件无 stats API），路径是应用自有目录，按 `fs_stats` 口径
+    // （伴生文件同口径计入）只读遍历。
     {
         let logs_root = dirs.logs();
         tasks.push(Box::pin(timed_blocking(CoreEntry::Logs.id(), move || {

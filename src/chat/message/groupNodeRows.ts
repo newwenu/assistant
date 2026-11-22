@@ -7,9 +7,8 @@ export type GroupPhase = "collecting" | "settled";
 /** 一个连续步段（run）的统计；`id` 由首步键（`callId` 或 `reasoning:<messageId>`）生成，跨渲染稳定。 */
 export interface NodeRunStats {
   id: string;
-  /** 工具步数（不含思考行，思考行单独计数）。 */
   steps: number;
-  /** 思考行数：与工具步同一 run、同一展开开关，但组头单独外显。 */
+  /** 与工具步同一 run、同一展开开关，但组头单独外显。 */
   reasoning: number;
   failed: number;
   durationMs: number | null;
@@ -21,7 +20,7 @@ export type NodeView =
       message: Message;
       showIdentity: boolean;
       ownsAssistantChrome: boolean;
-      /** `true`：气泡无正文可渲染，只承载身份行 / 尾锚点 / 错误，不画空壳（§6.1）。 */
+      /** `true`：气泡无正文可渲染，只承载身份行 / 尾锚点 / 错误，不画空壳（I46 §6.1）。 */
       chromeOnly: boolean;
     }
   | {
@@ -40,7 +39,7 @@ export type NodeView =
     }
   /**
    * 身份行节点：同一消息的思考上移为节点时，身份行从气泡拆出、排在最前，
-   * 否则思考节点会渲染在头像之前（§5.5 挂载顺序）。
+   * 否则思考节点会渲染在头像之前（I46 §5.5 挂载顺序）。
    */
   | { kind: "identity"; message: Message };
 
@@ -59,18 +58,16 @@ export interface NodeGroupView {
   /** 只读快照，禁止参与决策（门禁 16）。 */
   link: "chat" | "agent";
   stats: NodeGroupStats;
-  /** 本 turn 内是否存在可折叠 run；`false` 时全部步留在气泡内。 */
   collapsible: boolean;
   /** turn 尾锚点；`null` 时本组不渲染 `TurnTail`。 */
   tailAnchor: Message | null;
 }
 
 export interface GroupNodeRowsInput {
-  /** 已过滤 `role === "tool"` 的可见消息，顺序沿用 §2.7 键序。 */
+  /** 已过滤 `role === "tool"` 的可见消息，顺序沿用 I46 §2.7 键序。 */
   messages: Message[];
   /** 只读快照，写入视图供断言与调试；函数体内不得据此分支。 */
   link: "chat" | "agent";
-  /** 会话级流式相位：`collecting` 表示有 turn 正在运行。 */
   phase: GroupPhase;
   /** 当前流式 turn 序号，唯一来源是 `chat-stream-start`（I46 §5.3）。 */
   currentTurnIndex: number | null;
@@ -139,9 +136,8 @@ function hasBoundaryNode(messages: Message[]): boolean {
 }
 
 /**
- * 单步折叠行必须能取到摘要（I46 compact §2.12 规则 5 / 门禁 14）：
- * 优先 `compact.head`；旧数据（`compact == null`）退回 `summarizeArguments`。
- * 两者皆无则**不折叠**——宁可高，不可空。
+ * 摘要优先 `compact.head`，旧数据退回 `summarizeArguments`；两者皆无则**不折叠**
+ * （I46 compact §2.12 规则 5 / 门禁 14，宁可高不可空）。
  */
 function hasStepSummary(view: ToolCallView): boolean {
   const head = view.compact?.head;
@@ -151,10 +147,8 @@ function hasStepSummary(view: ToolCallView): boolean {
 }
 
 /**
- * 可折叠的步（D8 安全阀，2026-11-14 口径调整）：成功与失败的步只要能取到摘要就压成单行。
- * 失败原因已由 `compact.head`（`err <kind> <tool> · <subject> · <reason>`）承载，
- * 单行同时显示失败状态与原因，因此失败步不再整卡常驻；
- * `running` / `awaiting_user` / `missing` / `cancelled` 仍完整显示，并且**切断**所在的 run。
+ * 成功与失败的步只要能取到摘要就压成单行：失败原因已由 `compact.head` 承载，
+ * 单行同时显示状态与原因；`running` / `awaiting_user` / `missing` / `cancelled` 仍整卡显示并**切断** run（D8）。
  */
 function isFoldableStep(view: ToolCallView): boolean {
   return (
@@ -163,9 +157,7 @@ function isFoldableStep(view: ToolCallView): boolean {
   );
 }
 
-/** run 内的一个步：`view` 非空为工具步，`null` 为思考行（思考行没有工具视图）。 */
 interface RunEntry {
-  /** 稳定键：工具取 `callId`，思考取 `reasoning:<messageId>`。 */
   key: string;
   view: ToolCallView | null;
 }
@@ -183,16 +175,10 @@ function runStats(id: string, entries: RunEntry[]): NodeRunStats {
 }
 
 /**
- * 按「连续可折叠步」切 run（I46 §5.4）：run 是折叠的最小单位，
- * 每个 run 各自计数、各自判定阈值与展开态，互不污染。
- *
- * 切断条件：待处理 / 无摘要的步、带消息级错误的行、边界行，
- * **以及任何带正文的行**。正文行会在节点序列里插进一个气泡节点，
- * 若不切断，同一 run 的步会被气泡打断，组头在该段前重复渲染且每处都
- * 显示整段总步数——组头计数与实际行数不符（「所有节点共用一个步数」）。
- *
- * 思考行（`reasoningAsNode` 为 true 时）与工具步同权：只要非空就是可折叠步，
- * 不切断 run，从而「思考 + 本轮工具」合成同一段、组头只出现一次。
+ * 按「连续可折叠步」切 run（I46 §5.4）：run 是折叠的最小单位，各自计数、各自展开态。
+ * 待处理 / 无摘要 / 带消息级错误 / 边界行，以及任何带正文的行都切断 run——
+ * 否则组头会被气泡打断重复渲染，且每处都显示整段总步数，与实际行数不符。
+ * 思考行（`reasoningAsNode`）与工具步同权：非空即可折叠，不切断 run。
  */
 function planRuns(
   slice: Message[],
@@ -207,9 +193,7 @@ function planRuns(
 
   const flush = () => {
     if (pending.length === 0) return;
-    // run 必须有工具步才算「过程段」：纯思考段不成组，否则会出现
-    // 「执行过程 · 1 思考」这种只有一行、且与思考行自身文案重复的组头。
-    // 纯思考段按 `density="block"` 自折叠呈现（`ReasoningBlock` 自带开关）。
+    // 纯思考段不成组（否则出现「执行过程 · 1 思考」这种重复组头），由 `ReasoningBlock` 自折叠。
     const hasToolStep = pending.some((entry) => entry.view !== null);
     if (
       foldAllowed &&
@@ -239,8 +223,7 @@ function planRuns(
     // 正文行在节点序列里自成一段，必须切断 run 以保证「组头 + 步」连续。
     if (blocked || hasContent(message)) flush();
     for (const view of collectToolViews(message)) {
-      // 同一 turn 内重复下发的 `callId` 只计一次：否则组头步数会虚高，
-      // 且重复的 React key 会让实际渲染行数少于计数。
+      // 同一 turn 内重复下发的 `callId` 只计一次：否则组头步数虚高，且重复 React key 让实际行数少于计数。
       if (seenCallIds.has(view.callId)) continue;
       if (blocked || !isFoldableStep(view)) {
         seenCallIds.add(view.callId);
@@ -344,13 +327,11 @@ export function groupNodeRows(input: GroupNodeRowsInput): NodeGroupView[] {
           (turnIndex !== null &&
             (prevMessage.turnIndex ?? null) !== turnIndex));
       const isTurnTail = tailAnchor !== null && tailAnchor.id === message.id;
-      // 身份行是 turn 的起始标识，必须排在所有过程节点之前：思考上移为节点时
-      // 把身份行从气泡拆出、单独成节点，否则思考节点会渲染在头像前面（§5.5）。
+      // 身份行必须在所有过程节点之前：思考上移时把身份行拆成独立节点，否则它会渲染在头像前（I46 §5.5）。
       const identityAsNode = reasoningKey !== null && showIdentity;
       if (identityAsNode) {
         nodes.push({ kind: "identity", message });
       }
-      // 思考与工具步同权：按消息内的原始顺序先出思考节点，再出正文气泡，最后出工具步。
       if (reasoningKey !== null) {
         nodes.push({
           kind: "reasoning",
@@ -359,9 +340,8 @@ export function groupNodeRows(input: GroupNodeRowsInput): NodeGroupView[] {
           run: runByKey.get(reasoningKey) ?? null,
         });
       }
-      // 气泡只承载正文与 chrome，工具步一律按原序下移为独立节点（§6.1）：
-      // 这样「步 → 等待卡 → 步」的时间顺序不会被气泡挤到最前面。
-      // 无正文的纯工具行仅在需要挂身份行 / 尾锚点 / 错误时才留气泡壳。
+      // 气泡只承载正文与 chrome，工具步一律按原序下移为独立节点（I46 §6.1），
+      // 否则「步 → 等待卡 → 步」的时间顺序会被气泡挤到最前面。
       const needsBubble =
         hasBody ||
         message.error != null ||
@@ -371,13 +351,11 @@ export function groupNodeRows(input: GroupNodeRowsInput): NodeGroupView[] {
       if (needsBubble) {
         nodes.push({
           kind: "message",
-          // 折叠态下工具步与思考全部上移为独立节点，气泡不再承载它们（§6.1）。
           message: {
             ...message,
             ...(messageToolViews.length > 0 ? { toolCalls: undefined } : {}),
             ...(reasoningKey !== null ? { reasoning: null } : {}),
           },
-          // 身份行已单独成节点时气泡不再重复渲染（§5.5）。
           showIdentity: identityAsNode ? false : showIdentity,
           ownsAssistantChrome: turnIndex === null || !isAssistant(message),
           chromeOnly: !hasBody,
