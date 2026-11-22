@@ -4,8 +4,9 @@
 //! 损坏 profile。唯一安全时机是任何 webview 创建之前（`Builder::run` 之前），因此
 //! 运行期的清理请求只写标记，启动时消费标记再删（§13.3.5）。
 //!
-//! 标记文件放在 profile 目录内、后缀 `.tmp`：该目录已登记（`E14`），且 `.tmp` 属
-//! 伴生文件，不计入 `tree_stats` 的 `bytes` / `count`，不会让统计多出一份无主字节。
+//! 标记文件放在 profile 目录内、后缀 `.tmp`：该目录已登记（`E14`），而 `tree_stats`
+//! 对伴生文件与普通文件同口径计数，所以标记也计入 `E14` 的 `bytes` / `count`——它是
+//! 管理器自己写的真实文件（8 B），只存在到下次启动清理为止，不产生无主字节。
 
 use std::path::{Path, PathBuf};
 
@@ -38,20 +39,28 @@ pub struct PurgeReport {
     pub skipped: u64,
 }
 
-/// 可回收量：白名单子目录的字节与条数（与 [`purge_cache`] 同一份清单、同一口径）。
-pub fn cache_totals(profile: &Path) -> (u64, u64) {
-    let mut bytes = 0u64;
-    let mut count = 0u64;
-    for sub in CACHE_SUBDIRS {
-        match super::fs_stats::tree_stats(&profile.join(sub)) {
-            Ok(stats) => {
-                bytes = bytes.saturating_add(stats.bytes);
-                count = count.saturating_add(stats.count);
-            }
-            Err(error) => log::debug!("webview cache '{}' stats failed: {error}", sub),
+/// 观测：一次遍历同时给出整棵树与缓存白名单子目录（与 [`purge_cache`] 同一份清单、同一口径）。
+///
+/// 为什么合并成一次遍历：profile 常有上万文件（缓存占绝大多数），分两次走会把元数据
+/// 访问翻倍；500 ms 采样预算下（`sample::timeout`）极易超时降级为 `unavailable`。
+/// 两个量同源同刻，也顺带消除「整棵树」与「可回收」之间的跨遍历漂移。
+pub fn profile_stats(profile: &Path) -> std::io::Result<(super::fs_stats::DirStats, (u64, u64))> {
+    let mut cache = (0u64, 0u64);
+    let stats = super::fs_stats::tree_stats_with(profile, &mut |path, meta| {
+        let Ok(relative) = path.strip_prefix(profile) else {
+            return;
+        };
+        // 只认白名单子目录**内部**的文件：与 `tree_stats(&profile.join(sub))` 等价
+        // （同名但落在根上的普通文件在那边会因 `read_dir` 失败而被跳过）。
+        if CACHE_SUBDIRS
+            .iter()
+            .any(|sub| relative.starts_with(sub) && relative != Path::new(sub))
+        {
+            cache.0 = cache.0.saturating_add(meta.len());
+            cache.1 = cache.1.saturating_add(1);
         }
-    }
-    (bytes, count)
+    })?;
+    Ok((stats, cache))
 }
 
 pub fn pending_marker(profile: &Path) -> PathBuf {
@@ -135,12 +144,46 @@ mod tests {
     }
 
     #[test]
-    fn cache_totals_counts_only_whitelisted_subdirs() {
+    fn profile_stats_splits_cache_from_user_state_in_one_pass() {
         let profile = unique_dir("totals");
         write_file(&profile.join("Default/Cache/data.bin"), 10);
         write_file(&profile.join("GPUCache/blob.bin"), 20);
         write_file(&profile.join("Default/Cookies"), 100);
-        assert_eq!(cache_totals(&profile), (30, 2), "用户态文件不计入可回收量");
+        let (stats, cache) = profile_stats(&profile).expect("扫描应成功");
+        assert_eq!(stats.bytes, 130, "整棵树含用户态文件");
+        assert_eq!(stats.count, 3);
+        assert_eq!(cache, (30, 2), "可回收量只算白名单子目录");
+        std::fs::remove_dir_all(&profile).ok();
+    }
+
+    #[test]
+    fn profile_stats_missing_profile_is_empty_not_error() {
+        let profile = unique_dir("missing");
+        let (stats, cache) = profile_stats(&profile).expect("缺失目录应为空态");
+        assert_eq!(stats.bytes, 0);
+        assert_eq!(stats.count, 0);
+        assert_eq!(cache, (0, 0));
+    }
+
+    #[test]
+    fn profile_stats_counts_companion_files_in_both_views() {
+        let profile = unique_dir("companion");
+        write_file(&profile.join("Default/Cache/data.bin"), 10);
+        write_file(&profile.join("Default/Cache/data.bin.tmp"), 7);
+        let (stats, cache) = profile_stats(&profile).expect("扫描应成功");
+        assert_eq!(stats.bytes, 17, "伴生文件与普通文件同口径计入整棵树");
+        assert_eq!(cache, (17, 2), "白名单子目录内的伴生文件同样可回收");
+        std::fs::remove_dir_all(&profile).ok();
+    }
+
+    #[test]
+    fn profile_stats_counts_pending_marker() {
+        let profile = unique_dir("marker");
+        mark_pending(&profile).expect("标记可写");
+        let (stats, cache) = profile_stats(&profile).expect("扫描应成功");
+        assert_eq!(stats.count, 1, "标记是 profile 内的真实文件");
+        assert_eq!(stats.bytes, 8);
+        assert_eq!(cache, (0, 0), "标记不在白名单子目录，不计入可回收");
         std::fs::remove_dir_all(&profile).ok();
     }
 

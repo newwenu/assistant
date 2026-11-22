@@ -212,11 +212,14 @@ function noticesOf(
     });
   }
 
-  if (inventory.partial) {
+  // `inventory.partial` 有两个来源：真触界（`truncatedNodes` 非空）与 `overRegistered`
+  // （登记侧比盘上大，扫描本身是完整的）。后者已由下方 error 提示独立表达，不能复用本条
+  // 文案——「只扫描了一部分目录」与「扫描完整、登记偏大」方向正好相反，会把 EBWebView
+  // 这类持续写入条目的噪声变成常亮误报。因此只按触界触发（I67 §N8）。
+  if (inventory.partial && inventory.truncatedNodes.length > 0) {
     const names = inventory.truncatedNodes.slice(0, TRUNCATED_NAME_LIMIT);
     const hidden = inventory.truncatedNodes.length - names.length;
-    const detailParts: string[] = [];
-    if (names.length > 0) detailParts.push(names.join(", "));
+    const detailParts: string[] = [names.join(", ")];
     if (hidden > 0) {
       detailParts.push(
         translateKey("settings.storage.residual.notice.truncated_more", {
@@ -227,7 +230,7 @@ function noticesOf(
     notices.push({
       level: "warning",
       text: translateKey("settings.storage.residual.notice.partial"),
-      detail: detailParts.length > 0 ? detailParts.join(" · ") : null,
+      detail: detailParts.join(" · "),
     });
   }
 

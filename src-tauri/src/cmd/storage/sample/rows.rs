@@ -115,7 +115,8 @@ pub(super) fn sample_crashes(root: &Path) -> EntrySample {
 /// `E12`：日志目录由 `tauri-plugin-log` 轮转，插件不暴露 stats API。
 ///
 /// 目录本身是应用自有路径（`AppDirs::logs()`），因此走与 `E5` 相同的
-/// [`crate::app_dirs::fs_stats::tree_stats`]（口径见 §3.9）。回收仍归插件，管理器只观测。
+/// [`crate::app_dirs::fs_stats::tree_stats`]（伴生文件同口径计入，见该模块说明）。
+/// 回收仍归插件，管理器只观测。
 pub(super) fn sample_logs(root: &Path) -> EntrySample {
     from_io(crate::app_dirs::fs_stats::tree_stats(root))
 }
@@ -126,10 +127,10 @@ pub(super) fn sample_logs(root: &Path) -> EntrySample {
 /// 是缓存子目录求和——用户态部分（Cookies / Local Storage / IndexedDB）不删，因此
 /// 不塞进 `residualBytes`，而是让「可回收 < 已记录」由两个量表达（§13.3.4）。
 pub(super) fn sample_webview(profile: &Path) -> EntrySample {
-    match crate::app_dirs::fs_stats::tree_stats(profile) {
-        Ok(stats) => {
+    match crate::app_dirs::webview_profile::profile_stats(profile) {
+        Ok((stats, cache)) => {
             let mut sample = from_dir_stats(stats);
-            sample.reclaimable = Some(crate::app_dirs::webview_profile::cache_totals(profile));
+            sample.reclaimable = Some(cache);
             sample
         }
         Err(error) => {

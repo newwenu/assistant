@@ -359,7 +359,7 @@ mod tests {
     }
 
     #[test]
-    fn asset_stats_counts_regular_files_and_skips_companions() {
+    fn asset_stats_counts_regular_files_and_companions() {
         let dir = tempfile::tempdir().expect("临时目录应可创建");
         let root = dir.path().join("mascot-assets");
         std::fs::create_dir_all(root.join("rive")).expect("子目录应可创建");
@@ -367,8 +367,8 @@ mod tests {
         std::fs::write(root.join("rive").join("custom.riv.tmp"), b"partial").expect("写入应成功");
 
         let stats = asset_stats(&root).expect("扫描应成功");
-        assert_eq!(stats.count, 1, "伴生 .tmp 不计入条数");
-        assert_eq!(stats.bytes, 8, "伴生 .tmp 不计入字节");
+        assert_eq!(stats.count, 2, "伴生 .tmp 与普通文件同口径计入");
+        assert_eq!(stats.bytes, 15, "伴生 .tmp 确实占盘，不能漏计");
         assert!(stats.oldest_at.is_some());
     }
 

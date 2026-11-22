@@ -1,7 +1,8 @@
 //! 应用自有目录的观测工具（I61 §3.10）：`E5` / `E6` 及后续 app 自有条目共用。
 //!
 //! 只读、幂等、不持锁：管理器在 `spawn_blocking` 里调用，超时后线程仍会跑完。
-//! 遍历规则与 §3.9 一致：不跟随符号链接、跳过非常规文件、目录自身不计。
+//! 遍历规则：不跟随符号链接、跳过非常规文件、目录自身不计；伴生文件
+//! （`-journal` / `-wal` / `-shm` / `.tmp` / `.lock`）按普通文件计入（见 [`tree_stats`]）。
 //!
 //! 为什么不在各 crate 之间共享一份实现：`assistant-tools` / 密码库域 / `assistant-crash`
 //! 是互不依赖的域 crate，为一个 4 字段结构互相引入依赖会把无关模块绑在一起。
@@ -44,14 +45,33 @@ pub fn file_stats(path: &Path) -> std::io::Result<DirStats> {
 /// 整棵子树的观测（`E5` 等递归条目）：递归、跳符号链接、跳非常规文件。
 ///
 /// 目录不存在是正常空态（按需创建），返回全零而不是错误。
-/// 伴生文件（`.tmp` 中间态等）不计入 `bytes` / `count`（§3.9 包含范围）。
+/// 伴生文件（`-journal` / `-wal` / `-shm` / `.tmp` / `.lock`）与普通文件同口径计入
+/// `bytes` / `count`：它们确实占盘，对账扫描（`inventory::walk`）也把它们计入
+/// `scanBytes`；两侧同口径，「已登记」才能覆盖全部已观测字节，不留假余量。
 pub fn tree_stats(dir: &Path) -> std::io::Result<DirStats> {
+    tree_stats_with(dir, &mut |_, _| {})
+}
+
+/// 与 [`tree_stats`] 同一遍历，但把每个**已计入**文件回调给调用方。
+///
+/// 用于「整棵树 + 其中某个子集」要同时取数的场景（`E14` 的整棵树与缓存白名单）：
+/// 一次遍历给出两个量，避免同一棵树走两遍把元数据访问翻倍（采样预算见
+/// `sample::timeout`）。回调在跳符号链接 / 非常规文件之后触发，口径与 `tree_stats`
+/// 恒等（伴生文件同样计入）。
+pub fn tree_stats_with(
+    dir: &Path,
+    on_file: &mut dyn FnMut(&Path, &std::fs::Metadata),
+) -> std::io::Result<DirStats> {
     let mut stats = DirStats::default();
-    walk_tree(dir, &mut stats)?;
+    walk_tree(dir, &mut stats, on_file)?;
     Ok(stats)
 }
 
-fn walk_tree(dir: &Path, stats: &mut DirStats) -> std::io::Result<()> {
+fn walk_tree(
+    dir: &Path,
+    stats: &mut DirStats,
+    on_file: &mut dyn FnMut(&Path, &std::fs::Metadata),
+) -> std::io::Result<()> {
     let entries = match std::fs::read_dir(dir) {
         Ok(entries) => entries,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
@@ -66,28 +86,16 @@ fn walk_tree(dir: &Path, stats: &mut DirStats) -> std::io::Result<()> {
             continue;
         }
         if meta.is_dir() {
-            walk_tree(&path, stats)?;
+            walk_tree(&path, stats, on_file)?;
             continue;
         }
-        if !meta.is_file() || is_companion_file(&path) {
+        if !meta.is_file() {
             continue;
         }
+        on_file(&path, &meta);
         accumulate(stats, &meta);
     }
     Ok(())
-}
-
-/// 伴生文件（SQLite 边车 / 部分写入残留）：不计入条目数字，由 owner 在回收时一并清理（§3.9）。
-const COMPANION_SUFFIXES: &[&str] = &["-journal", "-wal", "-shm", ".tmp", ".lock"];
-
-fn is_companion_file(path: &Path) -> bool {
-    let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
-        return false;
-    };
-    let name = name.to_ascii_lowercase();
-    COMPANION_SUFFIXES
-        .iter()
-        .any(|suffix| name.ends_with(suffix))
 }
 
 fn accumulate(stats: &mut DirStats, meta: &std::fs::Metadata) {
@@ -149,6 +157,47 @@ mod tests {
         assert_eq!(stats.count, 2);
         assert_eq!(stats.bytes, 5);
         assert!(stats.oldest_at.is_some());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn tree_stats_with_sees_exactly_the_counted_files() {
+        let dir = unique_dir("tree-with");
+        std::fs::create_dir_all(dir.join("nested")).expect("临时目录应可创建");
+        std::fs::write(dir.join("nested").join("a.bin"), b"123").expect("写入应成功");
+        std::fs::write(dir.join("b.bin"), b"12").expect("写入应成功");
+        std::fs::write(dir.join("c.bin.tmp"), b"ignored").expect("写入应成功");
+
+        let mut seen: Vec<std::path::PathBuf> = Vec::new();
+        let stats = tree_stats_with(&dir, &mut |path, _| seen.push(path.to_path_buf()))
+            .expect("扫描应成功");
+        assert_eq!(stats.count, 3, "回调覆盖全部计入的文件（伴生文件同样计入）");
+        assert_eq!(stats.bytes, 12);
+        assert_eq!(seen.len(), 3);
+        assert_eq!(stats, tree_stats(&dir).expect("两次口径应一致"));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn tree_stats_counts_companion_files() {
+        let dir = unique_dir("companion");
+        std::fs::create_dir_all(&dir).expect("临时目录应可创建");
+        for name in [
+            "a.bin-journal",
+            "b.bin-wal",
+            "c.bin-shm",
+            "d.bin.tmp",
+            "e.bin.lock",
+        ] {
+            std::fs::write(dir.join(name), b"12").expect("写入应成功");
+        }
+        std::fs::write(dir.join("f.bin"), b"123").expect("写入应成功");
+
+        let stats = tree_stats(&dir).expect("扫描应成功");
+        assert_eq!(stats.count, 6, "伴生文件与普通文件同口径计入");
+        assert_eq!(stats.bytes, 13, "伴生文件确实占盘，不能漏计");
 
         let _ = std::fs::remove_dir_all(&dir);
     }

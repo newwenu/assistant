@@ -129,6 +129,21 @@ describe("对账余量视图模型", () => {
     expect(notice?.detail).toContain("2");
   });
 
+  it("partial 仅由 overRegistered 触发时不冒充「只扫描了一部分目录」", () => {
+    const view = residualView(
+      makeInventory({
+        partial: true,
+        truncatedNodes: [],
+        nodes: [makeNode({ name: "EBWebView", overRegistered: true })],
+      }),
+    );
+    expect(
+      view.notices.filter((item) => item.level === "warning"),
+    ).toHaveLength(0);
+    const error = view.notices.find((item) => item.level === "error");
+    expect(error).toBeDefined();
+  });
+
   it("任一节点超登记时整段标红并保留该行标记", () => {
     const view = residualView(
       makeInventory({
