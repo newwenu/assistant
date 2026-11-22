@@ -19,6 +19,8 @@ mod mounted {
         ReclaimPolicyDto, StorageEligibilityDto, StoragePolicySourceDto, StorageReclaimActionDto,
         StorageReclaimReasonDto,
     };
+    use assistant_config::ConfGroup;
+    use assistant_vault::conf::VaultConf;
     use assistant_vault::security_db::SecurityDbState;
     use assistant_vault::storage_section::{
         VaultAction, VaultCoverage, VaultEligibility, VaultPolicy, VaultReason, VaultRisk,
@@ -190,8 +192,9 @@ mod mounted {
             state: SecurityDbState,
             repo_dir: std::path::PathBuf,
             recovery_dir: std::path::PathBuf,
+            conf_path: std::path::PathBuf,
         ) -> Self {
-            let section = VaultStorageSection::new(state, repo_dir, recovery_dir);
+            let section = VaultStorageSection::new(state, repo_dir, recovery_dir, conf_path);
             // 条目清单在注册时一次性映射并固化为 `'static`：注册只发生一次，
             // 采样 / 对账期间不再重建。
             let entries: &'static [SectionEntry] = Box::leak(
@@ -404,6 +407,7 @@ mod mounted {
             state,
             vault::repo_dir(&dirs),
             vault::recovery_dir(&dirs),
+            vault::security_dir(&dirs).join(<VaultConf as ConfGroup>::FILE_NAME),
         ));
         if let Err(error) = registry.register(section) {
             log::error!("安全域分区注册失败: {}", error);
@@ -440,8 +444,14 @@ mod mounted {
             let dir = tempfile::tempdir().expect("temp dir");
             let db = dir.path().join("security").join("security.db");
             let state = SecurityDbState::new(&db.to_string_lossy());
-            let section =
-                SecuritySection::new(state, dir.path().join("repo"), dir.path().join("recovery"));
+            let section = SecuritySection::new(
+                state,
+                dir.path().join("repo"),
+                dir.path().join("recovery"),
+                dir.path()
+                    .join("security")
+                    .join(<VaultConf as ConfGroup>::FILE_NAME),
+            );
             let mapped = section.entries();
             let source = section.section.entries();
             assert_eq!(mapped.len(), source.len(), "映射不得增减条目");
