@@ -20,12 +20,15 @@ const UI_KEYS = [
   "canvas.preset.badge_example",
   "canvas.preset.readonly_hint",
   "canvas.palette.title",
-  "canvas.palette.hint",
-  "canvas.palette.place_hint",
   "canvas.card.badge_example",
   "canvas.card.category.execution",
   "canvas.card.category.container",
   "canvas.card.stages",
+  "canvas.phase.settle",
+  "canvas.phase.decide",
+  "canvas.phase.commit",
+  "canvas.phase.tools",
+  "canvas.phase.wrap",
   "canvas.card.reference",
   "canvas.card.body.output",
   "canvas.card.body.messages",
@@ -130,8 +133,8 @@ describe("built-in agent preset", () => {
     expect(Array.from(BUILTIN_AGENT_LAYOUT.boxes.entries())).toEqual(
       Array.from(manual.boxes.entries()),
     );
-    expect(BUILTIN_AGENT_LAYOUT.width).toBe(1376);
-    expect(BUILTIN_AGENT_LAYOUT.height).toBe(544);
+    expect(BUILTIN_AGENT_LAYOUT.width).toBe(1296);
+    expect(BUILTIN_AGENT_LAYOUT.height).toBe(784);
   });
 
   it("labels the branch lane in the free columns", () => {
@@ -150,9 +153,9 @@ describe("built-in agent preset", () => {
 
     expect(zoneLabelBoxOf(branchLane)).toEqual({
       x: 0,
-      y: 304,
-      w: 672,
-      h: 240,
+      y: 424,
+      w: 632,
+      h: 360,
     });
 
     const cardColumns = new Set(

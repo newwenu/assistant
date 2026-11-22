@@ -1,5 +1,6 @@
 import { memo } from "react";
 import type { CanvasCardView, CanvasPortSide } from "./types";
+import { portSpreadOffset } from "./presets/metrics";
 import styles from "./canvas.module.css";
 
 export interface CanvasCardProps {
@@ -15,9 +16,9 @@ export interface CanvasCardProps {
 }
 
 /**
- * 卡片壳（I68 §7.3）：六件构成全部在场——头部（拖拽柄 + 类别徽标 + 名称 + 「示例」徽标）、
- * 主体（参数摘要 + 附加区）、端口区（圆点 + 占位类型标签）、脚部（状态药丸 + 引用 chip + 时长）、
- * 选择态、拖拽柄；轮次卡片另有出口角标与阶段轨道。
+ * 卡片壳：六件构成全部在场——头部（拖拽柄 + 类别徽标 + 名称 +
+ * 「示例」徽标）、主体（参数摘要 + 附加区）、端口区（圆点 + 占位类型标签）、
+ * 脚部（状态药丸 + 引用 chip + 时长）、选择态、拖拽柄；轮次卡片另有出口角标与阶段轨道。
  * 只认已本地化文案、`tone` 与占位端口方位，不判断区带、行号与状态语义（§5.1 分层纪律）。
  */
 function CanvasCardImpl({
@@ -28,12 +29,13 @@ function CanvasCardImpl({
 }: CanvasCardProps) {
   const ports = card.ports ?? [];
   const params = card.params ?? [];
+  const portGroups = groupPorts(ports);
 
   const ariaLabel = [
     card.kindBadge,
     card.title,
     card.status,
-    card.body.kind === "stages"
+    card.body.kind === "phases"
       ? `${card.body.label} ${card.body.count}`
       : undefined,
   ]
@@ -46,7 +48,6 @@ function CanvasCardImpl({
       className={styles.card}
       data-canvas-card
       data-card-id={card.id}
-      data-tone={card.tone ?? "default"}
       data-container={card.container === true}
       data-selected={selected}
       aria-pressed={selected}
@@ -86,29 +87,37 @@ function CanvasCardImpl({
         <span className={styles.cardExtra} data-kind={card.body.kind}>
           <span className={styles.cardExtraHead}>
             <span className={styles.cardExtraLabel}>{card.body.label}</span>
-            {card.body.kind === "stages" && (
+            {card.body.kind === "phases" && (
               <span className={styles.cardStageCount}>{card.body.count}</span>
             )}
           </span>
-          {card.body.kind === "stages" ? (
-            <span className={styles.cardStages}>
-              {card.body.stages.map((stage) => (
+          {card.body.kind === "phases" ? (
+            <span className={styles.cardPhases}>
+              {card.body.phases.map((phase) => (
                 <span
-                  key={`${card.id}-stage-${stage.id}`}
-                  className={styles.cardStage}
-                  data-tone={stage.tone}
-                  title={`${stage.title} · ${stage.state} · ${stage.description}`}
+                  key={`${card.id}-phase-${phase.id}`}
+                  className={styles.cardPhaseRow}
+                  data-tone={phase.tone}
+                  title={`${phase.title} · ${phase.closed}/${phase.total} · ${phase.detail}`}
                 >
-                  <span className={styles.cardStageOrdinal}>
-                    {stage.ordinal}
+                  <span className={styles.cardPhaseOrdinal}>
+                    {phase.ordinal}
                   </span>
-                  <span className={styles.cardStageTitle}>{stage.title}</span>
-                  <span
-                    className={styles.cardStageDot}
-                    data-tone={stage.tone}
-                    aria-hidden="true"
-                  />
-                  <span className={styles.cardStageState}>{stage.state}</span>
+                  <span className={styles.cardPhaseTitle}>{phase.title}</span>
+                  <span className={styles.cardPhaseProgress}>
+                    <span className={styles.cardPhaseTrack}>
+                      <span
+                        className={styles.cardPhaseFill}
+                        data-tone={phase.tone}
+                        style={{
+                          height: `${(phase.total === 0 ? 0 : phase.closed / phase.total) * 100}%`,
+                        }}
+                      />
+                    </span>
+                    <span className={styles.cardPhaseCount}>
+                      {`${phase.closed}/${phase.total}`}
+                    </span>
+                  </span>
                 </span>
               ))}
             </span>
@@ -159,30 +168,66 @@ function CanvasCardImpl({
         </span>
       )}
 
-      {ports.length > 0 && (
-        <span className={styles.cardPorts}>
-          {ports.map((port, index) => (
+      {portGroups.map((group) => (
+        <span
+          key={`${card.id}-ports-${group.side}`}
+          className={styles.cardPortGroup}
+          data-side={group.side}
+        >
+          {group.ports.map((port, index) => (
             <span
-              key={`${card.id}-port-${port.side}-${index}`}
-              className={styles.cardPortAnchor}
-              data-side={port.side}
+              key={`${card.id}-port-${group.side}-${index}`}
+              className={styles.cardPortDotWrap}
+              style={spreadStyleOf(
+                group.side,
+                portOffset(index, group.ports.length),
+              )}
+              onPointerDown={(event) => onPortDown?.(card.id, port.side, event)}
+              title={port.typeLabel}
+              role="presentation"
             >
               <span
                 className={styles.cardPortDot}
                 data-port-side={port.side}
-                onPointerDown={(event) =>
-                  onPortDown?.(card.id, port.side, event)
-                }
+                aria-hidden="true"
               />
-              <span className={styles.cardPortLabel} aria-hidden="true">
-                {port.typeLabel}
-              </span>
             </span>
           ))}
         </span>
-      )}
+      ))}
     </button>
   );
+}
+
+interface PortGroup {
+  side: CanvasPortSide;
+  ports: NonNullable<CanvasCardView["ports"]>;
+}
+
+/** 端口按侧分组：每侧一个业务锚点，组内圆点按固定间距展开。 */
+function groupPorts(ports: NonNullable<CanvasCardView["ports"]>): PortGroup[] {
+  const sides: readonly CanvasPortSide[] = ["left", "right", "top", "bottom"];
+  const groups: PortGroup[] = [];
+  for (const side of sides) {
+    const sidePorts = ports.filter((port) => port.side === side);
+    if (sidePorts.length > 0) {
+      groups.push({ side, ports: sidePorts });
+    }
+  }
+  return groups;
+}
+
+function portOffset(index: number, count: number): number {
+  return portSpreadOffset(index, count);
+}
+
+/** 展开偏移：左右沿 Y、上下沿 X；子元素用相对位移，父容器保持锚点不动。 */
+function spreadStyleOf(
+  side: CanvasPortSide,
+  offset: number,
+): React.CSSProperties {
+  const vertical = side === "left" || side === "right";
+  return vertical ? { marginTop: offset } : { marginLeft: offset };
 }
 
 export const CanvasCard = memo(CanvasCardImpl);

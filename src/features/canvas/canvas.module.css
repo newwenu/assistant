@@ -178,70 +178,75 @@
   border-style: dashed;
 }
 
-.card[data-tone="active"],
-.cardSwatch[data-tone="active"] {
-  border-color: var(--ant-color-primary);
-}
-
-.card[data-tone="success"],
-.cardSwatch[data-tone="success"] {
-  border-color: var(--ant-color-success);
-}
-
-.card[data-tone="warning"],
-.cardSwatch[data-tone="warning"] {
-  border-color: var(--ant-color-warning);
-}
-
-.card[data-tone="danger"],
-.cardSwatch[data-tone="danger"] {
-  border-color: var(--ant-color-error);
-}
-
-.card[data-tone="muted"],
-.cardSwatch[data-tone="muted"] {
-  border-color: var(--ant-color-border-secondary);
-}
-
+/* 卡片边框：中性，不随 tone 变色（双通道纪律）。 */
 .card[data-tone="muted"] {
   color: var(--ant-color-text-tertiary);
 }
 
+/* 选择态：实线外扩；焦点态：虚线内缩——两者形态可分、可同时成立。 */
 .card[data-selected="true"] {
   outline: 2px solid var(--ant-color-primary);
-  outline-offset: 2px;
+  outline-offset: 3px;
 }
 
 .card:focus-visible {
-  outline: 2px solid var(--ant-color-primary);
-  outline-offset: 2px;
+  outline: 2px dashed var(--ant-color-primary);
+  outline-offset: -3px;
 }
 
-/* 头部（32px）：拖拽柄 + 类别徽标 + 名称 + 「示例」徽标。 */
+/* 头部（38px）：实色身份带，整卡唯一的实色重心。 */
 .cardHeader {
+  position: relative;
   display: flex;
   flex: none;
   align-items: center;
   gap: 6px;
-  height: 32px;
+  height: 38px;
   padding: 0 10px 0 22px;
   box-sizing: border-box;
   border-bottom: 1px solid var(--ant-color-split);
   border-radius: var(--radius-lg) var(--radius-lg) 0 0;
-  background: var(--ant-color-fill-quaternary);
+  background: var(--ant-color-fill-tertiary);
   overflow: hidden;
+}
+
+/* 身份带左侧 3px 竖条：类别色的唯一落点。 */
+.cardHeader::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 3px;
+  background: var(--ant-color-border-secondary);
+}
+
+.card[data-tone="active"] .cardHeader::before,
+.cardSwatch[data-tone="active"] {
+  background: var(--ant-color-primary);
+}
+
+.card[data-tone="success"] .cardHeader::before,
+.cardSwatch[data-tone="success"] {
+  background: var(--ant-color-success);
+}
+
+.card[data-tone="warning"] .cardHeader::before,
+.cardSwatch[data-tone="warning"] {
+  background: var(--ant-color-warning);
+}
+
+.card[data-tone="danger"] .cardHeader::before,
+.cardSwatch[data-tone="danger"] {
+  background: var(--ant-color-error);
 }
 
 .cardKindBadge {
   flex: none;
   max-width: 58%;
-  padding: 0 5px;
-  border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 4px;
-  background: var(--ant-color-bg-container);
   font-size: 10px;
   line-height: 16px;
-  color: var(--ant-color-text-secondary);
+  color: var(--ant-color-text-tertiary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -251,8 +256,9 @@
   flex: 1 1 auto;
   min-width: 0;
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 600;
   line-height: 1.3;
+  color: var(--ant-color-text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -269,14 +275,14 @@
   white-space: nowrap;
 }
 
-/* 主体：参数摘要（只读）+ 附加区。 */
+/* 主体：无内层描边容器，参数摘要 + 附加区直接排版在卡片上。 */
 .cardBody {
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
   gap: 6px;
   min-height: 0;
-  padding: 8px 12px;
+  padding: 8px 10px;
   box-sizing: border-box;
   overflow: hidden;
 }
@@ -287,7 +293,7 @@
   flex-direction: column;
   gap: 2px;
   font-size: 10px;
-  line-height: 14px;
+  line-height: 18px;
 }
 
 .cardParamRow {
@@ -318,10 +324,7 @@
   flex-direction: column;
   gap: 4px;
   min-height: 0;
-  padding: 6px;
-  border: 1px solid var(--ant-color-split);
-  border-radius: var(--radius-md);
-  background: var(--ant-color-fill-quaternary);
+  padding: 0;
   overflow: hidden;
 }
 
@@ -348,59 +351,53 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* 阶段轨道：3 列 × 4 行，12 条阶段条与模板顺序一一对应（A23）。 */
-.cardStages {
-  display: grid;
-  flex: 1 1 auto;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  grid-template-rows: repeat(4, minmax(0, 1fr));
-  gap: 3px;
-  min-height: 0;
-  overflow: hidden;
-}
-
-.cardStage {
+/* 阶段轨道：5 行 × 1 列，逐行一个显示阶段，下行 = 前进方向。 */
+.cardPhases {
   display: flex;
+  flex: none;
   flex-direction: column;
-  justify-content: center;
-  gap: 1px;
+  gap: 5px;
+}
+
+.cardPhaseRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 18px;
   min-width: 0;
-  padding: 2px 4px;
-  border: 1px solid var(--ant-color-split);
+  padding: 0 4px 0 5px;
+  box-sizing: border-box;
   border-radius: 3px;
-  background: var(--ant-color-bg-container);
-  font-size: 9px;
-  line-height: 11px;
+  font-size: 11px;
+  line-height: 14px;
   overflow: hidden;
 }
 
-.cardStage[data-tone="active"] {
-  border-color: var(--ant-color-primary);
+/* active：唯一的浅底 + 行首 2px 状态色竖条。 */
+.cardPhaseRow[data-tone="active"] {
+  background: var(--ant-color-primary-bg);
+  box-shadow: inset 2px 0 0 var(--ant-color-primary);
 }
 
-.cardStage[data-tone="success"] {
-  border-color: var(--ant-color-success);
+.cardPhaseRow[data-tone="danger"] {
+  background: var(--ant-color-error-bg);
+  box-shadow: inset 2px 0 0 var(--ant-color-error);
 }
 
-.cardStage[data-tone="warning"] {
-  border-color: var(--ant-color-warning);
-}
-
-.cardStage[data-tone="danger"] {
-  border-color: var(--ant-color-error);
-}
-
-.cardStage[data-tone="muted"] {
-  border-color: var(--ant-color-border-secondary);
+.cardPhaseRow[data-tone="muted"] {
   color: var(--ant-color-text-tertiary);
 }
 
-.cardStageOrdinal {
+.cardPhaseOrdinal {
+  flex: none;
+  width: 14px;
   color: var(--ant-color-text-quaternary);
+  font-size: 10px;
   font-variant-numeric: tabular-nums;
 }
 
-.cardStageTitle {
+.cardPhaseTitle {
+  flex: 1 1 auto;
   min-width: 0;
   font-weight: 500;
   overflow: hidden;
@@ -408,39 +405,60 @@
   white-space: nowrap;
 }
 
-.cardStageState {
+/* 进度轨道栏（84）：竖列 4px + 8 间距 + 读数。 */
+.cardPhaseProgress {
   display: flex;
+  flex: none;
   align-items: center;
-  gap: 3px;
-  min-width: 0;
-  color: var(--ant-color-text-tertiary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  gap: 8px;
 }
 
-.cardStageDot {
+.cardPhaseTrack {
+  position: relative;
   flex: none;
   width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  background: var(--ant-color-text-quaternary);
+  height: 12px;
+  border-radius: 2px;
+  background: var(--ant-color-border-secondary);
+  overflow: hidden;
 }
 
-.cardStageDot[data-tone="active"] {
+.cardPhaseFill {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  border-radius: 2px;
+  background: var(--ant-color-border-secondary);
+}
+
+.cardPhaseFill[data-tone="active"] {
   background: var(--ant-color-primary);
 }
 
-.cardStageDot[data-tone="success"] {
+.cardPhaseFill[data-tone="success"] {
   background: var(--ant-color-success);
 }
 
-.cardStageDot[data-tone="warning"] {
+.cardPhaseFill[data-tone="warning"] {
   background: var(--ant-color-warning);
 }
 
-.cardStageDot[data-tone="danger"] {
+.cardPhaseFill[data-tone="danger"] {
   background: var(--ant-color-error);
+}
+
+.cardPhaseCount {
+  flex: none;
+  width: 30px;
+  color: var(--ant-color-text-tertiary);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.cardPhaseRow[data-tone="active"] .cardPhaseCount {
+  color: var(--ant-color-primary);
 }
 
 /* 容器卡片：子图缩略（6 个节点 + 4 条连线），只是形状占位。 */
@@ -507,7 +525,7 @@
   align-items: center;
   gap: 4px;
   height: 26px;
-  padding: 0 18px 0 12px;
+  padding: 0 18px 0 10px;
   box-sizing: border-box;
   border-top: 1px solid var(--ant-color-split);
   border-radius: 0 0 var(--radius-lg) var(--radius-lg);
@@ -533,21 +551,23 @@
   pointer-events: none;
 }
 
-/* 端口区：圆点 + 占位类型标签；只是位置提示与命中区，不承载类型（I68 §6.3）。 */
-.cardPorts {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-}
-
-.cardPortAnchor {
+/* 端口区：每侧一个业务锚点（边框中点），组内圆点按 spreadStep 展开。 */
+.cardPortGroup {
   position: absolute;
   display: flex;
-  align-items: center;
-  gap: 3px;
   pointer-events: none;
 }
 
+/* 圆点包装：唯一负责锚点定位的盒子；标签只走 title，不进视觉层。 */
+.cardPortDotWrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+  cursor: crosshair;
+}
+
+/* 圆点即唯一端口视觉：标签退到 title 提示，绝不进卡内遮挡内容。 */
 .cardPortDot {
   flex: none;
   width: 8px;
@@ -557,41 +577,45 @@
   border-radius: 50%;
   background: var(--ant-color-bg-container);
   pointer-events: auto;
+  transition:
+    border-color 0.12s ease,
+    transform 0.12s ease;
 }
 
-.cardPortLabel {
-  flex: none;
-  font-size: 9px;
-  line-height: 10px;
-  color: var(--ant-color-text-quaternary);
-  white-space: nowrap;
+.cardPortDotWrap:hover .cardPortDot {
+  border-color: var(--ant-color-primary);
+  transform: scale(1.25);
 }
 
-.cardPortAnchor[data-side="left"] {
+/* 端口组锚在边框四边中点，组内以圆点中心等距展开；标签绝对定位不改变组宽高。 */
+.cardPortGroup[data-side="left"] {
   left: -4px;
   top: 50%;
+  flex-direction: column;
+  align-items: center;
   transform: translateY(-50%);
 }
 
-.cardPortAnchor[data-side="right"] {
+.cardPortGroup[data-side="right"] {
   right: -4px;
   top: 50%;
-  flex-direction: row-reverse;
+  flex-direction: column;
+  align-items: center;
   transform: translateY(-50%);
 }
 
-.cardPortAnchor[data-side="top"] {
+.cardPortGroup[data-side="top"] {
   top: -4px;
   left: 50%;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
   transform: translateX(-50%);
 }
 
-.cardPortAnchor[data-side="bottom"] {
+.cardPortGroup[data-side="bottom"] {
   bottom: -4px;
   left: 50%;
-  flex-direction: column-reverse;
+  flex-direction: row;
   align-items: center;
   transform: translateX(-50%);
 }
@@ -599,10 +623,10 @@
 .cardStatusPill {
   flex: none;
   padding: 0 6px;
-  border-radius: 9px;
+  border-radius: 10px;
   background: var(--ant-color-fill-secondary);
   font-size: 10px;
-  line-height: 16px;
+  line-height: 20px;
   color: var(--ant-color-text-secondary);
   white-space: nowrap;
 }
@@ -959,7 +983,7 @@
   position: absolute;
   padding: 0;
   border: 0;
-  border-radius: var(--radius-sm);
+  border-radius: 3px;
   background: transparent;
   pointer-events: auto;
   cursor: pointer;
@@ -1009,42 +1033,78 @@
   pointer-events: none;
 }
 
-/* 放置栏（I68 §7.10）：页面层固定栏，不进世界坐标。 */
+/* 放置栏：浮在画布左上角的竖条，不占栅格列、不进世界坐标。 */
 .palette {
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  min-height: 0;
-  border-right: 1px solid var(--ant-color-border);
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  width: 200px;
+  max-height: calc(100% - 24px);
+  box-sizing: border-box;
+  border: 1px solid var(--ant-color-border);
+  border-radius: var(--radius-lg);
   background: var(--ant-color-bg-container);
+  box-shadow: var(--shadow-panel);
   overflow: hidden;
 }
 
+/* 标题行兼任拖动柄：面板头部，与列表以分隔线分开，不参与条目悬浮效果。 */
 .paletteHead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  height: 30px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--ant-color-split);
+  background: var(--ant-color-fill-tertiary);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.paletteHead:active {
+  cursor: grabbing;
+}
+
+/* 拖动柄：三个点各自成元素，垂直居中于标题行，不用 box-shadow 叠点。 */
+.paletteHeadGrip {
+  flex: none;
   display: grid;
+  justify-items: center;
   gap: 2px;
-  padding: 10px 12px 8px;
-  border-bottom: 1px solid var(--ant-color-border);
+  pointer-events: none;
+}
+
+.paletteHeadGrip > i {
+  display: block;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--ant-color-text-quaternary);
 }
 
 .paletteTitle {
+  min-width: 0;
   font-size: 12px;
   font-weight: 500;
   color: var(--ant-color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.paletteHint {
-  font-size: 11px;
-  line-height: 1.4;
-  color: var(--ant-color-text-quaternary);
-}
-
+/* 条目区是唯一滚动容器；面板外壳不滚，头部随之固定。 */
 .paletteList {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
   min-height: 0;
   margin: 0;
-  padding: 8px;
+  padding: 6px;
   list-style: none;
   overflow-y: auto;
 }
@@ -1052,16 +1112,19 @@
 .paletteItem {
   position: relative;
   display: grid;
-  gap: 3px;
+  grid-template-rows: 20px 14px;
+  gap: 2px;
   width: 100%;
+  height: 44px;
   box-sizing: border-box;
-  padding: 8px 8px 8px 20px;
+  padding: 5px 8px 5px 24px;
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius);
   background: var(--ant-color-bg-container);
   color: inherit;
   text-align: left;
   cursor: grab;
+  overflow: hidden;
 }
 
 .paletteItem:hover {
@@ -1078,18 +1141,24 @@
   cursor: grabbing;
 }
 
+/* 条目拖卡提示：三个点各自成元素，锚在条目左内侧并垂直居中。 */
 .paletteGrip {
   position: absolute;
-  top: 10px;
-  left: 8px;
+  top: 50%;
+  left: 9px;
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.paletteGrip > i {
+  display: block;
   width: 3px;
   height: 3px;
   border-radius: 50%;
   background: var(--ant-color-text-quaternary);
-  box-shadow:
-    0 4px 0 var(--ant-color-text-quaternary),
-    0 8px 0 var(--ant-color-text-quaternary);
-  pointer-events: none;
 }
 
 .paletteItemHead {
@@ -1099,16 +1168,37 @@
   min-width: 0;
 }
 
+/* 类别色标：6×6 圆点，只表达「哪一类」，不用整块底色。 */
+.paletteItemTone {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ant-color-text-quaternary);
+}
+
+.paletteItemTone[data-tone="active"] {
+  background: var(--ant-color-primary);
+}
+
+.paletteItemTone[data-tone="success"] {
+  background: var(--ant-color-success);
+}
+
+.paletteItemTone[data-tone="warning"] {
+  background: var(--ant-color-warning);
+}
+
+.paletteItemTone[data-tone="danger"] {
+  background: var(--ant-color-error);
+}
+
 .paletteItemBadge {
   flex: none;
   max-width: 60%;
-  padding: 0 5px;
-  border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 4px;
-  background: var(--ant-color-bg-container);
   font-size: 10px;
   line-height: 16px;
-  color: var(--ant-color-text-secondary);
+  color: var(--ant-color-text-quaternary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1119,6 +1209,7 @@
   min-width: 0;
   font-size: 12px;
   font-weight: 500;
+  line-height: 16px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1126,8 +1217,8 @@
 
 .paletteItemSummary {
   min-width: 0;
-  font-size: 11px;
-  line-height: 1.4;
+  font-size: 10px;
+  line-height: 14px;
   color: var(--ant-color-text-tertiary);
   overflow: hidden;
   text-overflow: ellipsis;

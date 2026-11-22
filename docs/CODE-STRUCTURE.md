@@ -88,7 +88,7 @@
 | `src/hooks/` | 跨模块 Hook | 初始化、主题、导航监听、错误通知、文件拖放 |
 | `src/utils/` | 通用工具 | 字节 / 时间格式化、懒加载恢复、模块载入、持久化队列 |
 | `src/i18n/` | 国际化 | i18next 初始化、语言包、语言生效链路 |
-| `src/features/` | 功能挂载点 | 可选功能（vault）与常驻功能（observation）的注册、聚合与导航注入 |
+| `src/features/` | 功能挂载点 | 可选功能（vault）与常驻功能（clock / observation / orchestration）的注册、聚合与导航注入；`canvas/` 为共享画布设施，不注册为 feature |
 | `src/types/` | 契约类型 | 生成契约 + 事件类型（生成物禁止手改） |
 | `src/test-utils/` | 测试夹具 | 夹具、命令桩、Rust 命令名声明清单 |
 | `src/assets/styles/` | 样式与主题 | 全局样式与 antd 令牌 |

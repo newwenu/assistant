@@ -13,6 +13,7 @@
       "vault_settings": { "title": "Vault Settings" },
       "chat_history": "Chat History",
       "agent_observation": "Agent Observation",
+      "agent_orchestration": "Agent Orchestration",
       "settings": "Settings",
       "category": {
         "general": "General",
@@ -2175,10 +2176,6 @@
     "title": "Agent Turn Observation",
     "subtitle": "Read-only copy, never drives control",
     "instances": "Observation Instances",
-    "empty": {
-      "title": "No observation instances",
-      "description": "Start an agent conversation and node events fold into this graph live; instances keep accumulating after you switch away."
-    },
     "turn": {
       "label": "Turn {{index}}",
       "unnamed": "Unnumbered turn",
@@ -2193,8 +2190,9 @@
       "forward": "Forward",
       "loop": "Loop",
       "unfinished": "Unfinished",
-      "preview": "Template preview (no node events in this run yet)",
-      "no_percent": "V1 shows states only, no percentages"
+      "now": "Current",
+      "iteration_band": "Round {{iteration}}",
+      "loop_back": "After this round it returns to \"{{from}}\" and starts the next one"
     },
     "state": {
       "pending": "Pending",
@@ -2236,6 +2234,20 @@
       "persist-tools": "Persist Tool Results",
       "after-iteration": "After Iteration"
     },
+    "short": {
+      "admit": "Admit",
+      "prepare": "Snapshot",
+      "brake": "Brake",
+      "ladder": "Ladder",
+      "model": "Model",
+      "persist-assistant": "Assistant",
+      "branch": "Branch",
+      "budget-split": "Budget",
+      "pipeline": "Tools",
+      "after-tool": "After Tool",
+      "persist-tools": "Tool Rows",
+      "after-iteration": "Iter Close"
+    },
     "role": {
       "admit": "Validate whether this turn may enter orchestration",
       "prepare": "Freeze input and build the context projection",
@@ -2276,6 +2288,13 @@
     "zoom_out": "Zoom out",
     "zoom_reset": "Reset view",
     "zoom_level": "Zoom",
+    "phase": {
+      "settle": "Admit & snapshot",
+      "decide": "Context & model",
+      "commit": "Persist & branch",
+      "tools": "Tool chain",
+      "wrap": "Iteration wrap"
+    },
     "edge": {
       "label": "Connector",
       "untaken": "Not taken",
@@ -2358,9 +2377,7 @@
       }
     },
     "palette": {
-      "title": "Card palette",
-      "hint": "Drag into canvas; not saved, not validated, not auto-wired",
-      "place_hint": "Press Enter to place at the viewport centre"
+      "title": "Card palette"
     }
   }
 }

@@ -6,6 +6,14 @@ import {
 import { CARD_KINDS, CARD_KIND_IDS } from "@/features/canvas/presets/cardKinds";
 import type { CanvasPaletteItem } from "@/features/canvas/CanvasPalette";
 import { zoneLabelBoxOf } from "@/features/canvas/presets/placement";
+import {
+  aggregatePhasesOf,
+  phaseDetailOf,
+} from "@/features/canvas/presets/phaseAggregate";
+import {
+  STAGE_PHASE_COUNT,
+  phaseOrdinalOf,
+} from "@/features/canvas/presets/stagePhases";
 import type { CardKindId, CardKindSpec } from "@/features/canvas/presets/types";
 import type {
   CanvasCardBodyView,
@@ -13,45 +21,16 @@ import type {
   CanvasCardView,
   CanvasEdgeView,
   CanvasLabelView,
+  CanvasPhaseView,
   CanvasPortSide,
-  CanvasStageView,
-  CardTone,
   ExitTone,
 } from "@/features/canvas/types";
 import type { GraphView } from "@/stores/agent/observation/projections/graph";
-import { AGENT_NODE_TEMPLATE } from "@/stores/agent/observation/template";
 import type {
   AgentNodeId,
   NodeState,
   TurnObservationStatus,
 } from "@/stores/agent/observation/types";
-
-/** 模板顺序徽标：与 `AgentNodeTemplateEntry.order` 一一对应（0 起）。 */
-const ORDER_BADGES = [
-  "①",
-  "②",
-  "③",
-  "④",
-  "⑤",
-  "⑥",
-  "⑦",
-  "⑧",
-  "⑨",
-  "⑩",
-  "⑪",
-  "⑫",
-] as const;
-
-/** 节点状态 → 阶段条色调（设施只认 `CardTone`，不认 `NodeState`）。 */
-const STAGE_TONE: Record<NodeState, CardTone> = {
-  pending: "default",
-  running: "active",
-  waiting: "warning",
-  finished: "success",
-  error: "danger",
-  skipped: "muted",
-  cancelled: "muted",
-};
 
 /** 实例终态 → 出口标记；`running` 与正常收尾不挂出口（I66 §5.4）。 */
 const EXIT_TONE: Record<TurnObservationStatus, ExitTone | null> = {
@@ -105,6 +84,32 @@ export function canvasContentOf(
 }
 
 /**
+ * 阶段轨迹视图：5 个显示阶段按固定顺序排成一列，只保留轨迹需要的量。
+ * 与卡片共用 `aggregatePhasesOf`（同一聚合规则），不另算状态。
+ */
+export function stageTrailOf(
+  graph: GraphView | null,
+  t: TFunction,
+): readonly CanvasPhaseView[] {
+  const states = statesOf(graph);
+  const nodeText = (node: AgentNodeId): string => t(`observation.node.${node}`);
+  const stateText = (state: NodeState): string =>
+    t(`observation.state.${state}`);
+
+  return aggregatePhasesOf((node) => states.get(node)?.state ?? "pending").map(
+    (aggregate) => ({
+      id: aggregate.id,
+      ordinal: String(phaseOrdinalOf(aggregate.id)),
+      title: t(aggregate.spec.labelKey),
+      tone: aggregate.tone,
+      closed: aggregate.closed,
+      total: aggregate.total,
+      detail: phaseDetailOf(aggregate, nodeText, stateText),
+    }),
+  );
+}
+
+/**
  * 放置栏落卡用的模板视图（I68 §7.10 / A24）：与该类别在画布上的卡片同形同内容。
  * 盒子取预设初始盒子，调用方负责改 id 与落点（放置不进摆放函数）。
  */
@@ -124,6 +129,7 @@ export function paletteItemsOf(t: TFunction): CanvasPaletteItem[] {
       badge: kindBadgeOf(spec, t),
       name: t(spec.nameKey),
       summary: t(spec.summaryKey),
+      tone: spec.tone,
     };
   });
 }
@@ -192,10 +198,10 @@ function bodyOf(
   switch (spec.body) {
     case "stages":
       return {
-        kind: "stages",
+        kind: "phases",
         label: t("canvas.card.stages"),
-        count: String(AGENT_NODE_TEMPLATE.length),
-        stages: stagesOf(states, t),
+        count: String(STAGE_PHASE_COUNT),
+        phases: phasesOf(states, t),
       };
     case "subgraph":
       return {
@@ -212,22 +218,29 @@ function bodyOf(
   }
 }
 
-/** 阶段轨道（A23）：12 条阶段条与模板 `order` 一一对应；无投影时全部「未开始」。 */
-function stagesOf(
+/**
+ * 显示阶段轨道：5 个显示阶段覆盖 12 个 L1；聚合状态与闭合计数都在这里算好
+ * （A13），无投影时组内全部 `pending` → `default`。
+ */
+function phasesOf(
   states: ReadonlyMap<AgentNodeId, NodeStateEntry>,
   t: TFunction,
-): CanvasStageView[] {
-  return AGENT_NODE_TEMPLATE.map((entry) => {
-    const state = states.get(entry.id)?.state ?? "pending";
-    return {
-      id: entry.id,
-      ordinal: ORDER_BADGES[entry.order] ?? "",
-      title: t(`observation.node.${entry.id}`),
-      state: t(`observation.state.${state}`),
-      tone: STAGE_TONE[state],
-      description: t(`observation.role.${entry.id}`),
-    };
-  });
+): CanvasPhaseView[] {
+  const nodeText = (node: AgentNodeId): string => t(`observation.node.${node}`);
+  const stateText = (state: NodeState): string =>
+    t(`observation.state.${state}`);
+
+  return aggregatePhasesOf((node) => states.get(node)?.state ?? "pending").map(
+    (aggregate) => ({
+      id: aggregate.id,
+      ordinal: String(phaseOrdinalOf(aggregate.id)),
+      title: t(aggregate.spec.labelKey),
+      tone: aggregate.tone,
+      closed: aggregate.closed,
+      total: aggregate.total,
+      detail: phaseDetailOf(aggregate, nodeText, stateText),
+    }),
+  );
 }
 
 /**

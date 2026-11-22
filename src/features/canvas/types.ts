@@ -27,26 +27,34 @@ export interface CanvasBadgeView {
   tone?: BadgeTone;
 }
 
-/** 阶段条（I68 §7.2）：住在轮次卡片主体里，不是卡片，无头部 / 端口 / 拖拽柄。 */
-export interface CanvasStageView {
+/**
+ * 显示阶段：一个显示阶段聚合一至多个 L1 节点。
+ * 聚合与计数在内容层算好，卡片只读取（A13）。
+ */
+export interface CanvasPhaseView {
+  /** 显示阶段 id（`settle` / `decide` / …）。 */
   id: string;
-  /** 模板 `order` 的序号（①②…⑫）。 */
+  /** 轨道序号（1 起，与归并表顺序一致）。 */
   ordinal: string;
+  /** 显示阶段名（已本地化）。 */
   title: string;
-  /** 状态文案（已本地化，非仅靠颜色）。 */
-  state: string;
+  /** 聚合状态色。 */
   tone: CardTone;
-  /** 职责文案，只进 `title` / `aria-description`。 */
-  description: string;
+  /** 已闭合 L1 数（终态才算闭合）。 */
+  closed: number;
+  /** L1 总数。 */
+  total: number;
+  /** 组内 L1 明细，只进 `title`（不单独排版）。 */
+  detail: string;
 }
 
-/** 主体附加区（I68 §7.3）：轮次卡片放阶段轨道，其余放内容占位。 */
+/** 主体附加区：轮次卡片放显示阶段轨道，其余放内容占位。 */
 export type CanvasCardBodyView =
   | {
-      kind: "stages";
+      kind: "phases";
       label: string;
       count: string;
-      stages: readonly CanvasStageView[];
+      phases: readonly CanvasPhaseView[];
     }
   | { kind: "output"; label: string }
   | { kind: "messages"; label: string }

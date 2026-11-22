@@ -26,13 +26,13 @@
 
 .body {
   display: grid;
-  grid-template-columns: 240px 220px minmax(0, 1fr);
+  grid-template-columns: 240px minmax(0, 1fr);
   min-height: 0;
   overflow: hidden;
 }
 
 .body[data-empty="true"] {
-  grid-template-columns: 220px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .instancePane {
@@ -105,20 +105,14 @@
   color: var(--ant-color-text-secondary);
 }
 
+/* 主区三分：元信息行（可选）+ 画布（必占剩余）+ 底部面板（可选）。
+   flex 列保证画布始终吃掉剩余高度；栅格行模板会因可选行缺席而把画布挤进 auto 行。 */
 .mainPane {
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  display: flex;
+  flex-direction: column;
   min-height: 0;
   min-width: 0;
   overflow: hidden;
-}
-
-.mainPane[data-inspector="true"] {
-  grid-template-rows: auto minmax(0, 1fr) 220px;
-}
-
-.mainPane[data-notice="true"] {
-  grid-template-rows: auto minmax(0, 1fr) auto;
 }
 
 .canvasMetaBar {
@@ -140,29 +134,304 @@
   font-size: 11px;
 }
 
-.canvasHost {
-  min-width: 0;
+/* 画布宿主：吃掉主区剩余高度，世界比宿主大时双向滚动。 */
+.stageHost {
+  flex: 1 1 auto;
   min-height: 0;
-  overflow: hidden;
+  min-width: 0;
+  overflow: auto;
+  box-sizing: border-box;
+  background: var(--ant-color-bg-container);
 }
 
-.emptyBar {
+/* 拓扑画布：固定世界坐标（不测量 DOM），几何全部由 TS 侧常量算出。
+   环 = 迭代：③–⑫ 顺时针落在椭圆上，⑫ → ③ 的闭合弧就是回边本身，
+   因此「走到 ⑫ 后回到 ③ 开始下一圈」由形状表达，不需要任何文字标注。 */
+.graphStage {
+  display: flex;
+  min-height: 100%;
+  min-width: min-content;
+  padding: 16px 20px;
+  box-sizing: border-box;
+}
+
+/* `margin: auto` 居中：宿主比世界小时退化为滚动，不裁掉左 / 上边。 */
+.graphWorld {
+  position: relative;
+  flex: none;
+  margin: auto;
+}
+
+.graphSvg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+/* 圈内外分界：① ② 落在虚线椭圆之外，只有 ③–⑫ 在环上。 */
+.graphBoundary {
+  fill: none;
+  stroke: var(--ant-color-border);
+  stroke-width: 1;
+  stroke-dasharray: 2 8;
+  opacity: 0.5;
+}
+
+.graphEdge {
+  fill: none;
+  stroke-linecap: round;
+}
+
+.graphEdge[data-phase="untaken"] {
+  stroke: var(--ant-color-border);
+  stroke-width: 1.5;
+  stroke-dasharray: 5 7;
+}
+
+.graphEdge[data-phase="idle"] {
+  stroke: var(--ant-color-text-quaternary);
+  stroke-width: 1.5;
+  stroke-dasharray: 5 7;
+  opacity: 0.8;
+}
+
+.graphEdge[data-phase="passed"] {
+  stroke: var(--ant-color-success);
+  stroke-width: 2.5;
+}
+
+.graphEdge[data-phase="active"] {
+  stroke: var(--ant-color-primary);
+  stroke-width: 3;
+  stroke-dasharray: 9 6;
+  animation: graphFlow 0.9s linear infinite;
+}
+
+/* 回边比正向边更粗：环闭合的那一段一眼可见。 */
+.graphEdge[data-kind="loop"][data-phase="passed"],
+.graphEdge[data-kind="loop"][data-phase="active"] {
+  stroke-width: 4;
+}
+
+.graphArrow {
+  fill: var(--ant-color-border);
+}
+
+.graphArrow[data-phase="idle"] {
+  fill: var(--ant-color-text-quaternary);
+  opacity: 0.8;
+}
+
+.graphArrow[data-phase="passed"] {
+  fill: var(--ant-color-success);
+}
+
+.graphArrow[data-phase="active"] {
+  fill: var(--ant-color-primary);
+}
+
+/* 出口：沿半径向外的一小段虚线 + 菱形端子（出口不是节点，I55 §3.2）。 */
+.graphExit {
+  color: var(--ant-color-text-quaternary);
+}
+
+.graphExit[data-tone="done"] {
+  color: var(--ant-color-success);
+}
+
+.graphExit[data-tone="stopped"] {
+  color: var(--ant-color-warning);
+}
+
+.graphExit[data-tone="cancelled"] {
+  color: var(--ant-color-text-tertiary);
+}
+
+.graphExit[data-tone="failed"] {
+  color: var(--ant-color-error);
+}
+
+.graphExitLine {
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-dasharray: 4 4;
+}
+
+.graphExitMark {
+  fill: currentColor;
+}
+
+/* 节点：left / top 由 TS 给出圆心，这里只负责把自身对准圆心。 */
+.graphNode {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  padding: 0 10px;
+  box-sizing: border-box;
+  transform: translate(-50%, -50%);
+  border: 1px solid var(--ant-color-border);
+  border-radius: var(--radius);
+  background: var(--ant-color-bg-container);
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    opacity 0.2s ease;
+}
+
+/* 圈外前置（① ②）：浅底 + 更大圆角，与环上的格子区分。 */
+.graphNode[data-entry="true"] {
+  border-radius: calc(var(--radius) + 4px);
+  background: var(--ant-color-fill-quaternary);
+}
+
+.graphNodeHead {
   display: flex;
   align-items: baseline;
-  gap: 10px;
-  flex-wrap: wrap;
-  padding: 10px 16px;
-  border-top: 1px solid var(--ant-color-border);
+  gap: 6px;
+  min-width: 0;
 }
 
-.emptyTitle {
+.graphNodeOrdinal {
+  flex: none;
+  color: var(--ant-color-text-quaternary);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.graphNodeLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ant-color-text);
   font-size: 12px;
   font-weight: 500;
 }
 
+.graphNodeState {
+  color: var(--ant-color-text-tertiary);
+  font-size: 10px;
+}
+
+.graphNode[data-state="pending"] {
+  border-style: dashed;
+}
+
+.graphNode[data-state="skipped"] {
+  border-style: dashed;
+  opacity: 0.5;
+}
+
+.graphNode[data-state="running"] {
+  border-color: var(--ant-color-primary);
+  background: var(--ant-color-primary-bg);
+}
+
+.graphNode[data-state="running"] .graphNodeState {
+  color: var(--ant-color-primary);
+}
+
+.graphNode[data-state="waiting"] {
+  border-color: var(--ant-color-warning);
+  background: var(--ant-color-warning-bg);
+}
+
+.graphNode[data-state="waiting"] .graphNodeState {
+  color: var(--ant-color-warning);
+}
+
+.graphNode[data-state="finished"] {
+  border-color: var(--ant-color-success);
+}
+
+.graphNode[data-state="finished"] .graphNodeState {
+  color: var(--ant-color-success);
+}
+
+.graphNode[data-state="error"] {
+  border-color: var(--ant-color-error);
+  background: var(--ant-color-error-bg);
+}
+
+.graphNode[data-state="error"] .graphNodeState {
+  color: var(--ant-color-error);
+}
+
+.graphNode[data-state="cancelled"] {
+  border-style: dashed;
+  border-color: var(--ant-color-error);
+  opacity: 0.7;
+}
+
+/* 当前停在哪个节点：外发光 + 呼吸，与「已完成」区分开。 */
+.graphNode[data-live="true"] {
+  animation: graphPulse 1.8s ease-in-out infinite;
+}
+
+/* 线型图例：只解释相位，不解释流程（流程由环的形状表达）。 */
+.graphLegend {
+  position: absolute;
+  left: 24px;
+  bottom: 16px;
+  display: flex;
+  gap: 16px;
+  color: var(--ant-color-text-tertiary);
+  font-size: 11px;
+}
+
+.graphLegendItem {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.graphLegendSwatch {
+  width: 22px;
+  border-top: 2px solid var(--ant-color-border);
+}
+
+.graphLegendItem[data-phase="untaken"] .graphLegendSwatch {
+  border-top-style: dashed;
+}
+
+.graphLegendItem[data-phase="idle"] .graphLegendSwatch {
+  border-top-style: dashed;
+  border-top-color: var(--ant-color-text-quaternary);
+}
+
+.graphLegendItem[data-phase="passed"] .graphLegendSwatch {
+  border-top-color: var(--ant-color-success);
+}
+
+.graphLegendItem[data-phase="active"] .graphLegendSwatch {
+  border-top-color: var(--ant-color-primary);
+}
+
+@keyframes graphFlow {
+  to {
+    stroke-dashoffset: -15;
+  }
+}
+
+@keyframes graphPulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 3px var(--ant-color-primary-bg);
+  }
+  50% {
+    box-shadow: 0 0 0 7px var(--ant-color-primary-bg);
+  }
+}
+
 .inspector {
+  flex: none;
   display: grid;
   grid-template-columns: 260px minmax(0, 1fr);
+  height: 220px;
   min-height: 0;
   overflow: hidden;
 }
