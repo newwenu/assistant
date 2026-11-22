@@ -1,9 +1,9 @@
-//! 条目统一视图：core 8 条来自登记表，可选分区条目来自各分区 `entries()` 自述。
+//! 条目统一视图：core 条目来自登记表，可选分区条目来自各分区 `entries()` 自述。
 //!
 //! 装配、采样、对账、回收都只认这一种视图，不各自重建「core 行 / 分区行」两套结构
 //! （X15）。`section` 只在回收路由时用（按 `key` 找到声明它的分区），core 条目为 `None`。
 
-use crate::app_dirs::registry::{self, ManagedRoot, RootCoverage, RootScope};
+use crate::app_dirs::registry::{self, CoreEntry, ManagedRoot, RootCoverage, RootScope};
 use crate::cmd::storage::section::{RiskTier, SectionEntry, StorageSectionHandle};
 use crate::protocol::dto::{
     ReclaimPolicyDto, StorageEligibilityDto, StorageReclaimActionDto, StorageReclaimReasonDto,
@@ -13,7 +13,12 @@ use super::decl::static_for;
 
 #[derive(Debug, Clone)]
 pub struct EntryView {
+    /// 对外调试标签：core 条目等于 [`CoreEntry::id`]，分区条目由分区自述。
     pub entry: &'static str,
+    /// core 条目身份（§4.3）：`Some` 时 `entry` 恒等于 `core.id()`；分区条目为 `None`。
+    ///
+    /// 按条目分支一律匹配本字段：core 是封闭枚举（编译期穷尽），分区由 `section` 路由。
+    pub core: Option<CoreEntry>,
     pub key: &'static str,
     pub segments: &'static [&'static str],
     pub scope: RootScope,
@@ -39,7 +44,8 @@ pub struct EntryView {
 fn core_view(root: &ManagedRoot) -> EntryView {
     let static_part = static_for(root.entry);
     EntryView {
-        entry: root.entry,
+        entry: root.entry.id(),
+        core: Some(root.entry),
         key: root.key,
         segments: root.segments,
         scope: root.scope,
@@ -61,6 +67,7 @@ fn core_view(root: &ManagedRoot) -> EntryView {
 fn section_view(index: usize, entry: &SectionEntry) -> EntryView {
     EntryView {
         entry: entry.entry,
+        core: None,
         key: entry.key,
         segments: entry.segments,
         scope: entry.scope,
@@ -79,7 +86,7 @@ fn section_view(index: usize, entry: &SectionEntry) -> EntryView {
     }
 }
 
-/// core 8 条按登记表顺序在前，各分区条目按 `entries()` 快照顺序紧随其后。
+/// core 条目按登记表顺序在前，各分区条目按 `entries()` 快照顺序紧随其后。
 ///
 /// 清单只在这里生成一次（X15）：未注册的分区不贡献任何条目，因此「未挂载 = 行不存在」。
 pub fn views(sections: &[StorageSectionHandle]) -> Vec<EntryView> {

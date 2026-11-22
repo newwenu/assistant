@@ -13,6 +13,7 @@
       "vault_settings": { "title": "Vault Settings" },
       "chat_history": "Chat History",
       "agent_observation": "Agent Observation",
+      "canvas_demo": "Canvas Sample",
       "settings": "Settings",
       "category": {
         "general": "General",
@@ -409,7 +410,12 @@
           "security_recovery": "Vault recovery temp files",
           "security_audit": "Security audit log",
           "logs": "Runtime logs",
-          "crashes": "Crash reports"
+          "crashes": "Crash reports",
+          "EBWebView": "WebView settings and cache",
+          "config_json": "App config",
+          "vault_config_json": "Vault config",
+          "orb_config_json": "Orb config",
+          "mascot_config_json": "Mascot config"
         },
         "groups": {
           "security": "Security-related"
@@ -525,7 +531,8 @@
           "done": "Cleaned up {{count}} items, freed {{size}}",
           "partial": "Partly done: cleaned {{count}} items, freed {{size}}, {{failed}} failed",
           "failed": "Cleanup failed",
-          "skipped": "Nothing to clean up (it may have been used again)"
+          "skipped": "Nothing to clean up (it may have been used again)",
+          "scheduled": "Cleanup request registered; it will run on the next start"
         }
       },
       "residual": {
@@ -567,8 +574,12 @@
           "unregistered": "Unregistered"
         },
         "totals": {
-          "unregistered": "Unregistered total: {{count}} items, {{size}}",
-          "hint": "Not included in the total above"
+          "total": "Managed total: {{size}}",
+          "residual": "Of which unaccounted: {{size}}",
+          "unregistered": "Of which unregistered: {{count}}, {{size}}",
+          "unnameable": "{{count}} more cannot be named and are included in the total only",
+          "hint": "Total is everything scanned under the managed roots",
+          "lower_bound": "Some folders were not fully scanned; ≥ means at least this much"
         },
         "children": {
           "more": "{{count}} more not shown"
@@ -2245,6 +2256,48 @@
       "budget_iterations": "Iterations left",
       "budget_tools": "Tool calls left",
       "budget_wall_time": "Wall clock left"
+    }
+  },
+  "canvas": {
+    "viewport": "Canvas",
+    "zoom_in": "Zoom in",
+    "zoom_out": "Zoom out",
+    "zoom_reset": "Reset view",
+    "zoom_level": "Zoom",
+    "edge": {
+      "untaken": "Not taken",
+      "idle": "Idle",
+      "passed": "Passed",
+      "active": "Active"
+    },
+    "exit": {
+      "failed": "Failed exit",
+      "cancelled": "Cancelled exit",
+      "stopped": "Stopped exit"
+    },
+    "legend": {
+      "edge_phase": "Edge phase",
+      "exit": "Exit"
+    },
+    "demo": {
+      "card": {
+        "a": "Sample card A",
+        "b": "Sample card B",
+        "c": "Sample card C",
+        "d": "Sample card D",
+        "e": "Sample card E",
+        "f": "Sample card F"
+      },
+      "subtitle": {
+        "a": "Placeholder",
+        "b": "Placeholder",
+        "c": "Placeholder",
+        "d": "Placeholder",
+        "e": "Placeholder",
+        "f": "Placeholder"
+      },
+      "lane": "Row 2 gutter (sample)",
+      "notice": "Sample content · not real data"
     }
   }
 }

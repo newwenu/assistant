@@ -1,5 +1,6 @@
 //! 计划（只读预览，§5.2）：重新采样一次，按条目清单装配，不触碰任何文件。
 
+use crate::app_dirs::registry::CoreEntry;
 use crate::protocol::dto::{
     StorageAvailabilityDto, StorageEligibilityDto, StorageReclaimPlanDto,
     StorageReclaimPlanEntryDto, StorageReclaimPlanRequestDto,
@@ -45,7 +46,7 @@ pub async fn plan_storage_reclaim(
     })
     .await;
     if e1_failed {
-        if let Some(slot) = entries::index_of_entry(&sampled.views, "E1") {
+        if let Some(slot) = entries::index_of_core(&sampled.views, CoreEntry::Attachments) {
             sampled.samples[slot] = EntrySample::degraded(StorageAvailabilityDto::Unreadable);
         }
     }

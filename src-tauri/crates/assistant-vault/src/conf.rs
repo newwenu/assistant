@@ -1,6 +1,7 @@
 use assistant_config::conf_group::{ConfGroup, LoadPolicy};
+use assistant_config::constant::APP_IDENTIFIER;
 use serde::{Deserialize, Serialize};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// 自动锁定分钟数上限（24 小时）。
 pub const MAX_AUTO_LOCK_MINUTES: u16 = 24 * 60;
@@ -153,7 +154,19 @@ impl ConfGroup for VaultConf {
     const FILE_NAME: &'static str = "vault-config.json";
     const LOAD_POLICY: LoadPolicy = LoadPolicy::Strict;
 
-    /// 首次启用保险库时从旧的 `config.json` 接管 vault 字段，随后主文件成为唯一来源。
+    /// 配置文件落在安全域目录 `<data>/security/`，与分区其它落点同目录：
+    /// 条目的首段必须等于分区首段（`SectionRegistry::register` 校验），因此不能再放配置基根。
+    ///
+    /// 旧位置 `<config>/vault-config.json` 不迁移：留在盘上即视为未登记余量（不做搬家）。
+    fn get_conf_dir() -> Result<PathBuf, Box<dyn std::error::Error>> {
+        let data = dirs::data_dir()
+            .ok_or("Cannot determine data directory")?
+            .join(APP_IDENTIFIER);
+        Ok(data.join(crate::storage_section::SEGMENT))
+    }
+
+    /// 若同目录存在 `config.json`（历史布局），从其接管 vault 字段；新位置
+    /// `<data>/security/` 下没有该文件，首次启用即从默认值开始（旧位置文件不做迁移）。
     fn adopt_legacy(vault_path: &Path) -> Option<Self> {
         let legacy_path = vault_path.parent()?.join("config.json");
         let contents = std::fs::read_to_string(legacy_path).ok()?;

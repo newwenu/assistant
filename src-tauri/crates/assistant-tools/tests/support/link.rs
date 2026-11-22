@@ -5,8 +5,9 @@
 //! 目录链接优先 `symlink_dir`，失败回落 `mklink /J`（junction 不需要特权）；
 //! 文件链接没有等价替代，失败即返回 false，由调用方显式跳过。
 //!
-//! 本文件同时被 `src/os/test_support.rs` 以 `#[path]` 引入：集成测试看不到 lib 的
-//! `#[cfg(test)]` 项，内联测试也看不到集成测试的模块，共用一份才能避免再次漂移。
+//! 本文件同时被 `os::test_support`（`src/os/shared/test_support.rs`）以 `#[path]`
+//! 引入，并随 `test-support` feature 公开给其它 package 的集成测试：集成测试看不到
+//! lib 的 `#[cfg(test)]` 项，内联测试也看不到集成测试的模块，共用一份才能避免再次漂移。
 //!
 //! 参数顺序与 `std::os::unix::fs::symlink` 一致：目标在前、链接路径在后。
 

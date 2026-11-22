@@ -4,8 +4,12 @@ mod tools;
 pub(crate) use shared::{footer, fs_util, scope, walk};
 pub use shared::{output, path, process_output, text_encoding};
 
-#[cfg(test)]
-pub(crate) use shared::test_support;
+// 测试夹具：`cargo test` 编 lib 时（cfg(test)）以及其它 package 的集成测试
+// （`test-support` feature）都需要它。以 `#[path]` 指向集成测试树里的唯一实现，
+// 平台分派只写一次；对集成测试公开，故不能只挂 `#[cfg(test)]`。
+#[cfg(any(test, feature = "test-support"))]
+#[path = "shared/test_support.rs"]
+pub mod test_support;
 
 pub use tools::{
     agent_ask_user, agent_delete, agent_edit, agent_glob, agent_grep, agent_list, agent_mkdir,

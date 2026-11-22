@@ -345,6 +345,7 @@ CREATE TABLE token_usage_records (
 ├── mascot-assets/        # Mascot 资源（asset 协议注册目录，作用域 `**`）
 └── security/
     ├── security.db       # 安全模块 / 保险库元数据（SQLCipher）
+    ├── vault-config.json # VaultConf（保险库设置，由 vault 分区自注册；禁止落在 vault 仓库目录）
     ├── vault/            # 保险库 Git 工作区（本地提交 / 远程同步）
     ├── backups/          # 安全库备份
     └── recovery/         # 恢复用产物
@@ -352,13 +353,12 @@ CREATE TABLE token_usage_records (
 <config_dir>/             # Win: %APPDATA%\com.assistant / macOS: ~/Library/Application Support/com.assistant / Linux: ~/.config/com.assistant
 ├── config.json           # AppConf
 ├── orb-config.json       # OrbConf
-├── mascot-config.json    # MascotConf
-└── vault-config.json     # VaultConf（保险库设置，禁止落在 vault 仓库目录）
+└── mascot-config.json    # MascotConf
 ```
 
 > 第一层目录名与 `assistant.db` 文件名只在 `src-tauri/src/app_dirs/dir_name.rs` 出现一次；基根拼接只在 `app_dirs/roots.rs`。`tauri.conf.json` 的 `assetProtocol.scope.allow` 与 `AppDirs::asset_scopes()` 由测试比对，前端不重复这些字符串。
 >
-> 日志与崩溃转储同根，落在应用本地数据根：Win `%LOCALAPPDATA%\com.assistant` / macOS `~/Library/Application Support/com.assistant` / Linux `~/.local/share/com.assistant`，目录名分别为 `logs/`、`crashes/`。日志由 `tauri-plugin-log` 写入。双档：开发构建 `assistant-dev.log`（`Debug` 级 + stdout），生产构建 `assistant.log`（`Info` 级、无 stdout）。滚动为单文件 10MB + `KeepSome(3)`（1 活动 + 3 归档，单档上限 40MB），时间戳与归档名用本地时区，每次启动归档上一份。崩溃转储走 `crashes/`（`assistant-crash`），不受日志滚动影响。完整策略与实施清单见 I42 日志策略规格（已归档）。
+> 日志与崩溃转储同根，落在应用本地数据根：Win `%LOCALAPPDATA%\com.assistant` / macOS `~/Library/Application Support/com.assistant` / Linux `~/.local/share/com.assistant`，目录名分别为 `logs/`、`crashes/`，另有 WebView2 用户数据目录 `EBWebView/`（登记为存储条目 `E14`，目录名由 `dir_name::WEBVIEW_PROFILE` 持有）。日志由 `tauri-plugin-log` 写入。双档：开发构建 `assistant-dev.log`（`Debug` 级 + stdout），生产构建 `assistant.log`（`Info` 级、无 stdout）。滚动为单文件 10MB + `KeepSome(3)`（1 活动 + 3 归档，单档上限 40MB），时间戳与归档名用本地时区，每次启动归档上一份。崩溃转储走 `crashes/`（`assistant-crash`），不受日志滚动影响。完整策略与实施清单见 I42 日志策略规格（已归档）。
 
 ---
 
@@ -739,19 +739,19 @@ assistant/
 
 ### I6 — Agent 自定义模式 + Prompt 模板合并 ✅
 
-**交付：** 内置预设 + 用户自定义 Agent 模式 + Prompt 模板合并为统一体系 + token 追踪
+**交付：** 内置模式 + 用户自定义 Agent 模式 + Prompt 模板合并为统一体系 + token 追踪
 
 - [x] SQLite `agent_modes` 表 + Rust CRUD（assistant-storage）
-- [x] 4 个内置预设（默认/快速/深度 + 翻译助手）自动 seed
+- [x] 4 个内置模式（默认/快速/深度 + 翻译助手）自动 seed
 - [x] Prompt 模板移除：`prompt_templates` 表 DROP、`templates.rs` 删除、`TemplateManager.tsx` 删除、路由删除
 - [x] 前端 AgentModeManager（主窗口设置页：列表 + 创建/编辑/删除 + 排序）
 - [x] Orb 面板模式切换 UI（下拉 Select，显示内置 + 自定义）
 - [x] chatStore 集成（发送消息时注入选中模式的 system_prompt / temperature / max_tokens）
 - [x] token 追踪 + 用量指示条
 
-> **Prompt 模板合并**：原 `prompt_templates` 的核心能力（system prompt + 分类 + 内置预设）合并到 `agent_modes`。变量占位符 `{{variable}}` 交互已在 I2 中移除（DEVLOG 2026-10-05），不再保留。原 5 个内置模板仅保留翻译助手（kind='custom'），其余 4 个不再内置——这些场景的 prompt 因人而异，用户可自行创建自定义模式。默认/快速/深度三个模式均无 system prompt，仅控制 temperature / max_tokens。
+> **Prompt 模板合并**：原 `prompt_templates` 的核心能力（system prompt + 分类 + 内置模式）合并到 `agent_modes`。变量占位符 `{{variable}}` 交互已在 I2 中移除（DEVLOG 2026-10-05），不再保留。原 5 个内置模板仅保留翻译助手（kind='custom'），其余 4 个不再内置——这些场景的 prompt 因人而异，用户可自行创建自定义模式。默认/快速/深度三个模式均无 system prompt，仅控制 temperature / max_tokens。
 
-> **原 I6（Agent 模式固定三级）升级为用户自定义**。参考 OpenBitFun `CustomAgentDefinition`，用户可创建自己的 Agent 模式（如"翻译助手"、"代码审查"），自定义 system_prompt / temperature / max_tokens / model / tools 组合。内置 Quick/Standard/Deep 作为预设 seed，不可删除。
+> **原 I6（Agent 模式固定三级）升级为用户自定义**。参考 OpenBitFun `CustomAgentDefinition`，用户可创建自己的 Agent 模式（如"翻译助手"、"代码审查"），自定义 system_prompt / temperature / max_tokens / model / tools 组合。内置 Quick/Standard/Deep 作为内置模式 seed，不可删除。
 
 **参考：**
 
@@ -766,7 +766,7 @@ assistant/
 
 **验收：** 可切换 Agent 模式（内置 + 自定义），可创建/编辑/删除自定义模式，不同模式 system prompt / 温度不同，token 用量可见，Prompt 模板管理页合并到 Agent 模式页
 
-> **2026-11-07 变更**：本节记录 I6 当时交付的四个内置预设，其后已收敛为 `builtin-default` / `builtin-translate`（`chat`）与 `builtin-agent`（`agent`），快速 / 深度下线，模式与工具装配的现行语义见 §3.5。
+> **2026-11-07 变更**：本节记录 I6 当时交付的四个内置模式，其后已收敛为 `builtin-default` / `builtin-translate`（`chat`）与 `builtin-agent`（`agent`），快速 / 深度下线，模式与工具装配的现行语义见 §3.5。
 
 ---
 

@@ -677,18 +677,23 @@
 .storage-residual-totals {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  flex-wrap: wrap;
+  gap: 6px 14px;
   padding: 6px var(--storage-residual-pad-x);
   font-size: 11px;
   color: var(--color-text-tertiary);
 }
 
-.storage-residual-totals-value {
+.storage-residual-totals-line {
   font-variant-numeric: tabular-nums;
 }
 
+.storage-residual-totals-line.is-note {
+  color: var(--color-text-quaternary);
+}
+
 .storage-residual-totals-hint {
+  margin-left: auto;
   color: var(--color-text-quaternary);
 }
 

@@ -12,7 +12,9 @@ use assistant_app::app_dirs::AppDirs;
 use assistant_app::cmd::storage::entries::{
     assemble_breakdown, set_sample, views, BreakdownBase, EntrySample, EntryView,
 };
-use assistant_app::cmd::storage::inventory::{scan, InventoryCache, RawNode, ScanResult};
+use assistant_app::cmd::storage::inventory::{
+    scan, InventoryCache, RawNode, ScanResult, ScanTotals,
+};
 use assistant_app::cmd::storage::section::SectionRegistry;
 use assistant_app::protocol::dto::{
     StorageInventoryClassDto, StorageInventoryDto, StorageInventoryStatusDto, StorageLayerDto,
@@ -67,6 +69,8 @@ fn finish(cache: &InventoryCache, nodes: Vec<RawNode>, at: i64) {
             nodes,
             partial: false,
             truncated: Vec::new(),
+            totals: ScanTotals::default(),
+            totals_partial: false,
         },
         at,
     );
@@ -81,6 +85,7 @@ fn seeded() -> (tempfile::TempDir, AppDirs) {
     fs::create_dir_all(data.join(registry::OPTIONAL_SEGMENTS[0])).expect("建可选首段");
     fs::create_dir_all(data.join("stray")).expect("建 stray");
     fs::create_dir_all(local.join("logs")).expect("建 logs");
+    write_file(&local.join("logs").join("app.log"), 7);
     write_file(&data.join("attachments").join("a.bin"), 10);
     write_file(&data.join("stray").join("a.bin"), 3);
     write_file(&data.join("stray").join("b.bin"), 5);
@@ -139,6 +144,12 @@ fn conservation_classifies_every_first_level_entry() {
     assert_eq!(declared[1].name, "logs");
     assert_eq!(declared[1].entry, Some("E12"));
     assert_eq!(declared[1].scope, RootScope::Local);
+    assert_eq!(
+        (declared[1].scan_bytes, declared[1].scan_count),
+        (Some(7), Some(1)),
+        "inventory = false 的条目仍要观测：计入分母、只关减法（I67 §3.5）"
+    );
+    assert!(!declared[1].truncated, "未触界不得伪装成触界");
     assert_eq!(optional[0].name, registry::OPTIONAL_SEGMENTS[0]);
     assert_eq!(
         optional[0].entry, None,
@@ -156,6 +167,56 @@ fn conservation_classifies_every_first_level_entry() {
         stray.children.iter().all(|item| !item.name.contains('/')),
         "明细项只允许单段名（§3.11.3）"
     );
+}
+
+#[test]
+fn totals_carry_denominator_and_unreconciled_bucket() {
+    let (_tmp, dirs) = seeded();
+    let views = core_views();
+    let result = scan(&dirs, &views).expect("扫描临时基根");
+
+    assert_eq!(
+        result.totals.data.scan_bytes,
+        Some(28),
+        "分母含 E12 与未登记项"
+    );
+    assert_eq!(result.totals.data.scan_count, Some(5));
+    assert_eq!(
+        result.totals.local.scan_bytes,
+        Some(7),
+        "E12 日志目录计入分母"
+    );
+    assert_eq!(
+        result.totals.data.unnameable_bytes,
+        Some(0),
+        "空桶是 0，不是 null"
+    );
+    assert!(!result.totals_partial);
+
+    let cache = InventoryCache::new();
+    let samples = available(&views);
+    let nodes = result.nodes.clone();
+    cache.finish(result, 1);
+    let (dto, _) = cache.read(1, &views, &samples);
+
+    assert_eq!(dto.totals.scan_bytes, Some(35), "两个 scope 之和（§3.7）");
+    assert_eq!(dto.totals.data.unregistered_bytes, Some(8));
+    assert_eq!(dto.totals.data.unregistered_count, Some(2));
+    assert_eq!(dto.totals.local.unreconciled_bytes, Some(7));
+    assert_eq!(dto.totals.local.unreconciled_count, Some(1));
+    assert!(!dto.totals.partial, "全部节点可观测时不是下界");
+    assert_eq!(dto.nodes.len(), nodes.len());
+}
+
+#[test]
+fn never_run_totals_are_all_null() {
+    let views = core_views();
+    let samples = missing(&views);
+    let cache = InventoryCache::new();
+    let (dto, trigger) = cache.read(0, &views, &samples);
+    assert_eq!(dto.status, StorageInventoryStatusDto::NeverRun);
+    assert!(trigger);
+    assert_eq!(dto.totals, Default::default(), "从未扫描：内部数字全 null");
 }
 
 #[test]
@@ -415,11 +476,11 @@ fn stale_snapshot_returns_old_numbers_and_triggers_once() {
 }
 
 #[test]
-fn registry_keeps_core_eight() {
+fn registry_keeps_all_core_entries() {
     let views = core_views();
     assert_eq!(views.len(), MANAGED_ROOTS.len(), "未挂载分区不贡献行");
     for (index, root) in MANAGED_ROOTS.iter().enumerate() {
-        assert_eq!(views[index].entry, root.entry);
+        assert_eq!(views[index].core, Some(root.entry));
         assert_eq!(views[index].key, root.key);
     }
 }
@@ -473,7 +534,7 @@ fn optional_segment_states_follow_registered_sections() {
     let segment = registry::OPTIONAL_SEGMENTS[0];
     let core_len = core_views().len();
 
-    // 槽缺失 / 零分区：清单只有 core 8 条，首段整体归 optionalNotMounted。
+    // 槽缺失 / 零分区：清单只有 core 条目，首段整体归 optionalNotMounted。
     for sections in [Vec::new(), SectionRegistry::new().snapshot()] {
         let entry_views = views(&sections);
         assert_eq!(entry_views.len(), core_len, "零分区不贡献行");
@@ -497,7 +558,7 @@ fn optional_segment_states_follow_registered_sections() {
         ))
         .expect("首段命中 OPTIONAL_SEGMENTS");
     let entry_views = views(&registry.snapshot());
-    assert_eq!(entry_views.len(), core_len + 5, "core 8 + 分区 5");
+    assert_eq!(entry_views.len(), core_len + 5, "core 条 + 分区 5");
     let result = scan(&dirs, &entry_views).expect("扫描临时基根");
     let declared = result
         .nodes
@@ -552,4 +613,86 @@ fn foreign_section_is_rejected_and_absent_from_views() {
     let entry_views = views(&registry.snapshot());
     assert_eq!(entry_views.len(), core_views().len(), "被拒分区不贡献行");
     assert!(!entry_views.iter().any(|view| view.key == "elsewhere"));
+}
+
+/// V13（T6）：core 侧三个配置文件登记后从 `unregistered` 移入 `declared`，
+/// 且 `declaredBytes == scanBytes`、`residualBytes == 0`。
+///
+/// 首段名一律从登记表取（`registry::find_by_entry`），测试里不写文件名/条目字面量。
+/// `E16` 不在此列：它是可选特性（vault）分区自注册的条目，核心侧不持有其知识。
+#[test]
+fn config_files_are_declared_and_reconciled() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let data = tmp.path().join("data");
+    let local = tmp.path().join("local");
+    fs::create_dir_all(&data).expect("建 data");
+    fs::create_dir_all(&local).expect("建 local");
+
+    let mut written = Vec::new();
+    for (offset, id) in ["E15", "E17", "E18"].into_iter().enumerate() {
+        let root = registry::find_by_entry(id).expect("配置条目必须已登记");
+        assert_eq!(root.scope, RootScope::Data, "{id} 落在数据基根");
+        let len = 11 + offset * 2;
+        write_file(&data.join(root.key), len);
+        written.push((root.key, u64::try_from(len).expect("len fits u64")));
+    }
+
+    let dirs = AppDirs::with_bases(data, local);
+    let views = core_views();
+    let result = scan(&dirs, &views).expect("扫描临时基根");
+
+    let declared: Vec<&RawNode> = result
+        .nodes
+        .iter()
+        .filter(|node| node.class == StorageInventoryClassDto::Declared)
+        .collect();
+    assert_eq!(declared.len(), 3, "三个配置文件全部归 declared");
+    for (key, _) in &written {
+        let node = declared
+            .iter()
+            .find(|node| node.name == *key)
+            .expect("每个配置文件名都必须有观测项");
+        assert!(node.entry.is_some(), "declared 节点必须挂条目编号");
+    }
+    assert!(
+        !result
+            .nodes
+            .iter()
+            .any(|node| node.class == StorageInventoryClassDto::Unregistered),
+        "配置文件的字节不得再计入 unregistered（V13）"
+    );
+    let total: u64 = written.iter().map(|(_, bytes)| bytes).sum();
+    assert_eq!(
+        result.totals.data.scan_bytes,
+        Some(total),
+        "扫描分母只含这三个已登记文件"
+    );
+
+    let mut samples = missing(&views);
+    for (id, (_, bytes)) in ["E15", "E17", "E18"].into_iter().zip(&written) {
+        set_sample(
+            &views,
+            &mut samples,
+            id,
+            EntrySample::observed(*bytes, 1, None, None),
+        );
+    }
+    let cache = InventoryCache::new();
+    cache.finish(result, 1);
+    let (dto, _) = cache.read(1, &views, &samples);
+
+    assert_eq!(dto.nodes.len(), 3, "三个配置节点");
+    for node in &dto.nodes {
+        assert_eq!(
+            node.declared_bytes, node.scan_bytes,
+            "{} 的登记值必须等于扫描值（R1）",
+            node.name
+        );
+        assert_eq!(node.residual_bytes, Some(0), "{} 余量为 0", node.name);
+        assert!(
+            !node.over_registered,
+            "{} 不得出现登记值大于扫描值",
+            node.name
+        );
+    }
 }

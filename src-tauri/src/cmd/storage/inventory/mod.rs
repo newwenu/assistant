@@ -49,10 +49,32 @@ pub struct RawNode {
     pub truncated: bool,
 }
 
-/// 一次扫描的产物：节点 + 全局触界标记。
+/// 单个 scope 的分母与不可命名部分（T1）：均在扫描时一次遍历产出，不重扫。
+///
+/// `scan_bytes` / `scan_count` 是该 scope 全部首层节点（含 `inventory = false` 的 `E12`）
+/// 与不可命名条目的字节 / 条数之和；`None` 表示「有触界 / 读不到的部分」（下界，§3.6）。
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct ScopeScanTotals {
+    pub scan_bytes: Option<u64>,
+    pub scan_count: Option<u64>,
+    pub unnameable_bytes: Option<u64>,
+    pub unnameable_count: Option<u64>,
+}
+
+/// 两个基根各自的分母（T1）。
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct ScanTotals {
+    pub data: ScopeScanTotals,
+    pub local: ScopeScanTotals,
+}
+
+/// 一次扫描的产物：节点 + 全局触界标记 + 分母。
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ScanResult {
     pub nodes: Vec<RawNode>,
     pub partial: bool,
     pub truncated: Vec<String>,
+    pub totals: ScanTotals,
+    /// 任一贡献项（节点扫描值 / 不可命名部分）为 `null`：`totals` 为下界（§3.6）。
+    pub totals_partial: bool,
 }

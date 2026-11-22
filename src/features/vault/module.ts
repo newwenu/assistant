@@ -1,5 +1,6 @@
 import { SafetyCertificateOutlined } from "@ant-design/icons";
 import { vaultConfSlot } from "./conf";
+import { registerEntryNames } from "@/settings/pages/storage/lexicon";
 import type { FeatureModule } from "../types";
 import type { SettingSectionDef } from "@/settings/core/field/fieldRegistry";
 import type { ExtensionSettingDefinition } from "@/settings/core/types/extension";
@@ -121,6 +122,12 @@ const VAULT_SECTIONS: SettingSectionDef[] = [
     keywords: ["ssh", "agent", "pageant", "openssh", "密钥"],
   },
 ];
+
+// 安全域分区条目（含 vault 配置文件）的名称归本特性登记：核心词表不持有可选条目知识。
+registerEntryNames({
+  "security/vault-config.json":
+    "settings.storage.entries.names.vault_config_json",
+});
 
 export const vaultModule: FeatureModule = {
   id: "vault",

@@ -38,13 +38,19 @@ export interface ResidualRowView {
   childrenMoreText: string | null;
 }
 
+export interface ResidualTotalLine {
+  key: "total" | "residual" | "unregistered";
+  text: string;
+}
+
 export interface ResidualViewModel {
   statusText: string;
   statusTone: TagTone;
   notices: ResidualNotice[];
   rows: ResidualRowView[];
-  totalsText: string;
+  totalsLines: ResidualTotalLine[];
   totalsHint: string;
+  unnameableText: string | null;
   empty: boolean;
 }
 
@@ -236,17 +242,71 @@ function noticesOf(
   return notices;
 }
 
-function totalsOf(inventory: StorageInventoryDto): string {
-  if (
-    inventory.unregisteredCount === null ||
-    inventory.unregisteredBytes === null
-  ) {
-    return bytesOrDash(null);
-  }
-  return translateKey("settings.storage.residual.totals.unregistered", {
-    count: inventory.unregisteredCount,
-    size: bytesOrDash(inventory.unregisteredBytes),
+// 下界标注（§6）：`totals.partial` 时三个数统一加 `≥` 前缀，不得只标其中一个。
+function sizeText(bytes: number | null, lowerBound: boolean): string {
+  const text = bytesOrDash(bytes);
+  return lowerBound && bytes !== null ? `≥${text}` : text;
+}
+
+function countOrDash(count: number | null): string {
+  return count === null
+    ? bytesOrDash(null)
+    : translateKey("settings.storage.common.count_value", { count });
+}
+
+// 分 scope 数字求和：任一侧为 `null` 则整体 `null`（不把「不知道」写成 0）。
+function scopeSum(a: number | null, b: number | null): number | null {
+  return a === null || b === null ? null : a + b;
+}
+
+// 合计三段只读 `totals` 与顶层 `unregisteredBytes`，禁止对 `nodes` 求和（G5 / V7）。
+function totalsLinesOf(inventory: StorageInventoryDto): ResidualTotalLine[] {
+  const lowerBound = inventory.totals.partial;
+  return [
+    {
+      key: "total",
+      text: translateKey("settings.storage.residual.totals.total", {
+        size: sizeText(inventory.totals.scanBytes, lowerBound),
+      }),
+    },
+    {
+      key: "residual",
+      text: translateKey("settings.storage.residual.totals.residual", {
+        size: sizeText(inventory.totals.residualBytes, lowerBound),
+      }),
+    },
+    {
+      key: "unregistered",
+      text: translateKey("settings.storage.residual.totals.unregistered", {
+        count: countOrDash(inventory.unregisteredCount),
+        size: sizeText(inventory.unregisteredBytes, lowerBound),
+      }),
+    },
+  ];
+}
+
+// 不可命名部分不进入节点列表，只在合计区追加一行说明（§3.4 / V3）。
+function unnameableTextOf(inventory: StorageInventoryDto): string | null {
+  const bytes = scopeSum(
+    inventory.totals.data.unnameableBytes,
+    inventory.totals.local.unnameableBytes,
+  );
+  if (bytes === null || bytes <= 0) return null;
+  const count = scopeSum(
+    inventory.totals.data.unnameableCount,
+    inventory.totals.local.unnameableCount,
+  );
+  return translateKey("settings.storage.residual.totals.unnameable", {
+    count: countOrDash(count),
   });
+}
+
+function totalsHintOf(inventory: StorageInventoryDto): string {
+  return translateKey(
+    inventory.totals.partial
+      ? "settings.storage.residual.totals.lower_bound"
+      : "settings.storage.residual.totals.hint",
+  );
 }
 
 export function residualView(
@@ -263,8 +323,9 @@ export function residualView(
     statusTone,
     notices: noticesOf(inventory, rows, status),
     rows,
-    totalsText: totalsOf(inventory),
-    totalsHint: translateKey("settings.storage.residual.totals.hint"),
+    totalsLines: totalsLinesOf(inventory),
+    totalsHint: totalsHintOf(inventory),
+    unnameableText: unnameableTextOf(inventory),
     empty: rows.length === 0,
   };
 }

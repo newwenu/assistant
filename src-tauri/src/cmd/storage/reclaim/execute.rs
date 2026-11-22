@@ -1,5 +1,6 @@
 //! 执行（§5.3）：先整批校验（不过就零副作用），再逐条跑，单条失败不影响其余。
 
+use crate::app_dirs::registry::CoreEntry;
 use crate::cmd::storage::entries::{views, EntryView};
 use crate::protocol::dto::{
     StorageReclaimActionDto, StorageReclaimRequestDto, StorageReclaimResultDto,
@@ -8,6 +9,7 @@ use crate::protocol::dto::{
 
 use super::executors::{
     execute_derived, execute_index, execute_orphans, execute_section, execute_tool_results,
+    execute_webview,
 };
 use super::report::{entry_result, Totals};
 use super::store::CachedPlan;
@@ -39,8 +41,10 @@ pub async fn execute_storage_reclaim(
 
     let mut results = Vec::with_capacity(targets.len());
     for (view, key, action) in targets {
-        let result = match view.entry {
-            "E1" => {
+        // core 与分区两条路由互斥且穷尽：core 条目**不可能**落进分区分支，
+        // 没有执行器的 core 条目也不会被误路由（§4.3 第 2 条）。
+        let result = match view.core {
+            Some(CoreEntry::Attachments) => {
                 execute_orphans(
                     ports.attachments.clone(),
                     ports.db.clone(),
@@ -50,16 +54,37 @@ pub async fn execute_storage_reclaim(
                 )
                 .await
             }
-            "E2" => {
+            Some(CoreEntry::AttachmentsDerived) => {
                 execute_derived(ports.attachments, plan.sampled_at, key.to_string(), action).await
             }
-            "E3" => {
+            Some(CoreEntry::ToolResults) => {
                 let policy = plan.policy_of(key);
                 execute_tool_results(ports.tool_results.clone(), policy, key.to_string(), action)
                     .await
             }
-            "E4" => execute_index(ports.dirs, key.to_string(), action).await,
-            _ => match view.section.and_then(|index| ports.sections.get(index)) {
+            Some(CoreEntry::ToolIndex) => execute_index(ports.dirs, key.to_string(), action).await,
+            // `E14` 运行期只能登记待执行：WebView2 持有 profile 句柄，唯一安全执行点是
+            // 下次启动、任何 webview 创建之前（§13.3.5）。
+            Some(CoreEntry::WebViewProfile) => {
+                execute_webview(ports.dirs, key.to_string(), action).await
+            }
+            // 其余 core 条目没有执行器（`executor_action` 已在校验期拒绝），此处保持零副作用。
+            Some(
+                CoreEntry::MascotAssets
+                | CoreEntry::Database
+                | CoreEntry::Logs
+                | CoreEntry::Crashes
+                | CoreEntry::Config
+                | CoreEntry::OrbConfig
+                | CoreEntry::MascotConfig,
+            ) => entry_result(
+                key.to_string(),
+                action,
+                Totals::default(),
+                Vec::new(),
+                StorageReclaimStatusDto::NotEligible,
+            ),
+            None => match view.section.and_then(|index| ports.sections.get(index)) {
                 Some(section) => {
                     let policy = plan.policy_of(key);
                     execute_section(section.clone(), policy, key, action).await
@@ -93,16 +118,26 @@ pub async fn execute_storage_reclaim(
     })
 }
 
-/// 白名单（§3.3）：core 只放行有执行器的 4 条（`E1 + A1` / `E2|E4 + A5` / `E3 + A3`），
+/// 白名单（§3.3）：core 只放行有执行器的 5 条（`E1 + A1` / `E2|E4|E14 + A5` / `E3 + A3`），
 /// 可选条目只放行「分区自述可执行的动作」——分区没声明的动作一律拒绝。
 ///
-/// 按条目 id / 分区声明判，不按下标：清单顺序调整不会悄悄改变可执行集合。
+/// 按 core 枚举判，不按下标、不按 `E*` 字符串：清单顺序调整不会悄悄改变可执行集合，
+/// 新增 core 条目时编译器会点名这里（不会静默退化成「不可执行」）。
 fn executor_action(view: &EntryView) -> Option<StorageReclaimActionDto> {
-    match view.entry {
-        "E1" => Some(StorageReclaimActionDto::DeleteOrphans),
-        "E2" | "E4" => Some(StorageReclaimActionDto::RebuildCache),
-        "E3" => Some(StorageReclaimActionDto::SweepExpired),
-        _ => None,
+    match view.core? {
+        CoreEntry::Attachments => Some(StorageReclaimActionDto::DeleteOrphans),
+        CoreEntry::AttachmentsDerived | CoreEntry::ToolIndex | CoreEntry::WebViewProfile => {
+            Some(StorageReclaimActionDto::RebuildCache)
+        }
+        CoreEntry::ToolResults => Some(StorageReclaimActionDto::SweepExpired),
+        // `E15` / `E17` / `E18` 是用户业务数据（`Forbidden`），没有执行器：白名单直接拒绝。
+        CoreEntry::MascotAssets
+        | CoreEntry::Database
+        | CoreEntry::Logs
+        | CoreEntry::Crashes
+        | CoreEntry::Config
+        | CoreEntry::OrbConfig
+        | CoreEntry::MascotConfig => None,
     }
 }
 
@@ -148,8 +183,8 @@ fn action_allowed(
     ports: &ReclaimPorts<'_>,
     action: StorageReclaimActionDto,
 ) -> bool {
-    match view.section {
-        Some(_) => section_action(view, ports) == Some(action),
-        None => executor_action(view) == Some(action),
+    match view.core {
+        Some(_) => executor_action(view) == Some(action),
+        None => section_action(view, ports) == Some(action),
     }
 }

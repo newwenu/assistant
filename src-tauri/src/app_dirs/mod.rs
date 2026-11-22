@@ -9,6 +9,7 @@ pub mod form;
 pub mod fs_stats;
 pub mod registry;
 mod roots;
+pub mod webview_profile;
 
 pub use form::strip_verbatim_prefix;
 pub use roots::{AppDirs, DirError};

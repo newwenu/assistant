@@ -3,6 +3,8 @@
 //! 视图清单里 core 条目在前、分区条目在后，条数随已挂载分区变化（X15），
 //! 因此所有寻址都必须带清单，不能再靠固定长度的数组下标。
 
+use crate::app_dirs::registry::CoreEntry;
+
 use super::{EntrySample, EntryView};
 
 /// key → 样本槽位；清单里没有的 key 返回 `None`（未挂载 = 行不存在）。
@@ -10,9 +12,9 @@ pub fn index_of_key(views: &[EntryView], key: &str) -> Option<usize> {
     views.iter().position(|view| view.key == key)
 }
 
-/// 条目 id → 样本槽位；清单里没有该条目返回 `None`。
-pub fn index_of_entry(views: &[EntryView], entry: &str) -> Option<usize> {
-    views.iter().position(|view| view.entry == entry)
+/// core 条目 → 样本槽位（编译期穷尽，不存在「写错 id 静默返回 `None`」）。
+pub fn index_of_core(views: &[EntryView], entry: CoreEntry) -> Option<usize> {
+    views.iter().position(|view| view.core == Some(entry))
 }
 
 /// 按视图取样本；视图与样本由同一清单产出，槽位必定对齐。

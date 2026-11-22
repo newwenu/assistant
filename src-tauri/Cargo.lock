@@ -470,6 +470,7 @@ dependencies = [
  "core-foundation 0.10.1",
  "crc",
  "data-encoding",
+ "dirs 7.0.0",
  "hex",
  "hkdf 0.12.4",
  "hmac 0.12.1",

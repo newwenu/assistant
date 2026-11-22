@@ -10,6 +10,7 @@ use assistant_storage::attachment_store::{AttachmentEntry, AttachmentStore};
 use assistant_tools::ToolResultStorage;
 
 use crate::adapters::PipelineToolExecution;
+use crate::app_dirs::registry::CoreEntry;
 use crate::app_dirs::AppDirs;
 use crate::cmd::storage::section::{SectionRegistry, StorageSectionHandle};
 use crate::protocol::dto::StorageAvailabilityDto;
@@ -17,8 +18,8 @@ use crate::setup::DbState;
 
 use super::super::entries::{set_sample, views, EntrySample};
 use super::rows::{
-    attachment_sample, derived_sample, sample_crashes, sample_database, sample_index,
-    sample_mascot, sample_tool_results,
+    attachment_sample, derived_sample, sample_config_file, sample_crashes, sample_database,
+    sample_index, sample_logs, sample_mascot, sample_tool_results, sample_webview,
 };
 use super::sections::section_sample;
 use super::timeout::{timed, timed_blocking, SampleFuture};
@@ -71,13 +72,13 @@ pub async fn collect_with(inputs: SampleInputs<'_>) -> Sampled {
         db,
     } = inputs;
 
-    // 清单先定：core 8 条在前，可选分区条目紧随其后；样本按同一清单对齐。
+    // 清单先定：core 条目在前，可选分区条目紧随其后；样本按同一清单对齐。
     let views = views(&sections);
     let mut samples: Vec<EntrySample> = views.iter().map(|_| EntrySample::missing()).collect();
     set_sample(
         &views,
         &mut samples,
-        "E1",
+        CoreEntry::Attachments.id(),
         attachment_sample(entries, referenced),
     );
 
@@ -86,26 +87,30 @@ pub async fn collect_with(inputs: SampleInputs<'_>) -> Sampled {
     // E2：派生侧车目录（owner 自持 `derived/`，管理器不拼路径）。
     {
         let store = store.clone();
-        tasks.push(Box::pin(timed("E2", async move {
-            match store.list_derived().await {
-                Ok(entries) => derived_sample(&entries),
-                Err(error) => {
-                    log::debug!("派生侧车统计失败: {error}");
-                    EntrySample::degraded(StorageAvailabilityDto::Unreadable)
+        tasks.push(Box::pin(timed(
+            CoreEntry::AttachmentsDerived.id(),
+            async move {
+                match store.list_derived().await {
+                    Ok(entries) => derived_sample(&entries),
+                    Err(error) => {
+                        log::debug!("派生侧车统计失败: {error}");
+                        EntrySample::degraded(StorageAvailabilityDto::Unreadable)
+                    }
                 }
-            }
-        })));
+            },
+        )));
     }
 
     // E3：工具结果落盘（策略由 owner 自述，含注入时刻）。
     match storage {
-        Some(storage) => tasks.push(Box::pin(timed_blocking("E3", move || {
-            sample_tool_results(&storage)
-        }))),
+        Some(storage) => tasks.push(Box::pin(timed_blocking(
+            CoreEntry::ToolResults.id(),
+            move || sample_tool_results(&storage),
+        ))),
         None => set_sample(
             &views,
             &mut samples,
-            "E3",
+            CoreEntry::ToolResults.id(),
             EntrySample::degraded(StorageAvailabilityDto::NotImplemented),
         ),
     }
@@ -113,26 +118,32 @@ pub async fn collect_with(inputs: SampleInputs<'_>) -> Sampled {
     // E4 / E5 / E13：应用自有目录，各走 owner 的公开入口。
     {
         let index_root = dirs.indexes();
-        tasks.push(Box::pin(timed_blocking("E4", move || {
-            sample_index(&index_root)
-        })));
+        tasks.push(Box::pin(timed_blocking(
+            CoreEntry::ToolIndex.id(),
+            move || sample_index(&index_root),
+        )));
         let mascot_root = dirs.mascot_assets();
-        tasks.push(Box::pin(timed_blocking("E5", move || {
-            sample_mascot(&mascot_root)
-        })));
+        tasks.push(Box::pin(timed_blocking(
+            CoreEntry::MascotAssets.id(),
+            move || sample_mascot(&mascot_root),
+        )));
         let crash_root = dirs.crashes();
-        tasks.push(Box::pin(timed_blocking("E13", move || {
-            sample_crashes(&crash_root)
-        })));
+        tasks.push(Box::pin(timed_blocking(
+            CoreEntry::Crashes.id(),
+            move || sample_crashes(&crash_root),
+        )));
     }
 
     // E6：主库文件，只 `metadata`、不开库。
     match db {
-        Some(db) => tasks.push(Box::pin(timed_blocking("E6", move || sample_database(&db)))),
+        Some(db) => tasks.push(Box::pin(timed_blocking(
+            CoreEntry::Database.id(),
+            move || sample_database(&db),
+        ))),
         None => set_sample(
             &views,
             &mut samples,
-            "E6",
+            CoreEntry::Database.id(),
             EntrySample::degraded(StorageAvailabilityDto::Unavailable),
         ),
     }
@@ -151,13 +162,35 @@ pub async fn collect_with(inputs: SampleInputs<'_>) -> Sampled {
         })));
     }
 
-    // E12：日志组件不提供占用统计，恒为常量降级；缺口说明由静态 `note` 承载（R-16）。
-    set_sample(
-        &views,
-        &mut samples,
-        "E12",
-        EntrySample::degraded(StorageAvailabilityDto::NotImplemented),
-    );
+    // E12：日志由插件自持轮转（插件无 stats API），路径是应用自有目录，按 §3.9 口径只读遍历。
+    {
+        let logs_root = dirs.logs();
+        tasks.push(Box::pin(timed_blocking(CoreEntry::Logs.id(), move || {
+            sample_logs(&logs_root)
+        })));
+    }
+
+    // E14：WebView2 profile，整棵树由应用接管观测（§13.3）。
+    {
+        let profile = dirs.webview_profile();
+        tasks.push(Box::pin(timed_blocking(
+            CoreEntry::WebViewProfile.id(),
+            move || sample_webview(&profile),
+        )));
+    }
+
+    // E15 / E17 / E18：core 侧配置文件，路径由 `AppDirs` 按登记表拼出（不复制段字面量，§13.4.3 第 5 条）。
+    // 漏采样会让 `declared = 0`、整个文件被误报成余量（G11），因此必须与登记同批落地。
+    for entry in [
+        CoreEntry::Config,
+        CoreEntry::OrbConfig,
+        CoreEntry::MascotConfig,
+    ] {
+        let path = dirs.managed_path_of(entry);
+        tasks.push(Box::pin(timed_blocking(entry.id(), move || {
+            sample_config_file(&path)
+        })));
+    }
 
     for (entry, sample) in join_all(tasks).await {
         set_sample(&views, &mut samples, entry, sample);

@@ -23,13 +23,12 @@ const ENTRY_KEYS = [
   "tool-index",
   "mascot-assets",
   "assistant.db",
-  "security/security.db",
-  "security/backups",
-  "security/vault",
-  "security/recovery",
-  "security/audit",
   "logs",
   "crashes",
+  "EBWebView",
+  "config.json",
+  "orb-config.json",
+  "mascot-config.json",
 ] as const;
 
 const ENTRY_NAME_PATHS = [
@@ -46,6 +45,10 @@ const ENTRY_NAME_PATHS = [
   "security_audit",
   "logs",
   "crashes",
+  "EBWebView",
+  "config_json",
+  "orb_config_json",
+  "mascot_config_json",
 ] as const;
 
 function localeHas(locale: unknown, key: string): boolean {
@@ -62,7 +65,7 @@ afterEach(() => {
 });
 
 describe("存储词表", () => {
-  it("13 个条目 key 全部有本地化名称", () => {
+  it("12 个核心条目 key 全部有本地化名称", () => {
     for (const key of ENTRY_KEYS) {
       const name = entryNameText(key);
       expect(name.length).toBeGreaterThan(0);

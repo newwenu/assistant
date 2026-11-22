@@ -1,6 +1,6 @@
 //! 条目静态登记与装配（I61 §3.1–§3.6）：纯函数，不做 IO、不读配置。
 //!
-//! core 8 条的 `key` / `layer` / `owner` 一律来自 `app_dirs::registry::MANAGED_ROOTS`（G1 / G4）；
+//! core 条目的 `key` / `layer` / `owner` 一律来自 `app_dirs::registry::MANAGED_ROOTS`（G1 / G4）；
 //! 可选分区条目由各分区 `entries()` 自述，core 不写任何功能条目字面量（G17(b)）。
 //!
 //! 子模块按职责划分：`decl` 静态声明表、`view` 统一条目视图、`eligibility` 资格与确认档位派生、
@@ -18,13 +18,8 @@ use crate::protocol::dto::{
 };
 
 pub use assemble::{assemble_breakdown, build_plan_entry, judgeable};
-pub use slot::{index_of_entry, index_of_key, sample_for, set_sample};
+pub use slot::{index_of_core, index_of_key, sample_for, set_sample};
 pub use view::{declared_segments, find_by_entry, find_by_key, views, EntryView};
-
-/// `E12` 是唯一「插件自持、不暴露 stats」的条目，判定 `complete` 时必须排除（§6.1）。
-///
-/// 用条目 id 而不是下标：登记表顺序调整时不会静默排除错行。
-const LOGS_ENTRY: &str = "E12";
 
 /// 一条条目的观测结果；`None` 表示「取不到」，绝不填 `0` 冒充（G6）。
 #[derive(Debug, Clone, PartialEq)]

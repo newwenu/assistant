@@ -95,7 +95,21 @@ const ENTRY_NAME_KEYS: Readonly<Record<string, I18nPath>> = {
   "security/audit": "settings.storage.entries.names.security_audit",
   logs: "settings.storage.entries.names.logs",
   crashes: "settings.storage.entries.names.crashes",
+  EBWebView: "settings.storage.entries.names.EBWebView",
+  "config.json": "settings.storage.entries.names.config_json",
+  "orb-config.json": "settings.storage.entries.names.orb_config_json",
+  "mascot-config.json": "settings.storage.entries.names.mascot_config_json",
 };
+
+// 可选特性条目名称的自注册表：核心词表只认核心条目，
+// 分区条目由 feature 在自己的模块里调用 `registerEntryNames` 登记（机制在核心、知识在特性）。
+const FEATURE_ENTRY_NAME_KEYS: Record<string, I18nPath> = {};
+
+export function registerEntryNames(
+  keys: Readonly<Record<string, I18nPath>>,
+): void {
+  Object.assign(FEATURE_ENTRY_NAME_KEYS, keys);
+}
 
 const GROUP_NAME_KEYS: Readonly<Record<string, I18nPath>> = {
   security: "settings.storage.entries.groups.security",
@@ -132,7 +146,9 @@ function optionalTextOf(
 }
 
 export function entryNameText(key: string): string {
-  return optionalTextOf(ENTRY_NAME_KEYS, key);
+  const i18nKey =
+    lookupKey(FEATURE_ENTRY_NAME_KEYS, key) ?? lookupKey(ENTRY_NAME_KEYS, key);
+  return i18nKey === undefined ? key : translateKey(i18nKey);
 }
 
 export function groupNameText(group: string): string {

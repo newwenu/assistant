@@ -128,6 +128,17 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     crate::window::apply_orb_window_attrs(handle);
     show_orb_window(handle);
 
+    // `E14` 漂移守卫（I67 §13.3）：子目录名 `EBWebView` 由 WebView2 固定创建，仓库内没有
+    // 可比对的常量，因此建窗后校验存在性——Tauri / WebView2 若改落点或改名，启动日志
+    // 直接暴露，不会静默把字节漏在 `unregistered`。
+    #[cfg(target_os = "windows")]
+    if !dirs.webview_profile().exists() {
+        log::warn!(
+            "WebView2 profile dir missing after window creation; E14 will be reported missing: {}",
+            dirs.webview_profile().display()
+        );
+    }
+
     spawn_screen_inspection(handle.clone());
 
     register_global_shortcuts(handle);

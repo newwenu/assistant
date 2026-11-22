@@ -334,7 +334,7 @@ async fn execute_rejects_keys_outside_whitelist() {
         .await
         .unwrap();
 
-    // `E12`（logs）在 T2 仍不可回收：`action = none`，白名单外整体拒绝。
+    // `E12`（logs）只有 `A6 rotate`（owner 自动轮转）、无执行器，白名单外整体拒绝。
     let error = execute_storage_reclaim(
         fixture.ports(now),
         execute_request(
@@ -779,7 +779,7 @@ async fn optional_entries_disappear_when_section_not_mounted() {
     assert_eq!(error, "entryNotAllowed", "未挂载分区不贡献条目");
 }
 
-/// V20：`entryKeys` 空集 = core 8 条 + 已挂载分区条目（长度动态，不再写死 13）。
+/// V20：`entryKeys` 空集 = core 条目 + 已挂载分区条目（长度动态，不再写死）。
 #[tokio::test]
 async fn empty_entry_keys_covers_core_and_mounted_sections() {
     let fixture = Fixture::new();
@@ -801,7 +801,7 @@ async fn empty_entry_keys_covers_core_and_mounted_sections() {
     assert_eq!(
         plan.entries.len(),
         views(&[]).len() + 5,
-        "core 8 条 + 分区自述 5 条"
+        "core 条目 + 分区自述 5 条"
     );
     let backups = plan
         .entries
@@ -882,4 +882,72 @@ async fn section_action_not_declared_is_rejected() {
     .await
     .unwrap_err();
     assert_eq!(error, "entryNotAllowed", "分区未声明 RebuildCache");
+}
+
+/// `E14`（I67 §13.3.5）：运行期只登记待执行——返回 `scheduled`、写标记、**零删除**；
+/// 真正的删除只在启动期消费标记时发生，且只删缓存白名单、绝不碰用户态数据。
+#[tokio::test]
+async fn webview_profile_registers_pending_and_purges_only_cache_on_startup() {
+    let fixture = Fixture::new();
+    let profile = fixture.dirs.webview_profile();
+    let gpu = profile.join("GPUCache");
+    std::fs::create_dir_all(&gpu).unwrap();
+    std::fs::write(gpu.join("data.bin"), b"0123456789").unwrap();
+    let user_state = profile.join("Default").join("Local Storage");
+    std::fs::create_dir_all(&user_state).unwrap();
+    std::fs::write(user_state.join("leveldb.bin"), b"keep-me").unwrap();
+
+    let now = future_now();
+    let plan = plan_storage_reclaim(fixture.ports(now), plan_request(&["EBWebView"]))
+        .await
+        .unwrap();
+
+    let result = execute_storage_reclaim(
+        fixture.ports(now),
+        execute_request(
+            &plan.plan_id,
+            vec![request("EBWebView", StorageReclaimActionDto::RebuildCache)],
+            true,
+        ),
+    )
+    .await
+    .unwrap();
+
+    let entry = &result.entries[0];
+    assert_eq!(
+        entry.status,
+        StorageReclaimStatusDto::Scheduled,
+        "运行期只登记，不谎报 done/skipped"
+    );
+    assert_eq!(entry.removed_count, 0, "运行期零删除");
+    assert_eq!(entry.removed_bytes, 0);
+
+    // 运行期文件一个没少：缓存与用户态都还在，只多了待执行标记。
+    assert!(gpu.join("data.bin").exists(), "运行期不得删缓存");
+    assert!(
+        user_state.join("leveldb.bin").exists(),
+        "运行期不得删用户态"
+    );
+    assert!(
+        assistant_app::app_dirs::webview_profile::pending_marker(&profile).exists(),
+        "必须写下待执行标记，否则请求等于被丢弃"
+    );
+
+    // 启动期消费标记：只删白名单缓存，用户态数据保留。
+    let report = assistant_app::app_dirs::webview_profile::run_pending_purge(&profile)
+        .expect("有标记时必须执行一次清理");
+    assert_eq!(report.removed, 1, "GPUCache 被删");
+    assert_eq!(report.removed_bytes, 10);
+    assert!(!gpu.exists(), "白名单缓存已删");
+    assert!(user_state.join("leveldb.bin").exists(), "用户态数据永不删");
+    assert!(
+        !assistant_app::app_dirs::webview_profile::pending_marker(&profile).exists(),
+        "标记只消费一次"
+    );
+
+    // 再次启动无标记 → 零副作用，返回 None。
+    assert!(
+        assistant_app::app_dirs::webview_profile::run_pending_purge(&profile).is_none(),
+        "无标记时不得清理"
+    );
 }

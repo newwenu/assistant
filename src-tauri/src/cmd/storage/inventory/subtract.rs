@@ -28,6 +28,12 @@ pub fn subtract_declared(
         {
             continue;
         }
+        // `inventory = false` 的首段（`E12`）只关减法、不关观测（I67 §3.5）：
+        // 不主张登记值，`declaredBytes` / `declaredCount` 恒 `null`，从而 `residual` 也恒 `null`，
+        // 避免持续写入造成的必然假 `overRegistered`。
+        if !view.inventory {
+            return (None, None);
+        }
         bytes = match (bytes, sample.bytes) {
             (Some(acc), Some(value)) => Some(acc.saturating_add(value)),
             _ => None,
@@ -97,7 +103,7 @@ mod tests {
     use crate::cmd::storage::entries::{set_sample, views};
     use crate::protocol::dto::StorageAvailabilityDto;
 
-    /// 清单 + 全 `available` 样本：core 8 条每条 `1024` 字节 / 1 个。
+    /// 清单 + 全 `available` 样本：core 条目每条 `1024` 字节 / 1 个。
     fn fixtures() -> (Vec<EntryView>, Vec<EntrySample>) {
         let views = views(&[]);
         let samples = views

@@ -232,9 +232,16 @@ export const ResidualTable: React.FC<ResidualTableProps> = ({ view }) => {
           {view.rows.map(renderRow)}
 
           <div className="storage-residual-totals">
-            <span className="storage-residual-totals-value">
-              {view.totalsText}
-            </span>
+            {view.totalsLines.map((line) => (
+              <span key={line.key} className="storage-residual-totals-line">
+                {line.text}
+              </span>
+            ))}
+            {view.unnameableText === null ? null : (
+              <span className="storage-residual-totals-line is-note">
+                {view.unnameableText}
+              </span>
+            )}
             <span className="storage-residual-totals-hint">
               {view.totalsHint}
             </span>

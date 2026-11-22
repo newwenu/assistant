@@ -1,9 +1,9 @@
 //! 条目与整页装配：把样本 + 条目视图折算成 wire DTO（纯函数，不碰磁盘）。
 //!
-//! 条数不再固定：core 8 条恒在，可选分区条目随已挂载分区出现，因此装配以
+//! 条数不再固定：core 条目恒在，可选分区条目随已挂载分区出现，因此装配以
 //! [`EntryView`] 清单为准，清单里没有的条目不会凭空生成占位行（X15 / §3.10）。
 
-use crate::app_dirs::registry::RootScope;
+use crate::app_dirs::registry::{CoreEntry, RootScope};
 use crate::protocol::dto::{
     ReclaimViewDto, StorageAvailabilityDto, StorageBreakdownDto, StorageByteBasisDto,
     StorageEligibilityDto, StorageEntryDto, StorageInventoryDto, StorageLayerDto,
@@ -11,7 +11,7 @@ use crate::protocol::dto::{
 };
 
 use super::eligibility::{confirmation_for, eligibility_for};
-use super::{BreakdownBase, EntrySample, EntryView, LOGS_ENTRY};
+use super::{BreakdownBase, EntrySample, EntryView};
 
 fn layer_of(scope: RootScope) -> StorageLayerDto {
     match scope {
@@ -95,7 +95,10 @@ pub fn assemble_breakdown(
         .map(|(view, sample)| build_entry(view, sample))
         .collect();
     let complete = views.iter().zip(samples.iter()).all(|(view, sample)| {
-        view.entry == LOGS_ENTRY
+        // `E12` 日志 / `E14` WebView profile 在采样期间持续写入，数字必然滞后，
+        // 判 `complete` 时必须排除（§6.1 / §13.3.6）。
+        // 用 core 枚举比较而不是 `E` 字面量：登记表顺序调整时不会静默排除错行。
+        matches!(view.core, Some(CoreEntry::Logs | CoreEntry::WebViewProfile))
             || matches!(
                 sample.availability,
                 StorageAvailabilityDto::Available | StorageAvailabilityDto::Missing
@@ -142,6 +145,7 @@ mod tests {
     ) -> EntryView {
         EntryView {
             entry,
+            core: None,
             key,
             segments,
             scope: RootScope::Data,
@@ -160,7 +164,7 @@ mod tests {
         }
     }
 
-    /// core 8 条 + 一个假分区（数据库 / 备份 / 仓库三条）：验证分区条目走同一装配路径。
+    /// core 条目 + 一个假分区（数据库 / 备份 / 仓库三条）：验证分区条目走同一装配路径。
     ///
     /// 假条目 id 用 `S1`–`S3`：真实安全域条目由功能 crate 自述，
     /// core 侧（含测试）不写这些 id 字面量（G17(b) / R-09 验收）。
@@ -277,6 +281,9 @@ mod tests {
             "tool-results",
             "tool-index",
             "optional-zone/backups",
+            // `E14`：资格恒 `eligible`（否则前端无入口，待执行标记永远写不进），
+            // 运行期不删由执行结果 `scheduled` 表达（§13.3.5）。
+            "EBWebView",
         ];
         for entry in &dto.entries {
             if eligible_keys.contains(&entry.key.as_str()) {

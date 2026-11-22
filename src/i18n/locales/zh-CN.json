@@ -13,6 +13,7 @@
       "vault_settings": { "title": "密码保险库设置" },
       "chat_history": "消息历史",
       "agent_observation": "Agent 观测",
+      "canvas_demo": "画布示例",
       "settings": "设置",
       "category": {
         "general": "通用",
@@ -388,7 +389,12 @@
           "security_recovery": "保险库恢复临时文件",
           "security_audit": "安全审计日志",
           "logs": "运行日志",
-          "crashes": "崩溃报告"
+          "crashes": "崩溃报告",
+          "EBWebView": "WebView 配置与缓存",
+          "config_json": "应用配置",
+          "vault_config_json": "保险库配置",
+          "orb_config_json": "悬浮球配置",
+          "mascot_config_json": "吉祥物配置"
         },
         "groups": {
           "security": "安全相关"
@@ -504,7 +510,8 @@
           "done": "已清理 {{count}} 项，释放 {{size}}",
           "partial": "部分完成：已清理 {{count}} 项，释放 {{size}}，失败 {{failed}} 项",
           "failed": "清理失败",
-          "skipped": "没有可清理的内容（可能刚被重新使用）"
+          "skipped": "没有可清理的内容（可能刚被重新使用）",
+          "scheduled": "已登记清理请求，将在下次启动时执行"
         }
       },
       "residual": {
@@ -546,8 +553,12 @@
           "unregistered": "未登记"
         },
         "totals": {
-          "unregistered": "未登记合计：{{count}} 项，{{size}}",
-          "hint": "不计入上方合计"
+          "total": "受管目录合计：{{size}}",
+          "residual": "其中未计入：{{size}}",
+          "unregistered": "其中未登记：{{count}}，{{size}}",
+          "unnameable": "另有 {{count}} 无法命名，仅计入合计",
+          "hint": "合计为受管目录扫描到的全部占用",
+          "lower_bound": "有目录未扫描完，≥ 表示至少这么多"
         },
         "children": {
           "more": "还有 {{count}} 项未展开"
@@ -2218,6 +2229,48 @@
       "budget_iterations": "剩余迭代",
       "budget_tools": "剩余工具调用",
       "budget_wall_time": "剩余时长"
+    }
+  },
+  "canvas": {
+    "viewport": "画布",
+    "zoom_in": "放大",
+    "zoom_out": "缩小",
+    "zoom_reset": "复位视图",
+    "zoom_level": "缩放",
+    "edge": {
+      "untaken": "未通行",
+      "idle": "待通行",
+      "passed": "已通行",
+      "active": "活动中"
+    },
+    "exit": {
+      "failed": "失败出口",
+      "cancelled": "取消出口",
+      "stopped": "收束出口"
+    },
+    "legend": {
+      "edge_phase": "边相位",
+      "exit": "出口"
+    },
+    "demo": {
+      "card": {
+        "a": "示例卡片 A",
+        "b": "示例卡片 B",
+        "c": "示例卡片 C",
+        "d": "示例卡片 D",
+        "e": "示例卡片 E",
+        "f": "示例卡片 F"
+      },
+      "subtitle": {
+        "a": "演示占位",
+        "b": "演示占位",
+        "c": "演示占位",
+        "d": "演示占位",
+        "e": "演示占位",
+        "f": "演示占位"
+      },
+      "lane": "第二行留白（示例）",
+      "notice": "示例内容 · 非真实数据"
     }
   }
 }

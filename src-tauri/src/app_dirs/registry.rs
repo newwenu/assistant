@@ -1,11 +1,14 @@
-// 受管目录登记表：core 8 条资源监视条目（`E1`–`E6` / `E12` / `E13`）的唯一来源。
+// 受管目录登记表：core 12 条资源监视条目（`E1`–`E6` / `E12`–`E15` / `E17`–`E18`）的唯一来源。
 //
 // 本模块只描述「哪个基根、哪一段、归哪条条目、由谁提供、是否参与对账」，
 // 不做路径拼接（拼接在 `roots.rs`）、不读配置、不访问磁盘。
 // 新增受管目录 = 加一个 `dir_name` 常量且加一条登记；只做前者由 V19 单测直接判红。
 //
-// 可选功能条目（`E7`–`E11`）**不在这里**：它们由功能 crate 自述（见
+// 可选功能条目（`E7`–`E11` / `E16`）**不在这里**：它们由功能 crate 自述（见
 // `cmd::storage::section`），core 只保留首段事实 [`OPTIONAL_SEGMENTS`]（G16 / G19）。
+
+use assistant_config::conf_group::ConfGroup;
+use assistant_config::{app_conf::AppConf, mascot_conf::MascotConf, orb_conf::OrbConf};
 
 use super::dir_name;
 use crate::cmd::storage::section::RiskTier;
@@ -26,10 +29,79 @@ pub enum RootCoverage {
     RecursiveTree,
 }
 
+/// core 条目身份（§4.3）：`E*` 的单点定义。
+///
+/// 登记表与所有「按条目分支」都以本枚举为准，`id()` 是仓库里唯一写出 `E` 字面量的地方
+/// （测试除外）。因此 `decl` / `eligibility` / `execute` 的 `match` 是对封闭集合穷尽匹配：
+/// 新增 / 删除条目时编译器直接点名漏改的分支，不会退化成「匹配不到就静默继续」。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CoreEntry {
+    /// `E1`
+    Attachments,
+    /// `E2`
+    AttachmentsDerived,
+    /// `E3`
+    ToolResults,
+    /// `E4`
+    ToolIndex,
+    /// `E5`
+    MascotAssets,
+    /// `E6`
+    Database,
+    /// `E12`
+    Logs,
+    /// `E13`
+    Crashes,
+    /// `E14`（WebView2 profile，Windows 专属）
+    WebViewProfile,
+    /// `E15`（主配置 `config.json`）
+    Config,
+    /// `E17`（悬浮球配置 `orb-config.json`）
+    OrbConfig,
+    /// `E18`（吉祥物配置 `mascot-config.json`）
+    MascotConfig,
+}
+
+impl CoreEntry {
+    /// core 12 条全集（自检与测试用；顺序即对外 id 顺序）。
+    pub const ALL: &'static [Self] = &[
+        Self::Attachments,
+        Self::AttachmentsDerived,
+        Self::ToolResults,
+        Self::ToolIndex,
+        Self::MascotAssets,
+        Self::Database,
+        Self::Logs,
+        Self::Crashes,
+        Self::WebViewProfile,
+        Self::Config,
+        Self::OrbConfig,
+        Self::MascotConfig,
+    ];
+
+    /// 对外条目 id：`E1`–`E6` / `E12`–`E15` / `E17`–`E18`。
+    pub const fn id(self) -> &'static str {
+        match self {
+            Self::Attachments => "E1",
+            Self::AttachmentsDerived => "E2",
+            Self::ToolResults => "E3",
+            Self::ToolIndex => "E4",
+            Self::MascotAssets => "E5",
+            Self::Database => "E6",
+            Self::Logs => "E12",
+            Self::Crashes => "E13",
+            Self::WebViewProfile => "E14",
+            Self::Config => "E15",
+            Self::OrbConfig => "E17",
+            Self::MascotConfig => "E18",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ManagedRoot {
-    /// `E1`–`E6` / `E12` / `E13`。
-    pub entry: &'static str,
+    /// `E1`–`E6` / `E12`–`E15` / `E17`–`E18`（单点定义见 [`CoreEntry`]）。
+    pub entry: CoreEntry,
     /// 稳定身份（不是路径；等于 `segments` 用 `/` 连接）。
     pub key: &'static str,
     pub scope: RootScope,
@@ -39,13 +111,17 @@ pub struct ManagedRoot {
     pub owner: &'static str,
     /// 风险档（§3.6 硬约束 5–6）：core 只据此派生 `confirmation`，不进 wire。
     pub risk: RiskTier,
-    /// 该 scope 是否参与余量对账；本期 8 条全 `true`（OQ11）。
+    /// 该 scope 是否参与余量对账（`false` = 只分类、不遍历子树，见 OQ11）。
+    ///
+    /// `E12` 为 `false`：日志由外部组件自持、内容全归本条目（不存在未认领项），
+    /// 且对账扫描与条目观测是两次独立遍历，持续写入会让登记值与扫描值来自两个时刻，
+    /// 减法必然产生假余量 / 假负数。关闭对账只关掉扫描与减法，不关掉登记与分类。
     pub inventory: bool,
 }
 
 pub const MANAGED_ROOTS: &[ManagedRoot] = &[
     ManagedRoot {
-        entry: "E1",
+        entry: CoreEntry::Attachments,
         key: "attachments",
         scope: RootScope::Data,
         segments: &[dir_name::ATTACHMENTS],
@@ -55,7 +131,7 @@ pub const MANAGED_ROOTS: &[ManagedRoot] = &[
         inventory: true,
     },
     ManagedRoot {
-        entry: "E2",
+        entry: CoreEntry::AttachmentsDerived,
         key: "attachments/derived",
         scope: RootScope::Data,
         segments: &[dir_name::ATTACHMENTS, "derived"],
@@ -65,7 +141,7 @@ pub const MANAGED_ROOTS: &[ManagedRoot] = &[
         inventory: true,
     },
     ManagedRoot {
-        entry: "E3",
+        entry: CoreEntry::ToolResults,
         key: "tool-results",
         scope: RootScope::Data,
         segments: &[dir_name::TOOL_RESULTS],
@@ -75,7 +151,7 @@ pub const MANAGED_ROOTS: &[ManagedRoot] = &[
         inventory: true,
     },
     ManagedRoot {
-        entry: "E4",
+        entry: CoreEntry::ToolIndex,
         key: "tool-index",
         scope: RootScope::Data,
         segments: &[dir_name::TOOL_INDEX],
@@ -85,7 +161,7 @@ pub const MANAGED_ROOTS: &[ManagedRoot] = &[
         inventory: true,
     },
     ManagedRoot {
-        entry: "E5",
+        entry: CoreEntry::MascotAssets,
         key: "mascot-assets",
         scope: RootScope::Data,
         segments: &[dir_name::MASCOT_ASSETS],
@@ -95,7 +171,7 @@ pub const MANAGED_ROOTS: &[ManagedRoot] = &[
         inventory: true,
     },
     ManagedRoot {
-        entry: "E6",
+        entry: CoreEntry::Database,
         key: "assistant.db",
         scope: RootScope::Data,
         segments: &[dir_name::DATABASE],
@@ -105,23 +181,64 @@ pub const MANAGED_ROOTS: &[ManagedRoot] = &[
         inventory: true,
     },
     ManagedRoot {
-        entry: "E12",
+        entry: CoreEntry::Logs,
         key: "logs",
         scope: RootScope::Local,
         segments: &[dir_name::LOGS],
         coverage: RootCoverage::RecursiveTree,
         owner: "tauri-plugin-log",
         risk: RiskTier::Forbidden,
-        inventory: true,
+        inventory: false,
     },
     ManagedRoot {
-        entry: "E13",
+        entry: CoreEntry::Crashes,
         key: "crashes",
         scope: RootScope::Local,
         segments: &[dir_name::CRASHES],
         coverage: RootCoverage::RecursiveTree,
         owner: "assistant-crash",
         risk: RiskTier::Low,
+        inventory: true,
+    },
+    ManagedRoot {
+        entry: CoreEntry::WebViewProfile,
+        key: "EBWebView",
+        scope: RootScope::Local,
+        segments: &[dir_name::WEBVIEW_PROFILE],
+        coverage: RootCoverage::RecursiveTree,
+        owner: "WebView2",
+        risk: RiskTier::Medium,
+        inventory: true,
+    },
+    // 配置文件（T6）：`E15` / `E17` / `E18` 的首段直接写 owner 常量（零字面量复制）。
+    ManagedRoot {
+        entry: CoreEntry::Config,
+        key: "config.json",
+        scope: RootScope::Data,
+        segments: &[<AppConf as ConfGroup>::FILE_NAME],
+        coverage: RootCoverage::SingleFile,
+        owner: "AppConf",
+        risk: RiskTier::Forbidden,
+        inventory: true,
+    },
+    ManagedRoot {
+        entry: CoreEntry::OrbConfig,
+        key: "orb-config.json",
+        scope: RootScope::Data,
+        segments: &[<OrbConf as ConfGroup>::FILE_NAME],
+        coverage: RootCoverage::SingleFile,
+        owner: "OrbConf",
+        risk: RiskTier::Forbidden,
+        inventory: true,
+    },
+    ManagedRoot {
+        entry: CoreEntry::MascotConfig,
+        key: "mascot-config.json",
+        scope: RootScope::Data,
+        segments: &[<MascotConf as ConfGroup>::FILE_NAME],
+        coverage: RootCoverage::SingleFile,
+        owner: "MascotConf",
+        risk: RiskTier::Forbidden,
         inventory: true,
     },
 ];
@@ -135,24 +252,33 @@ pub const IGNORED_NAMES: &[&str] = &[".DS_Store", "Thumbs.db", "desktop.ini"];
 /// `cmd::storage::section::SectionRegistry` 里有没有对应分区，不看 `#[cfg]`。
 pub const OPTIONAL_SEGMENTS: &[&str] = &["security"];
 
-const EXPECTED_ENTRY_COUNT: usize = 8;
+/// 首段不由 `dir_name` 提供的条目（`E15` / `E17` / `E18`）：文件命名归各 owner crate。
+///
+/// 三条都直接引用 owner 常量（字面量只有一份）。V19 只放行这三条，其它字面量首段仍判红。
+pub const OWNER_DECLARED_SEGMENTS: &[&str] = &[
+    <AppConf as ConfGroup>::FILE_NAME,
+    <OrbConf as ConfGroup>::FILE_NAME,
+    <MascotConf as ConfGroup>::FILE_NAME,
+];
 
-/// core 8 条的显式 id 集合（删条即判红，不靠 `for index in 1..=13` 推算）。
-const CORE_ENTRY_IDS: &[&str] = &["E1", "E2", "E3", "E4", "E5", "E6", "E12", "E13"];
+const EXPECTED_ENTRY_COUNT: usize = 12;
+
+/// core 12 条的显式 id 集合（删条即判红，不靠 `for index in 1..=18` 推算）。
+const CORE_ENTRY_IDS: &[CoreEntry] = CoreEntry::ALL;
 
 /// 按 `key` 取登记项；未登记返回 `None`（管理器不得为未登记 key 产出条目，G4）。
 pub fn find(key: &str) -> Option<&'static ManagedRoot> {
     MANAGED_ROOTS.iter().find(|root| root.key == key)
 }
 
-/// 按条目 id（core 8 条）取登记项：条目 id 是对外契约，槽位由登记表现算。
+/// 按条目 id（core 12 条）取登记项：条目 id 是对外契约，槽位由登记表现算。
 pub fn find_by_entry(entry: &str) -> Option<&'static ManagedRoot> {
-    MANAGED_ROOTS.iter().find(|root| root.entry == entry)
+    MANAGED_ROOTS.iter().find(|root| root.entry.id() == entry)
 }
 
 /// 按首段取登记项；首段唯一（`E2` 与 `E1` 共享 `attachments`，返回先登记的 `E1`）。
 ///
-/// 只覆盖 core 8 条：可选首段（`OPTIONAL_SEGMENTS`）不命中登记表，由分区声明判定。
+/// 只覆盖 core 12 条：可选首段（`OPTIONAL_SEGMENTS`）不命中登记表，由分区声明判定。
 pub fn find_by_first_segment(segment: &str) -> Option<&'static ManagedRoot> {
     MANAGED_ROOTS
         .iter()
@@ -161,9 +287,10 @@ pub fn find_by_first_segment(segment: &str) -> Option<&'static ManagedRoot> {
 
 /// 登记表自检（V19 三条）：纯函数、接受切片，测试可传缺项负例。
 ///
-/// 1. core 8 条 `entry` 集合完整且 `key == segments.join("/")`，`key` 不重复；
+/// 1. core 12 条 `entry` 集合完整且 `key == segments.join("/")`，`key` 不重复；
 /// 2. `dir_name` 每个常量都必须有对应登记（首段命中）；
-/// 3. 每条登记首段必须来自 `dir_name` 常量（core 8 条全是无条件挂载）。
+/// 3. 每条登记首段必须来自 `dir_name` 常量，或由 owner crate 自述
+///    （`OWNER_DECLARED_SEGMENTS` 只放行 `E15` / `E17` / `E18`）。
 ///
 /// 可选条目的 `key` / `entry` 校验归 `SectionRegistry::register`，这里不重复。
 pub fn validate_registry(roots: &[ManagedRoot], dir_names: &[&str]) -> Result<(), String> {
@@ -177,7 +304,7 @@ pub fn validate_registry(roots: &[ManagedRoot], dir_names: &[&str]) -> Result<()
 
     for entry in CORE_ENTRY_IDS {
         if !roots.iter().any(|root| root.entry == *entry) {
-            return Err(format!("missing entry {entry}"));
+            return Err(format!("missing entry {}", entry.id()));
         }
     }
     if roots.len() != CORE_ENTRY_IDS.len() {
@@ -187,13 +314,15 @@ pub fn validate_registry(roots: &[ManagedRoot], dir_names: &[&str]) -> Result<()
     let mut keys = std::collections::HashSet::new();
     for root in roots {
         if root.segments.is_empty() {
-            return Err(format!("entry {} has empty segments", root.entry));
+            return Err(format!("entry {} has empty segments", root.entry.id()));
         }
         let joined = root.segments.join("/");
         if joined != root.key {
             return Err(format!(
                 "entry {} key `{}` != segments `{}`",
-                root.entry, root.key, joined
+                root.entry.id(),
+                root.key,
+                joined
             ));
         }
         if !keys.insert(root.key) {
@@ -213,10 +342,11 @@ pub fn validate_registry(roots: &[ManagedRoot], dir_names: &[&str]) -> Result<()
 
     for root in roots {
         let first = root.segments[0];
-        if !dir_names.contains(&first) {
+        if !dir_names.contains(&first) && !OWNER_DECLARED_SEGMENTS.contains(&first) {
             return Err(format!(
-                "entry {} first segment `{}` has no dir_name constant",
-                root.entry, first
+                "entry {} first segment `{}` has no dir_name constant or owner declaration",
+                root.entry.id(),
+                first
             ));
         }
     }
@@ -305,13 +435,13 @@ mod tests {
             assert!(
                 !root.owner.contains("::"),
                 "{} 的 owner `{}` 不得含路径分隔符",
-                root.entry,
+                root.entry.id(),
                 root.owner
             );
             assert!(
                 !root.owner.contains("assistant_vault"),
                 "{} 的 owner `{}` 不得是可选项 crate 类型名",
-                root.entry,
+                root.entry.id(),
                 root.owner
             );
             assert!(
@@ -319,13 +449,13 @@ mod tests {
                     .iter()
                     .any(|marker| root.owner.contains(marker)),
                 "{} 的 owner `{}` 不得是实现类型名形态",
-                root.entry,
+                root.entry.id(),
                 root.owner
             );
             assert!(
                 !FEATURE_NAMES.contains(&root.owner),
                 "{} 的 owner `{}` 不得等于 feature 名",
-                root.entry,
+                root.entry.id(),
                 root.owner
             );
         }

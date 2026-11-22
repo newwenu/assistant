@@ -165,6 +165,16 @@ pub fn show_or_create(app: &AppHandle, label: &str) -> Result<(), String> {
         builder = builder.center();
     }
 
+    // `E14` 接管落点（I67 §13.3）：显式声明 user data folder，不再依赖 Tauri 内部默认。
+    // 值即 Tauri 强制默认（`app_local_data_dir()`），故落点不变、不迁移、不产生第二份
+    // profile；解析失败时保持 Tauri 默认并记 warn（窗口创建不因此失败）。
+    match crate::app_dirs::AppDirs::resolve() {
+        Ok(dirs) => builder = builder.data_directory(dirs.webview_data_directory()),
+        Err(error) => {
+            log::warn!("Failed to resolve app dirs for webview data directory: {error}");
+        }
+    }
+
     if let (Some(mw), Some(mh)) = (spec.min_width, spec.min_height) {
         builder = builder.min_inner_size(mw, mh);
     }

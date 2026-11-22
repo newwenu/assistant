@@ -37,7 +37,7 @@ pub struct ReclaimPorts<'a> {
     pub plans: &'a ReclaimPlanStore,
     pub dirs: &'a AppDirs,
     pub attachments: &'a AttachmentStore,
-    /// 已注册的可选分区快照：空 = 关闭特性构建，清单里只剩 core 8 条。
+    /// 已注册的可选分区快照：空 = 关闭特性构建，清单里只剩 core 条目。
     pub sections: Vec<StorageSectionHandle>,
     pub tool_results: Option<Arc<dyn ToolResultStorage>>,
     pub db: Option<DbState>,

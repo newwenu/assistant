@@ -226,6 +226,13 @@ export function cleanupResultNotice(
         text: translateKey("settings.storage.cleanup.result.skipped"),
         detail: null,
       };
+    case "scheduled":
+      // `E14` WebView2 profile：运行期只登记、下次启动执行（§13.3.5）。
+      return {
+        kind: "info",
+        text: translateKey("settings.storage.cleanup.result.scheduled"),
+        detail: null,
+      };
     case "notEligible":
       storageLog.warn("cleanup returned notEligible for a planned entry");
       return {

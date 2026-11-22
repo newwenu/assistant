@@ -5,17 +5,18 @@ use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Manager};
 
 use crate::app_dirs::AppDirs;
-use crate::cmd::storage::entries::{views, EntrySample, EntryView};
+use crate::cmd::storage::entries::{find_by_entry, views, EntrySample, EntryView};
 use crate::cmd::storage::section::SectionRegistry;
 use crate::protocol::dto::{
-    StorageInventoryDto, StorageInventoryNodeDto, StorageInventorySnapshotStatusDto,
-    StorageInventoryStatusDto,
+    StorageInventoryClassDto, StorageInventoryDto, StorageInventoryNodeDto,
+    StorageInventoryScopeTotalsDto, StorageInventorySnapshotStatusDto, StorageInventoryStatusDto,
+    StorageInventoryTotalsDto, StorageLayerDto,
 };
 use crate::protocol::events::{emit_broadcast, event_name};
 
 use super::subtract::{node_dto, sum_unregistered};
 use super::walk::scan;
-use super::{now_seconds, RawNode, ScanResult, SCAN_TTL_SECONDS};
+use super::{now_seconds, RawNode, ScanResult, ScanTotals, ScopeScanTotals, SCAN_TTL_SECONDS};
 
 /// 快照状态（§3.11.4）：`running` 优先，其次失败，再按 TTL 区分 `fresh` / `stale`。
 fn status_of(
@@ -47,6 +48,97 @@ struct CacheState {
     failed_at: Option<i64>,
     partial: bool,
     truncated: Vec<String>,
+    totals: ScanTotals,
+    totals_partial: bool,
+}
+
+/// 跳过 `null` 项累加：`total` 从 `Some(0)` 起，任一贡献为 `null` 也不变 `None`（下界，§3.6）。
+fn add_option(total: &mut Option<u64>, value: Option<u64>) {
+    if let Some(value) = value {
+        *total = total.map(|acc| acc.saturating_add(value));
+    }
+}
+
+fn combine(a: Option<u64>, b: Option<u64>) -> Option<u64> {
+    match (a, b) {
+        (Some(a), Some(b)) => Some(a.saturating_add(b)),
+        _ => None,
+    }
+}
+
+/// 该节点是否属于「只关减法、仍观测」的 `inventory = false` 首段（`E12`，§3.5）。
+///
+/// 只能按 `node.entry` 回查条目清单的 `inventory` 标志，不得匹配 `E` 字面量（§4.3）。
+fn is_unreconciled(node: &StorageInventoryNodeDto, views: &[EntryView]) -> bool {
+    node.entry
+        .as_deref()
+        .and_then(|entry| find_by_entry(views, entry))
+        .is_some_and(|view| !view.inventory)
+}
+
+fn scope_totals_dto(
+    nodes: &[StorageInventoryNodeDto],
+    layer: StorageLayerDto,
+    scan: &ScopeScanTotals,
+    views: &[EntryView],
+) -> StorageInventoryScopeTotalsDto {
+    let mut declared_bytes: Option<u64> = Some(0);
+    let mut declared_count: Option<u64> = Some(0);
+    let mut residual_bytes: Option<u64> = Some(0);
+    let mut residual_count: Option<u64> = Some(0);
+    let mut unregistered_bytes: Option<u64> = Some(0);
+    let mut unregistered_count: Option<u64> = Some(0);
+    let mut unreconciled_bytes: Option<u64> = Some(0);
+    let mut unreconciled_count: Option<u64> = Some(0);
+    for node in nodes.iter().filter(|node| node.scope == layer) {
+        if node.class == StorageInventoryClassDto::Declared {
+            add_option(&mut declared_bytes, node.declared_bytes);
+            add_option(&mut declared_count, node.declared_count);
+        }
+        add_option(&mut residual_bytes, node.residual_bytes);
+        add_option(&mut residual_count, node.residual_count);
+        if node.class == StorageInventoryClassDto::Unregistered {
+            add_option(&mut unregistered_bytes, node.scan_bytes);
+            add_option(&mut unregistered_count, node.scan_count);
+        }
+        if is_unreconciled(node, views) {
+            add_option(&mut unreconciled_bytes, node.scan_bytes);
+            add_option(&mut unreconciled_count, node.scan_count);
+        }
+    }
+    StorageInventoryScopeTotalsDto {
+        scan_bytes: scan.scan_bytes,
+        scan_count: scan.scan_count,
+        declared_bytes,
+        declared_count,
+        residual_bytes,
+        residual_count,
+        unregistered_bytes,
+        unregistered_count,
+        unreconciled_bytes,
+        unreconciled_count,
+        unnameable_bytes: scan.unnameable_bytes,
+        unnameable_count: scan.unnameable_count,
+    }
+}
+
+fn totals_dto(
+    nodes: &[StorageInventoryNodeDto],
+    totals: &ScanTotals,
+    views: &[EntryView],
+    partial: bool,
+) -> StorageInventoryTotalsDto {
+    let data = scope_totals_dto(nodes, StorageLayerDto::Data, &totals.data, views);
+    let local = scope_totals_dto(nodes, StorageLayerDto::Local, &totals.local, views);
+    StorageInventoryTotalsDto {
+        scan_bytes: combine(data.scan_bytes, local.scan_bytes),
+        scan_count: combine(data.scan_count, local.scan_count),
+        residual_bytes: combine(data.residual_bytes, local.residual_bytes),
+        residual_count: combine(data.residual_count, local.residual_count),
+        partial,
+        data,
+        local,
+    }
 }
 
 /// 余量快照的唯一持有者：读路径零等待，扫描永远在后台（§3.11.4）。
@@ -86,6 +178,11 @@ impl InventoryCache {
             .map(|node| node_dto(node, views, samples))
             .collect();
         let over_registered = nodes.iter().any(|node| node.over_registered);
+        let totals = if state.scanned_at.is_some() {
+            totals_dto(&nodes, &state.totals, views, state.totals_partial)
+        } else {
+            StorageInventoryTotalsDto::default()
+        };
         let dto = StorageInventoryDto {
             status,
             scanned_at: state.scanned_at,
@@ -95,6 +192,7 @@ impl InventoryCache {
             partial: state.partial || over_registered,
             truncated_nodes: state.truncated.clone(),
             nodes,
+            totals,
         };
         (dto, trigger)
     }
@@ -125,6 +223,8 @@ impl InventoryCache {
         state.nodes = result.nodes;
         state.partial = result.partial;
         state.truncated = result.truncated;
+        state.totals = result.totals;
+        state.totals_partial = result.totals_partial;
         state.scanned_at = Some(at);
         state.failed_at = None;
     }

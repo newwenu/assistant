@@ -245,3 +245,6 @@ strip = true
 minidump = "0.27.0"
 tempfile = { workspace = true }
 tokio-util = { workspace = true }
+# 集成测试共用夹具（链接创建）由 assistant-tools 以 feature 门控公开，
+# 避免跨 package 的 `#[path]` 引用（rust-analyzer 会误报 E0583）。
+assistant-tools = { workspace = true, features = ["test-support"] }

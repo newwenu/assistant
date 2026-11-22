@@ -5,6 +5,8 @@ import type {
   StorageInventoryDto,
   StorageInventoryItemDto,
   StorageInventoryNodeDto,
+  StorageInventoryScopeTotalsDto,
+  StorageInventoryTotalsDto,
   StorageReclaimEntryResultDto,
   StorageReclaimPlanEntryDto,
   StorageReclaimResultDto,
@@ -87,6 +89,41 @@ export function makeChild(
   return { name: "child", bytes: 128, count: 1, ...overrides };
 }
 
+export function makeScopeTotals(
+  overrides: Partial<StorageInventoryScopeTotalsDto> = {},
+): StorageInventoryScopeTotalsDto {
+  return {
+    scanBytes: 0,
+    scanCount: 0,
+    declaredBytes: 0,
+    declaredCount: 0,
+    residualBytes: 0,
+    residualCount: 0,
+    unregisteredBytes: 0,
+    unregisteredCount: 0,
+    unreconciledBytes: 0,
+    unreconciledCount: 0,
+    unnameableBytes: 0,
+    unnameableCount: 0,
+    ...overrides,
+  };
+}
+
+export function makeTotals(
+  overrides: Partial<StorageInventoryTotalsDto> = {},
+): StorageInventoryTotalsDto {
+  return {
+    scanBytes: 1024,
+    scanCount: 4,
+    residualBytes: 512,
+    residualCount: 2,
+    partial: false,
+    data: makeScopeTotals({ scanBytes: 1024, residualBytes: 512 }),
+    local: makeScopeTotals(),
+    ...overrides,
+  };
+}
+
 export function makeInventory(
   overrides: Partial<StorageInventoryDto> = {},
 ): StorageInventoryDto {
@@ -99,6 +136,7 @@ export function makeInventory(
     unregisteredCount: 2,
     partial: false,
     truncatedNodes: [],
+    totals: makeTotals(),
     ...overrides,
   };
 }

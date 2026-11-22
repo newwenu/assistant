@@ -13,6 +13,8 @@ pub const TOOL_INDEX: &str = "tool-index";
 pub const MASCOT_ASSETS: &str = "mascot-assets";
 pub const LOGS: &str = "logs";
 pub const CRASHES: &str = "crashes";
+/// WebView2 的 profile 目录（Windows 专属；其它平台恒 `missing`，I67 §13.3.7）。
+pub const WEBVIEW_PROFILE: &str = "EBWebView";
 
 /// 常量显式清单：V19 靠它枚举，新增常量必须同时进 `ALL` 与 `MANAGED_ROOTS`。
 #[cfg(test)]
@@ -24,4 +26,5 @@ pub const ALL: &[&str] = &[
     MASCOT_ASSETS,
     LOGS,
     CRASHES,
+    WEBVIEW_PROFILE,
 ];

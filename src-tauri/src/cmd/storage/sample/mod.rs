@@ -7,7 +7,7 @@
 //! 本模块不读配置：策略一律由 owner 自述（`result_retention` / 分区 `policy()`），
 //! 管理器不得成为第二个配置读取入口（§3.5 硬约束 1）。
 //!
-//! 条目清单不再固定 13 条：core 8 条恒在，可选分区条目由已注册分区自述，
+//! 条目清单不再固定条数：core 条目恒在，可选分区条目由已注册分区自述，
 //! 因此采样产物 [`Sampled`] 同时带出「视图清单 + 对齐的样本」，下游一律按清单寻址（X15）。
 //!
 //! 子模块按职责划分：`collect` 采样编排、`rows` 各条目取数、`stats` 观测结构适配、
@@ -48,7 +48,7 @@ pub struct SampleInputs<'a> {
     pub entries: &'a [AttachmentEntry],
     /// `E1` 的孤儿判据：调用方已加载的引用集合（与顶层字段同一份，不重查 DB）。
     pub referenced: Option<&'a HashSet<String>>,
-    /// 已注册的可选分区快照：空 = 关闭特性构建，条目清单里只剩 core 8 条。
+    /// 已注册的可选分区快照：空 = 关闭特性构建，条目清单里只剩 core 条目。
     pub sections: Vec<StorageSectionHandle>,
     pub tool_results: Option<Arc<dyn ToolResultStorage>>,
     pub db: Option<DbState>,

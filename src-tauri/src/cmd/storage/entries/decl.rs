@@ -1,5 +1,6 @@
-//! 静态声明表：按条目 id 取动作 / 静态资格 / 原因 / 策略 / 风险档相关字段。
+//! 静态声明表：按 core 条目身份取动作 / 静态资格 / 原因 / 策略 / 风险档相关字段。
 
+use crate::app_dirs::registry::CoreEntry;
 use crate::protocol::dto::{
     ReclaimPolicyDto, StorageEligibilityDto, StoragePolicySourceDto, StorageReclaimActionDto,
     StorageReclaimReasonDto,
@@ -34,12 +35,12 @@ fn owner_policy() -> ReclaimPolicyDto {
     }
 }
 
-/// 按条目 id 取静态部分（core 8 条）；条目 id 是对外契约，不依赖登记表顺序。
+/// 按 core 条目身份取静态部分；枚举穷尽匹配，新增 / 删除条目时编译器点名漏改的分支。
 ///
 /// 分区条目没有静态表：`action` / 资格 / `reason` / 策略 / `note` 全由分区自述（§3.1.1）。
-pub(super) fn static_for(entry: &str) -> EntryStatic {
+pub(super) fn static_for(entry: CoreEntry) -> EntryStatic {
     match entry {
-        "E1" => EntryStatic {
+        CoreEntry::Attachments => EntryStatic {
             action: StorageReclaimActionDto::DeleteOrphans,
             eligibility: StorageEligibilityDto::Eligible,
             reason: StorageReclaimReasonDto::Orphan,
@@ -48,7 +49,7 @@ pub(super) fn static_for(entry: &str) -> EntryStatic {
             counts_self_logs: false,
             note: None,
         },
-        "E2" => EntryStatic {
+        CoreEntry::AttachmentsDerived => EntryStatic {
             action: StorageReclaimActionDto::RebuildCache,
             eligibility: StorageEligibilityDto::Eligible,
             reason: StorageReclaimReasonDto::DerivedCache,
@@ -57,7 +58,7 @@ pub(super) fn static_for(entry: &str) -> EntryStatic {
             counts_self_logs: false,
             note: None,
         },
-        "E3" => EntryStatic {
+        CoreEntry::ToolResults => EntryStatic {
             action: StorageReclaimActionDto::SweepExpired,
             eligibility: StorageEligibilityDto::Eligible,
             reason: StorageReclaimReasonDto::Expired,
@@ -66,7 +67,7 @@ pub(super) fn static_for(entry: &str) -> EntryStatic {
             counts_self_logs: false,
             note: None,
         },
-        "E4" => EntryStatic {
+        CoreEntry::ToolIndex => EntryStatic {
             action: StorageReclaimActionDto::RebuildCache,
             eligibility: StorageEligibilityDto::Eligible,
             reason: StorageReclaimReasonDto::DerivedCache,
@@ -75,7 +76,7 @@ pub(super) fn static_for(entry: &str) -> EntryStatic {
             counts_self_logs: false,
             note: None,
         },
-        "E5" => EntryStatic {
+        CoreEntry::MascotAssets => EntryStatic {
             action: StorageReclaimActionDto::None,
             eligibility: StorageEligibilityDto::NotEligible,
             reason: StorageReclaimReasonDto::UserData,
@@ -84,7 +85,7 @@ pub(super) fn static_for(entry: &str) -> EntryStatic {
             counts_self_logs: false,
             note: None,
         },
-        "E6" => EntryStatic {
+        CoreEntry::Database => EntryStatic {
             action: StorageReclaimActionDto::None,
             eligibility: StorageEligibilityDto::NotEligible,
             reason: StorageReclaimReasonDto::BusinessData,
@@ -93,16 +94,16 @@ pub(super) fn static_for(entry: &str) -> EntryStatic {
             counts_self_logs: false,
             note: None,
         },
-        "E12" => EntryStatic {
+        CoreEntry::Logs => EntryStatic {
             action: StorageReclaimActionDto::Rotate,
             eligibility: StorageEligibilityDto::OwnerManaged,
             reason: StorageReclaimReasonDto::ExternalOwner,
             policy: constant_policy(Some(3)),
             auto_active: true,
             counts_self_logs: true,
-            note: Some("该组件不提供占用统计"),
+            note: None,
         },
-        "E13" => EntryStatic {
+        CoreEntry::Crashes => EntryStatic {
             action: StorageReclaimActionDto::None,
             eligibility: StorageEligibilityDto::NotImplemented,
             reason: StorageReclaimReasonDto::NoReclaimApi,
@@ -111,6 +112,26 @@ pub(super) fn static_for(entry: &str) -> EntryStatic {
             counts_self_logs: false,
             note: Some("暂未提供清理功能，这里只展示占用情况"),
         },
-        other => unreachable!("entry id out of range: {other}"),
+        CoreEntry::WebViewProfile => EntryStatic {
+            action: StorageReclaimActionDto::RebuildCache,
+            eligibility: StorageEligibilityDto::Eligible,
+            reason: StorageReclaimReasonDto::DerivedCache,
+            policy: ReclaimPolicyDto::default(),
+            auto_active: false,
+            counts_self_logs: false,
+            note: Some("Chromium 缓存可重建，用户态数据不删；运行期由 WebView2 持有句柄"),
+        },
+        // `E15` / `E17` / `E18`：配置文件归应用自持，但内容是用户业务数据，只展示、不提供回收入口
+        // （`action = None` / `NotEligible` / `BusinessData`，§13.4.2）。三条共用同一形状，
+        // 用 or-pattern 合并，避免三份重复字面量。
+        CoreEntry::Config | CoreEntry::OrbConfig | CoreEntry::MascotConfig => EntryStatic {
+            action: StorageReclaimActionDto::None,
+            eligibility: StorageEligibilityDto::NotEligible,
+            reason: StorageReclaimReasonDto::BusinessData,
+            policy: ReclaimPolicyDto::default(),
+            auto_active: false,
+            counts_self_logs: false,
+            note: Some("配置文件承载用户设置，只展示占用，不提供清理入口"),
+        },
     }
 }

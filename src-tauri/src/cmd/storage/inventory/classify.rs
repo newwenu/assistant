@@ -82,6 +82,7 @@ mod tests {
     fn section_view() -> EntryView {
         EntryView {
             entry: "S1",
+            core: None,
             key: optional_segment(),
             segments: registry::OPTIONAL_SEGMENTS,
             scope: RootScope::Data,

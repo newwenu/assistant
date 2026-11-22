@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use assistant_config::constant::APP_IDENTIFIER;
 
 use super::dir_name;
-use super::registry::{self, RootScope};
+use super::registry::{self, CoreEntry, RootScope};
 
 /// 基根解析失败：不做任何回退（不落相对路径、不落当前目录、不落默认值）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -93,13 +93,53 @@ impl AppDirs {
         self.path_for(dir_name::CRASHES)
     }
 
-    /// 受管根的唯一拼串点：段序列与基根来自登记表（V19 / G4）。
+    /// WebView2 的 user data folder（`E14`）：与 Tauri 在 Windows / Linux 未指定
+    /// `data_directory` 时强制的 `app_local_data_dir()` 同值，故直接取 `local()`。
     ///
-    /// 首段在登记表中唯一；`E2` 与 `E1` 共享 `attachments`，`find_by_first_segment`
-    /// 返回先登记的 `E1`，因此 `attachments()` 只到首层。
+    /// 应用接管的是「落点声明」：编程创建窗口显式传入该值，不再依赖 Tauri 内部默认；
+    /// 值不变，因此不迁移、不产生第二份 profile。
+    pub fn webview_data_directory(&self) -> PathBuf {
+        self.local().to_path_buf()
+    }
+
+    /// WebView2 在 user data folder 下固定创建的 profile 子目录（`E14` 的观测 / 创建 / 清理落点）。
+    pub fn webview_profile(&self) -> PathBuf {
+        self.path_for(dir_name::WEBVIEW_PROFILE)
+    }
+
+    /// 建窗前保证 profile 目录存在：不依赖 WebView2 首次启动的副作用。
+    ///
+    /// 非 Windows 直接返回——`EBWebView` 是 WebView2 专属目录，别处不建空目录，
+    /// 避免把「不存在的落点」造成 0 B 假条目（§13.3.7）。
+    pub fn ensure_webview_profile(&self) -> std::io::Result<()> {
+        if !cfg!(windows) {
+            return Ok(());
+        }
+        std::fs::create_dir_all(self.webview_profile())
+    }
+
+    /// 受管条目的唯一拼串点：段序列与基根来自登记表（V19 / G4）。
+    ///
+    /// `T5`（`E14`）与 `T6`（`E15` / `E17` / `E18`）共用：调用方只给条目身份，不复制任何段字面量，
+    /// 也不新增配置专用 getter（§13.4.3 第 5 条）。条目未登记时直接 panic——登记表是
+    /// 编译期常量，未登记即代码错误。
+    pub fn managed_path_of(&self, entry: CoreEntry) -> PathBuf {
+        let root = registry::find_by_entry(entry.id())
+            .unwrap_or_else(|| panic!("managed entry `{}` missing from registry", entry.id()));
+        self.join_segments(root)
+    }
+
+    /// 按首段拼路径（目录名型条目专用；首段在登记表中唯一）。
+    ///
+    /// `E2` 与 `E1` 共享 `attachments`，`find_by_first_segment` 返回先登记的 `E1`，
+    /// 因此 `attachments()` 只到首层。
     fn path_for(&self, first_segment: &str) -> PathBuf {
         let root = registry::find_by_first_segment(first_segment)
             .unwrap_or_else(|| panic!("managed root `{first_segment}` missing from registry"));
+        self.join_segments(root)
+    }
+
+    fn join_segments(&self, root: &registry::ManagedRoot) -> PathBuf {
         let base = match root.scope {
             RootScope::Data => &self.data,
             RootScope::Local => &self.local,

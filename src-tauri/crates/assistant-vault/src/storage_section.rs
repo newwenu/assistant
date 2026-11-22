@@ -1,4 +1,4 @@
-//! 安全域分区自述（I61 §3.10「可选功能分区自注册」/ §3.1.1）：`E7`–`E11` 的条目清单、
+//! 安全域分区自述（I61 §3.10「可选功能分区自注册」/ §3.1.1）：`E7`–`E11` / `E16` 的条目清单、
 //! 策略、资格判据与回收入口。
 //!
 //! 只用本 crate 的自有普通类型：不依赖 app crate，也不依赖 `assistant-protocol`
@@ -6,17 +6,23 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::conf::VaultConf;
 use crate::security_db::{SecurityDbState, MAX_BACKUPS};
 use crate::storage_stats::{self, DirStats};
 
 /// 可选分区首段：core 只保留这一个首段事实（`OPTIONAL_SEGMENTS`），条目细节全在本文件。
-const SEGMENT: &str = "security";
+pub(crate) const SEGMENT: &str = "security";
+
+/// 配置文件名：只引用 owner 常量，不在本文件复制字面量。
+const CONF_FILE: &str = <VaultConf as assistant_config::ConfGroup>::FILE_NAME;
 
 const KEY_DB: &str = "security/security.db";
 const KEY_BACKUPS: &str = "security/backups";
 const KEY_REPO: &str = "security/vault";
 const KEY_RECOVERY: &str = "security/recovery";
 const KEY_AUDIT: &str = "security/audit";
+/// `E16` 条目 key：与 `segments` 的拼接值同形（单测守两者一致）。
+const KEY_CONF: &str = "security/vault-config.json";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VaultScope {
@@ -253,9 +259,28 @@ const ENTRIES: &[VaultStorageEntry] = &[
             note: None,
         },
     },
+    VaultStorageEntry {
+        entry: "E16",
+        key: KEY_CONF,
+        segments: &[SEGMENT, CONF_FILE],
+        scope: VaultScope::Data,
+        coverage: VaultCoverage::SingleFile,
+        owner: "VaultConf",
+        inventory: true,
+        decl: VaultEntryDecl {
+            action: VaultAction::None,
+            eligibility: VaultEligibility::NotEligible,
+            reason: VaultReason::BusinessData,
+            policy: VaultPolicy::None,
+            auto_active: false,
+            counts_self_logs: false,
+            risk: VaultRisk::Forbidden,
+            note: None,
+        },
+    },
 ];
 
-/// 安全域分区：持 owner 句柄与两个由适配器现算的目录，只转发 owner 的公开观测入口。
+/// 安全域分区：持 owner 句柄与三个由适配器现算的落点，只转发 owner 的公开观测入口。
 ///
 /// `Clone` 与 `SecurityDbState` 一致：克隆出的是同一份会话 / 策略状态（Arc 共享），
 /// 因此解锁后克隆体也能观测到新会话。
@@ -264,15 +289,22 @@ pub struct VaultStorageSection {
     state: SecurityDbState,
     repo_dir: PathBuf,
     recovery_dir: PathBuf,
+    conf_path: PathBuf,
 }
 
 impl VaultStorageSection {
-    /// 两个目录由适配器用 app 侧既有的路径知识现算后传入：本 crate 不拼 `security/` 前缀。
-    pub fn new(state: SecurityDbState, repo_dir: PathBuf, recovery_dir: PathBuf) -> Self {
+    /// 三个落点由适配器用 app 侧既有的路径知识现算后传入：本 crate 不拼 `security/` 前缀。
+    pub fn new(
+        state: SecurityDbState,
+        repo_dir: PathBuf,
+        recovery_dir: PathBuf,
+        conf_path: PathBuf,
+    ) -> Self {
         Self {
             state,
             repo_dir,
             recovery_dir,
+            conf_path,
         }
     }
 
@@ -303,16 +335,18 @@ impl VaultStorageSection {
                 .audit_stats()
                 .map(VaultStats::from)
                 .map_err(|_| VaultSectionError::Unreadable),
+            // `E16`：配置文件只读 `metadata`，与 core 侧同形（不存在 → 全零，非错误）。
+            KEY_CONF => storage_stats::file_stats(&self.conf_path)
+                .map(VaultStats::from)
+                .map_err(|_| VaultSectionError::Unreadable),
             _ => return None,
         };
         Some(result)
     }
 
-    /// `E9`：锁定态下仓库内容不可信，先判锁再观测（`locked` 语义，§3.10）。
+    /// `E9`：`tree_stats` 只读文件系统元数据，不依赖解密，因此锁定态照常观测；
+    /// 锁定只影响资格（`eligibility = locked`），不影响大小上报（I67 §3.8）。
     fn repo_stats(&self) -> Result<VaultStats, VaultSectionError> {
-        if self.state.is_locked() {
-            return Err(VaultSectionError::Locked);
-        }
         storage_stats::tree_stats(&self.repo_dir)
             .map(VaultStats::from)
             .map_err(|_| VaultSectionError::Unreadable)
@@ -347,6 +381,11 @@ impl VaultStorageSection {
             // `E10` / `E11` 本期静态自述：清扫由 owner 自动路径负责，不给手动入口。
             KEY_RECOVERY => (VaultEligibility::OwnerManaged, VaultReason::Transient),
             KEY_AUDIT => (VaultEligibility::OwnerManaged, VaultReason::Expired),
+            // `E16`：配置文件承载用户设置，恒不可回收；观测失败只是「不知道」，仍是业务数据。
+            KEY_CONF => match sample {
+                Some(_) => (VaultEligibility::NotEligible, VaultReason::BusinessData),
+                None => (VaultEligibility::NotEligible, VaultReason::Unknown),
+            },
             _ => return None,
         };
         Some(judged)
@@ -406,14 +445,19 @@ mod tests {
         let dir = tempfile::tempdir().expect("temp dir");
         let db = dir.path().join("security").join("security.db");
         let state = SecurityDbState::new(&db.to_string_lossy());
-        let section =
-            VaultStorageSection::new(state, dir.path().join("repo"), dir.path().join("recovery"));
+        let section = VaultStorageSection::new(
+            state,
+            dir.path().join("repo"),
+            dir.path().join("recovery"),
+            dir.path().join("security").join(CONF_FILE),
+        );
         (section, dir)
     }
 
     #[test]
     fn entries_are_well_formed() {
-        assert_eq!(ENTRIES.len(), 5);
+        assert_eq!(ENTRIES.len(), 6);
+        assert_eq!(KEY_CONF, format!("{SEGMENT}/{CONF_FILE}"));
         for entry in ENTRIES {
             assert_eq!(entry.segments.join("/"), entry.key, "{}", entry.entry);
             assert_eq!(entry.segments[0], SEGMENT, "{}", entry.entry);
@@ -454,18 +498,37 @@ mod tests {
     }
 
     #[test]
-    fn missing_entries_are_zero_stats_and_locked_repo_is_locked() {
+    fn missing_entries_are_zero_stats_and_locked_repo_is_still_observed() {
         let (section, _dir) = section();
         assert_eq!(section.stats(KEY_RECOVERY), Some(Ok(VaultStats::default())));
         assert_eq!(section.stats(KEY_AUDIT), Some(Ok(VaultStats::default())));
         assert_eq!(section.stats(KEY_DB), Some(Ok(VaultStats::default())));
-        assert_eq!(
-            section.stats(KEY_REPO),
-            Some(Err(VaultSectionError::Locked))
-        );
+        assert_eq!(section.stats(KEY_CONF), Some(Ok(VaultStats::default())));
+        // 锁定不构成观测豁免：`tree_stats` 只读 metadata，仓库仍须上报大小（I67 §3.8）。
+        assert_eq!(section.stats(KEY_REPO), Some(Ok(VaultStats::default())));
         assert_eq!(
             section.eligibility(KEY_REPO, None),
             Some((VaultEligibility::Locked, VaultReason::Locked))
+        );
+    }
+
+    #[test]
+    fn locked_repo_still_reports_size() {
+        let (section, dir) = section();
+        let repo = dir.path().join("repo");
+        std::fs::create_dir_all(repo.join("nested")).expect("repo dir");
+        std::fs::write(repo.join("nested/blob.bin"), vec![0u8; 2048]).expect("write blob");
+        assert!(section.state.is_locked(), "默认无会话即锁定态");
+        let stats = section
+            .stats(KEY_REPO)
+            .expect("E9 归本分区")
+            .expect("锁定态仍可观测");
+        assert_eq!(stats.bytes, 2048);
+        assert_eq!(stats.count, 1);
+        assert_eq!(
+            section.eligibility(KEY_REPO, Some(&stats)),
+            Some((VaultEligibility::Locked, VaultReason::Locked)),
+            "锁定只影响资格，不影响观测"
         );
     }
 

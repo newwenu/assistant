@@ -5,6 +5,12 @@ edition.workspace = true
 license.workspace = true
 publish = false
 
+[features]
+# 跨 crate 共享测试夹具：把 `tests/support/link.rs` 以公开模块形式暴露给其它
+# package 的集成测试。集成测试看不到 lib 的 `#[cfg(test)]` 项，因此用 feature 门控。
+# 仅测试构建启用，不随默认特性进入产物。
+test-support = []
+
 [dependencies]
 assistant-protocol = { workspace = true }
 serde = { workspace = true }

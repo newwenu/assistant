@@ -334,3 +334,52 @@ pub(super) async fn execute_section(
     let errors = failure_errors(totals.failed, 0, "部分文件删除失败", "目录读取失败");
     entry_result(key.to_string(), action, totals, errors, status_of(totals))
 }
+
+/// `E14`：运行期不删——只登记「待执行」，由下次启动在 `Builder::run` 之前消费。
+///
+/// WebView2 运行中持有 profile 文件句柄，运行期 `remove_dir_all` 会失败或损坏 profile，
+/// 因此本执行器**只写标记、零删除**（§13.3.5）。返回 `scheduled`，让前端如实显示
+/// 「已登记，重启后执行」，而不是假装删过（`done`）或静默吞掉请求（`skipped`）。
+pub(super) async fn execute_webview(
+    dirs: &AppDirs,
+    key: String,
+    action: StorageReclaimActionDto,
+) -> StorageReclaimEntryResultDto {
+    let profile = dirs.webview_profile();
+    let written = tauri::async_runtime::spawn_blocking(move || {
+        crate::app_dirs::webview_profile::mark_pending(&profile)
+    })
+    .await;
+    match written {
+        Ok(Ok(())) => entry_result(
+            key,
+            action,
+            Totals::default(),
+            Vec::new(),
+            StorageReclaimStatusDto::Scheduled,
+        ),
+        Ok(Err(error)) => {
+            log::warn!("WebView2 清理标记写入失败: {error}");
+            entry_result(
+                key,
+                action,
+                Totals::default(),
+                vec![error_dto(
+                    StorageReclaimErrorCodeDto::Io,
+                    "无法登记待执行的清理请求",
+                )],
+                StorageReclaimStatusDto::Failed,
+            )
+        }
+        Err(_) => entry_result(
+            key,
+            action,
+            Totals::default(),
+            vec![error_dto(
+                StorageReclaimErrorCodeDto::Unknown,
+                "清理任务出错".to_string(),
+            )],
+            StorageReclaimStatusDto::Failed,
+        ),
+    }
+}

@@ -186,7 +186,7 @@ pub type StorageSectionHandle = Arc<dyn StorageSection>;
 
 /// 分区的唯一通用接收槽（G18）：注册表**永远存在**，与特性开关无关。
 ///
-/// 关闭特性时没有任何分区注册，查询一律落空 → `entries` 只剩 core 8 条、
+/// 关闭特性时没有任何分区注册，查询一律落空 → `entries` 只剩 core 条目、
 /// 对账把可选首段归 `optionalNotMounted`，不需要 `#[cfg]` 分支。
 #[derive(Default)]
 pub struct SectionRegistry {
@@ -239,11 +239,12 @@ impl SectionRegistry {
             }
             if let Some(root) = registry::MANAGED_ROOTS
                 .iter()
-                .find(|root| root.key == entry.key || root.entry == entry.entry)
+                .find(|root| root.key == entry.key || root.entry.id() == entry.entry)
             {
                 return Err(format!(
                     "分区 `{id}` 的条目 `{}` 与 core 条目 `{}` 重名",
-                    entry.entry, root.entry
+                    entry.entry,
+                    root.entry.id()
                 ));
             }
             keys.push(entry.key);
@@ -469,7 +470,7 @@ mod tests {
     fn duplicate_core_entry_is_rejected() {
         let registry = SectionRegistry::new();
         let core = &registry::MANAGED_ROOTS[0];
-        let entries = leaked(vec![valid_entry(core.entry)]);
+        let entries = leaked(vec![valid_entry(core.entry.id())]);
         let error = registry
             .register(handle("fake", entries))
             .expect_err("与 core 条目重名必须被拒");

@@ -40,7 +40,7 @@ pub struct StorageBreakdownDto {
     /// 仅被 1 个会话引用的附件字节之和。
     #[serde(default)]
     pub referenced_once_bytes: u64,
-    /// core 8 条在前、已挂载分区自述条目紧随其后；未挂载分区**不出行**（不是占位行）。
+    /// core 条目在前、已挂载分区自述条目紧随其后；未挂载分区**不出行**（不是占位行）。
     #[serde(default)]
     pub entries: Vec<StorageEntryDto>,
     /// 对账余量快照；恒存在（未扫过时 `status = neverRun`）。
@@ -180,6 +180,11 @@ pub enum StorageReclaimStatusDto {
     Partial,
     Failed,
     Skipped,
+    /// 已登记、本次不删、下次启动执行（`E14` WebView2 profile 独占句柄，§13.3.5）。
+    ///
+    /// 与 `Skipped` 的区别：`Skipped` 是「没做也不需要做」，`Scheduled` 是
+    /// 「已落标记、有明确后续执行点」。合并会让用户以为请求被丢弃。
+    Scheduled,
     NotEligible,
 }
 
@@ -296,6 +301,73 @@ pub struct StorageInventoryNodeDto {
     pub children: Vec<StorageInventoryItemDto>,
 }
 
+/// 单个 scope 的对账合计（I67 §5.1）：`scanBytes` 是该 scope 的分母。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct StorageInventoryScopeTotalsDto {
+    pub scan_bytes: Option<u64>,
+    pub scan_count: Option<u64>,
+    pub declared_bytes: Option<u64>,
+    pub declared_count: Option<u64>,
+    pub residual_bytes: Option<u64>,
+    pub residual_count: Option<u64>,
+    pub unregistered_bytes: Option<u64>,
+    pub unregistered_count: Option<u64>,
+    /// `inventory = false` 首段（`E12`）的扫描值：计入分母、不参与减法（I67 §3.5）。
+    pub unreconciled_bytes: Option<u64>,
+    pub unreconciled_count: Option<u64>,
+    /// 首层不可命名条目的字节 / 条数（I67 §3.4）。
+    pub unnameable_bytes: Option<u64>,
+    pub unnameable_count: Option<u64>,
+}
+
+impl Default for StorageInventoryScopeTotalsDto {
+    fn default() -> Self {
+        Self {
+            scan_bytes: None,
+            scan_count: None,
+            declared_bytes: None,
+            declared_count: None,
+            residual_bytes: None,
+            residual_count: None,
+            unregistered_bytes: None,
+            unregistered_count: None,
+            unreconciled_bytes: None,
+            unreconciled_count: None,
+            unnameable_bytes: None,
+            unnameable_count: None,
+        }
+    }
+}
+
+/// 全类余量合计（I67 §5.1）：`partial` 为 `true` 时数字是下界。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct StorageInventoryTotalsDto {
+    pub scan_bytes: Option<u64>,
+    pub scan_count: Option<u64>,
+    pub residual_bytes: Option<u64>,
+    pub residual_count: Option<u64>,
+    /// 任一贡献项为 `null`：本结构数字是下界（I67 §3.6）。
+    pub partial: bool,
+    pub data: StorageInventoryScopeTotalsDto,
+    pub local: StorageInventoryScopeTotalsDto,
+}
+
+impl Default for StorageInventoryTotalsDto {
+    fn default() -> Self {
+        Self {
+            scan_bytes: None,
+            scan_count: None,
+            residual_bytes: None,
+            residual_count: None,
+            partial: false,
+            data: StorageInventoryScopeTotalsDto::default(),
+            local: StorageInventoryScopeTotalsDto::default(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct StorageInventoryDto {
@@ -307,6 +379,8 @@ pub struct StorageInventoryDto {
     pub unregistered_count: Option<u64>,
     pub partial: bool,
     pub truncated_nodes: Vec<String>,
+    /// 恒存在（键恒在）；`status = neverRun` 时内部数字全 `null`、`partial = false`。
+    pub totals: StorageInventoryTotalsDto,
 }
 
 impl Default for StorageInventoryDto {
@@ -320,6 +394,7 @@ impl Default for StorageInventoryDto {
             unregistered_count: None,
             partial: false,
             truncated_nodes: Vec::new(),
+            totals: StorageInventoryTotalsDto::default(),
         }
     }
 }

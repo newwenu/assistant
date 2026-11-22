@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { residualView } from "../residualView";
-import { makeChild, makeInventory, makeNode } from "./fixtures";
+import {
+  makeChild,
+  makeInventory,
+  makeNode,
+  makeScopeTotals,
+  makeTotals,
+} from "./fixtures";
 
 describe("对账余量视图模型", () => {
   it("未登记优先，其余按类别序，同类别按余量降序且 null 置末", () => {
@@ -155,7 +161,7 @@ describe("对账余量视图模型", () => {
     );
     expect(view.rows).toHaveLength(1);
     expect(view.notices.some((item) => item.level === "warning")).toBe(true);
-    expect(view.totalsText).not.toBe("—");
+    expect(view.totalsLines[0]?.text).not.toBe("—");
   });
 
   it("扫描失败且没有任何数字时不提示「保留上次」", () => {
@@ -173,10 +179,79 @@ describe("对账余量视图模型", () => {
 
   it("合计为空时不填 0", () => {
     const view = residualView(
-      makeInventory({ unregisteredBytes: null, unregisteredCount: 3 }),
+      makeInventory({
+        unregisteredBytes: null,
+        unregisteredCount: 3,
+        totals: makeTotals({
+          scanBytes: null,
+          scanCount: null,
+          residualBytes: null,
+          residualCount: null,
+          data: makeScopeTotals({
+            scanBytes: null,
+            residualBytes: null,
+            unnameableBytes: null,
+          }),
+          local: makeScopeTotals({
+            scanBytes: null,
+            residualBytes: null,
+            unnameableBytes: null,
+          }),
+        }),
+      }),
     );
-    expect(view.totalsText).toBe("—");
+    expect(view.totalsLines.every((line) => line.text.includes("—"))).toBe(
+      true,
+    );
     expect(view.totalsHint.length).toBeGreaterThan(0);
+  });
+
+  it("合计三段只读 totals，且 partial 时三段统一加下界标注", () => {
+    const view = residualView(
+      makeInventory({
+        unregisteredBytes: 512,
+        unregisteredCount: 2,
+        totals: makeTotals({
+          scanBytes: 2048,
+          residualBytes: 1024,
+          partial: true,
+        }),
+      }),
+    );
+    expect(view.totalsLines.map((line) => line.key)).toEqual([
+      "total",
+      "residual",
+      "unregistered",
+    ]);
+    expect(view.totalsLines.every((line) => line.text.includes("≥"))).toBe(
+      true,
+    );
+    expect(view.totalsHint).toContain("≥");
+  });
+
+  it("不可命名部分只在合计区追加说明，不进入节点列表", () => {
+    const view = residualView(
+      makeInventory({
+        totals: makeTotals({
+          data: makeScopeTotals({
+            unnameableBytes: 64,
+            unnameableCount: 1,
+          }),
+          local: makeScopeTotals({
+            unnameableBytes: 32,
+            unnameableCount: 2,
+          }),
+        }),
+      }),
+    );
+    expect(view.unnameableText).not.toBeNull();
+    expect(view.unnameableText).toContain("3");
+    expect(view.rows).toHaveLength(0);
+  });
+
+  it("没有不可命名条目时不追加说明", () => {
+    const view = residualView(makeInventory());
+    expect(view.unnameableText).toBeNull();
   });
 
   it("五态文案随状态切换", () => {

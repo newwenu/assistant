@@ -112,6 +112,42 @@ pub(super) fn sample_crashes(root: &Path) -> EntrySample {
     from_io(assistant_crash::dump_stats(root))
 }
 
+/// `E12`：日志目录由 `tauri-plugin-log` 轮转，插件不暴露 stats API。
+///
+/// 目录本身是应用自有路径（`AppDirs::logs()`），因此走与 `E5` 相同的
+/// [`crate::app_dirs::fs_stats::tree_stats`]（口径见 §3.9）。回收仍归插件，管理器只观测。
+pub(super) fn sample_logs(root: &Path) -> EntrySample {
+    from_io(crate::app_dirs::fs_stats::tree_stats(root))
+}
+
+/// `E14`：WebView2 profile 整棵树由应用接管观测，可回收量只算缓存白名单子目录。
+///
+/// `bytes` 是整棵树（与扫描同一棵树 ⇒ `residualBytes` 只剩噪声量级）；`reclaimable`
+/// 是缓存子目录求和——用户态部分（Cookies / Local Storage / IndexedDB）不删，因此
+/// 不塞进 `residualBytes`，而是让「可回收 < 已记录」由两个量表达（§13.3.4）。
+pub(super) fn sample_webview(profile: &Path) -> EntrySample {
+    match crate::app_dirs::fs_stats::tree_stats(profile) {
+        Ok(stats) => {
+            let mut sample = from_dir_stats(stats);
+            sample.reclaimable = Some(crate::app_dirs::webview_profile::cache_totals(profile));
+            sample
+        }
+        Err(error) => {
+            log::debug!("WebView2 profile 统计失败: {error}");
+            EntrySample::degraded(StorageAvailabilityDto::Unreadable)
+        }
+    }
+}
+
+/// `E15` / `E17` / `E18`：core 侧配置文件，只 `metadata`、不读内容、不开库（与 `E6` 同形）。
+///
+/// 文件不存在 → `file_stats` 返回全零 → [`from_io`] 折成 `missing` / `0 B`（`missing` 是
+/// 合法状态，Linux / macOS 上 config 基根与数据基根分离，这些条目恒 `missing`，§13.4.4）；
+/// 其余 IO 失败降级 `unreadable`，绝不把「不知道」写成 `0`。
+pub(super) fn sample_config_file(path: &Path) -> EntrySample {
+    from_io(crate::app_dirs::fs_stats::file_stats(path))
+}
+
 /// `E6`：主库只读 `metadata`；失败按 `unavailable`（文件正在替换 / 迁移，§7.1 特例 2）。
 pub(super) fn sample_database(db: &DbState) -> EntrySample {
     match db.db_file_stats() {

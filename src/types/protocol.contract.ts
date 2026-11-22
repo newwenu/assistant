@@ -383,7 +383,7 @@ sharedBytes: number,
  */
 referencedOnceBytes: number, 
 /**
- * core 8 条在前、已挂载分区自述条目紧随其后；未挂载分区**不出行**（不是占位行）。
+ * core 条目在前、已挂载分区自述条目紧随其后；未挂载分区**不出行**（不是占位行）。
  */
 entries: Array<StorageEntryDto>, 
 /**
@@ -399,11 +399,29 @@ export type StorageConfirmLevelDto = "none" | "confirm" | "strongConfirm";
 export type StorageEligibilityDto = "eligible" | "notEligible" | "locked" | "ownerManaged" | "notImplemented";
 export type StorageEntryDto = { key: string, layer: StorageLayerDto, owner: string, bytes: number | null, count: number | null, oldestAt: number | null, newestAt: number | null, availability: StorageAvailabilityDto, includesDerived: boolean, countsSelfLogs: boolean, reclaim: ReclaimViewDto, };
 export type StorageInventoryClassDto = "declared" | "optionalNotMounted" | "companion" | "ignored" | "unregistered";
-export type StorageInventoryDto = { status: StorageInventoryStatusDto, scannedAt: number | null, failedAt: number | null, nodes: Array<StorageInventoryNodeDto>, unregisteredBytes: number | null, unregisteredCount: number | null, partial: boolean, truncatedNodes: Array<string>, };
+export type StorageInventoryDto = { status: StorageInventoryStatusDto, scannedAt: number | null, failedAt: number | null, nodes: Array<StorageInventoryNodeDto>, unregisteredBytes: number | null, unregisteredCount: number | null, partial: boolean, truncatedNodes: Array<string>, 
+/**
+ * 恒存在（键恒在）；`status = neverRun` 时内部数字全 `null`、`partial = false`。
+ */
+totals: StorageInventoryTotalsDto, };
 export type StorageInventoryItemDto = { name: string, bytes: number | null, count: number | null, };
 export type StorageInventoryNodeDto = { name: string, class: StorageInventoryClassDto, scope: StorageLayerDto, entry: string | null, scanBytes: number | null, scanCount: number | null, declaredBytes: number | null, declaredCount: number | null, residualBytes: number | null, residualCount: number | null, overRegistered: boolean, children: Array<StorageInventoryItemDto>, };
+export type StorageInventoryScopeTotalsDto = { scanBytes: number | null, scanCount: number | null, declaredBytes: number | null, declaredCount: number | null, residualBytes: number | null, residualCount: number | null, unregisteredBytes: number | null, unregisteredCount: number | null, 
+/**
+ * `inventory = false` 首段（`E12`）的扫描值：计入分母、不参与减法（I67 §3.5）。
+ */
+unreconciledBytes: number | null, unreconciledCount: number | null, 
+/**
+ * 首层不可命名条目的字节 / 条数（I67 §3.4）。
+ */
+unnameableBytes: number | null, unnameableCount: number | null, };
 export type StorageInventorySnapshotStatusDto = { status: StorageInventoryStatusDto, scannedAt: number | null, failedAt: number | null, };
 export type StorageInventoryStatusDto = "neverRun" | "running" | "fresh" | "stale" | "failed";
+export type StorageInventoryTotalsDto = { scanBytes: number | null, scanCount: number | null, residualBytes: number | null, residualCount: number | null, 
+/**
+ * 任一贡献项为 `null`：本结构数字是下界（I67 §3.6）。
+ */
+partial: boolean, data: StorageInventoryScopeTotalsDto, local: StorageInventoryScopeTotalsDto, };
 export type StorageLayerDto = "data" | "local";
 export type StoragePolicySourceDto = "config" | "constant" | "owner" | "none";
 export type StorageReclaimActionDto = "none" | "deleteOrphans" | "deleteSelected" | "sweepExpired" | "pruneToLimit" | "rebuildCache" | "rotate";
@@ -457,7 +475,7 @@ export type StorageReclaimResultDto = { planId: string, executedAt: number,
  * 与请求顺序一致，不因单条失败中断。
  */
 entries: Array<StorageReclaimEntryResultDto>, };
-export type StorageReclaimStatusDto = "done" | "partial" | "failed" | "skipped" | "notEligible";
+export type StorageReclaimStatusDto = "done" | "partial" | "failed" | "skipped" | "scheduled" | "notEligible";
 export type ThemeChangedPayloadDto = { resolved: ResolvedThemeDto, };
 export type ThemeModeDto = "system" | "light" | "dark";
 export type TokenUsageCacheDto = { hitTokens: number, denominatorTokens: number, 

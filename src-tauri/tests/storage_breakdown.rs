@@ -3,10 +3,10 @@
 // 这里只校验纯函数 `assemble_breakdown`：采样与 IO 都在 `sample` / owner 侧，
 // 装配层不碰磁盘，因此集成测试可以完全用伪造样本驱动。
 //
-// 条目清单不再固定 13 条：core 8 条恒在，可选分区条目由已注册分区自述，
+// 条目清单不再固定条数：core 条目恒在，可选分区条目由已注册分区自述，
 // 未挂载 = 行不存在（不出现 `notImplemented` 占位行）。
 
-use assistant_app::app_dirs::registry::MANAGED_ROOTS;
+use assistant_app::app_dirs::registry::{CoreEntry, MANAGED_ROOTS};
 use assistant_app::cmd::storage::entries::{
     assemble_breakdown, set_sample, views, BreakdownBase, EntrySample, EntryView,
 };
@@ -19,12 +19,10 @@ use assistant_app::protocol::dto::{
 #[path = "support/fake_section.rs"]
 mod fake_section;
 
-// 链接夹具全仓只保留一份实现（`assistant-tools` 测试树），各 crate 用 `#[path]` 引入，
-// 避免各写一份后在 Windows 侧漂成两种策略。
-#[path = "../crates/assistant-tools/tests/support/link.rs"]
-mod link;
-
-use link::file_link;
+// 链接夹具全仓只保留一份实现（`assistant-tools` 测试树），经 `test-support` feature
+// 公开为 `assistant_tools::os::test_support::link`：既避免各 crate 各写一份后在 Windows
+// 侧漂成两种策略，也避免跨 package 的 `#[path]`（rust-analyzer 会误报 E0583）。
+use assistant_tools::os::test_support::link::file_link;
 
 fn base() -> BreakdownBase {
     BreakdownBase {
@@ -70,7 +68,7 @@ fn entries_follow_view_list_order() {
     }
 }
 
-/// V13 / V23①⑤：`vault` 构建的 13 行口径——core 8 条固定顺序 + 假分区自述 5 条紧随其后。
+/// V13 / V23①⑤：`vault` 构建的全量行口径——core 条目固定顺序 + 假分区自述 5 条紧随其后。
 ///
 /// 集成层用假分区（不依赖真实 vault）；真 vault 的逐字段断言在 `assistant-vault`
 /// 的分区单测与 `vault_plugin` 的映射测试里，集成层不重复。
@@ -85,9 +83,10 @@ fn optional_section_entries_join_core_after_registry_rows() {
         .expect("首段命中 OPTIONAL_SEGMENTS");
     let views = views(&registry.snapshot());
 
-    assert_eq!(views.len(), MANAGED_ROOTS.len() + 5, "core 8 + 分区 5");
+    assert_eq!(views.len(), MANAGED_ROOTS.len() + 5, "core 条 + 分区 5");
     for (index, root) in MANAGED_ROOTS.iter().enumerate() {
-        assert_eq!(views[index].entry, root.entry, "core 段按登记表顺序");
+        assert_eq!(views[index].core, Some(root.entry), "core 段按登记表顺序");
+        assert_eq!(views[index].entry, root.entry.id(), "对外标签即 core id");
         assert_eq!(views[index].key, root.key);
     }
     for (offset, decl) in fake_section::five_entries().iter().enumerate() {
@@ -220,26 +219,26 @@ fn non_eligible_entries_carry_reason_and_not_implemented_carries_note() {
 }
 
 /// 未挂载分区：清单里既没有该条目，也不出现 `notImplemented` 占位行（§7.1「行不存在」）。
+///
+/// `E12` 的占用由应用侧只读遍历得到，不再是恒 `notImplemented` 的降级行，
+/// 因此本用例对全部 core 条目一视同仁。
 #[test]
 fn unmounted_sections_leave_no_rows() {
     let views = core_views();
     let samples = available(&views);
     let dto = assemble(&views, &samples);
 
-    assert_eq!(dto.entries.len(), MANAGED_ROOTS.len(), "只剩 core 8 条");
-    let logs_key = views
-        .iter()
-        .find(|view| view.entry == "E12")
-        .expect("E12 恒在")
-        .key;
+    assert_eq!(dto.entries.len(), MANAGED_ROOTS.len(), "只剩 core 条目");
     assert!(
-        dto.entries.iter().all(|entry| entry.availability
-            != StorageAvailabilityDto::NotImplemented
-            || entry.key == logs_key),
-        "除 E12（插件自持）外不得出现 notImplemented 行"
+        dto.entries
+            .iter()
+            .all(|entry| entry.availability != StorageAvailabilityDto::NotImplemented),
+        "任何 core 条目都不得是 notImplemented 占位行"
     );
 }
 
+/// `E12` 有真实占用，但仍不参与 `complete`：日志在采样期间持续写入，
+/// 数字必然滞后于真实值，无法与其他条目承诺同一时刻的快照（§6.1）。
 #[test]
 fn complete_ignores_only_logs_entry() {
     let views = core_views();
@@ -252,10 +251,10 @@ fn complete_ignores_only_logs_entry() {
         &views,
         &mut samples,
         "E12",
-        EntrySample::degraded(StorageAvailabilityDto::NotImplemented),
+        EntrySample::degraded(StorageAvailabilityDto::Unreadable),
     );
     let dto = assemble(&views, &samples);
-    assert!(dto.complete, "E12 不计入 complete 判定");
+    assert!(dto.complete, "E12 的不可用不计入 complete 判定");
 
     let mut samples = available(&views);
     set_sample(
@@ -313,12 +312,6 @@ fn notes_keep_structural_shape() {
     let samples = available(&views);
     let dto = assemble(&views, &samples);
 
-    let logs_key = views
-        .iter()
-        .find(|view| view.entry == "E12")
-        .expect("E12 恒在")
-        .key;
-
     let mut seen = 0usize;
     for entry in &dto.entries {
         let Some(note) = entry.reclaim.note.as_deref() else {
@@ -346,12 +339,18 @@ fn notes_keep_structural_shape() {
         }
     }
 
-    assert!(seen >= 1, "结构性缺口说明不能整体丢失（E12 必须带 note）");
+    assert!(seen >= 1, "结构性缺口说明不能整体丢失（E13 必须带 note）");
     assert!(
         dto.entries
             .iter()
-            .any(|entry| entry.key == logs_key && entry.reclaim.note.is_some()),
-        "E12 的缺口说明落在 `reclaim.note`"
+            .any(|entry| entry.key == "crashes" && entry.reclaim.note.is_some()),
+        "E13 的缺口说明落在 `reclaim.note`"
+    );
+    assert!(
+        dto.entries
+            .iter()
+            .all(|entry| entry.key != "logs" || entry.reclaim.note.is_none()),
+        "E12 有真实统计，不再需要缺口说明（策略数值禁止进 `note`）"
     );
 }
 
@@ -423,5 +422,163 @@ fn wire_string_fields_are_identifiers_or_prose() {
     assert!(
         offenders.is_empty(),
         "wire 上新增了承载状态语义的字符串字段（只允许 note / message 承载散文）：{offenders:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// G7 / G8（I67 §4.2 / §4.3 / §7）
+// ---------------------------------------------------------------------------
+
+fn manifest_dir() -> &'static std::path::Path {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+}
+
+/// 前端名称表 `ENTRY_NAME_KEYS` 的键集合（只读源码，不引入 TS 运行时）。
+fn frontend_entry_name_keys() -> Vec<String> {
+    let path = manifest_dir().join("../src/settings/pages/storage/lexicon.ts");
+    let text = std::fs::read_to_string(&path)
+        .unwrap_or_else(|error| panic!("{} 应可读取: {error}", path.display()));
+    let mut inside = false;
+    let mut keys = Vec::new();
+    for raw in text.lines() {
+        let line = raw.trim();
+        if !inside {
+            inside = line.starts_with("const ENTRY_NAME_KEYS");
+            continue;
+        }
+        if line.starts_with("};") {
+            break;
+        }
+        let key = line.split(':').next().unwrap_or_default().trim();
+        let key = key.trim_matches('"');
+        if !key.is_empty() && !key.starts_with("//") {
+            keys.push(key.to_string());
+        }
+    }
+    keys
+}
+
+/// 后端 key 未在前端名称表登记的部分（空 = 门禁通过）。
+fn missing_frontend_names(views: &[EntryView]) -> Vec<&'static str> {
+    let names = frontend_entry_name_keys();
+    views
+        .iter()
+        .map(|view| view.key)
+        .filter(|key| !names.iter().any(|name| name == key))
+        .collect()
+}
+
+#[test]
+fn g7_backend_keys_are_all_named_in_frontend() {
+    // 正向门禁只覆盖 core：真实分区条目由特性 crate 自述（本集成测试不链接它们），
+    // 分区侧由 `g7_new_section_key_without_frontend_name_is_red` 证明同一检查会判红。
+    let all = views(&[]);
+    let missing = missing_frontend_names(&all);
+    assert!(
+        missing.is_empty(),
+        "G7：后端 key 必须在前端 ENTRY_NAME_KEYS 登记，缺失：{missing:?}"
+    );
+}
+
+#[test]
+fn g7_new_section_key_without_frontend_name_is_red() {
+    let registry = SectionRegistry::new();
+    registry
+        .register(fake_section::mount(
+            "fake-unlisted",
+            fake_section::entries(vec![fake_section::entry(
+                "X9",
+                "unlisted",
+                fake_section::decl(
+                    StorageReclaimActionDto::None,
+                    StorageEligibilityDto::NotEligible,
+                    assistant_app::protocol::dto::StorageReclaimReasonDto::BusinessData,
+                    assistant_app::cmd::storage::section::RiskTier::Forbidden,
+                ),
+            )]),
+        ))
+        .expect("首段命中 OPTIONAL_SEGMENTS");
+    let all = views(&registry.snapshot());
+    let missing = missing_frontend_names(&all);
+    assert_eq!(missing.len(), 1, "V10：新增分区条目但未加前端名称必须判红");
+}
+
+fn rust_sources(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+    for entry in
+        std::fs::read_dir(dir).unwrap_or_else(|error| panic!("{} 应可读取: {error}", dir.display()))
+    {
+        let path = entry.expect("目录项可读").path();
+        if path.is_dir() {
+            rust_sources(&path, out);
+        } else if path.extension().and_then(|ext| ext.to_str()) == Some("rs") {
+            out.push(path);
+        }
+    }
+}
+
+/// 生产部分 = 第一个 `#[cfg(test)]` 之前的内容（本仓库测试模块恒在文件尾部）。
+fn production_part(text: &str) -> &str {
+    match text.find("#[cfg(test)]") {
+        Some(index) => &text[..index],
+        None => text,
+    }
+}
+
+/// 提取 `"E<数字>"` 形式的字面量。
+fn e_id_literals(text: &str) -> Vec<&str> {
+    let bytes = text.as_bytes();
+    let mut out = Vec::new();
+    let mut index = 0;
+    while index + 2 < bytes.len() {
+        if bytes[index] == b'"' && bytes[index + 1] == b'E' && bytes[index + 2].is_ascii_digit() {
+            let mut end = index + 2;
+            while end < bytes.len() && bytes[end].is_ascii_digit() {
+                end += 1;
+            }
+            if end < bytes.len() && bytes[end] == b'"' {
+                out.push(&text[index..=end]);
+            }
+            index = end;
+        } else {
+            index += 1;
+        }
+    }
+    out
+}
+
+#[test]
+fn g8_e_literals_only_live_in_registry() {
+    let mut files = Vec::new();
+    rust_sources(&manifest_dir().join("src"), &mut files);
+    let registry_file = manifest_dir().join("src/app_dirs/registry.rs");
+
+    let mut offenders: Vec<String> = Vec::new();
+    for file in &files {
+        let text = std::fs::read_to_string(file)
+            .unwrap_or_else(|error| panic!("{} 应可读取: {error}", file.display()));
+        let literals = e_id_literals(production_part(&text));
+        if literals.is_empty() {
+            continue;
+        }
+        if file == &registry_file {
+            continue;
+        }
+        offenders.push(format!("{}: {literals:?}", file.display()));
+    }
+    assert!(
+        offenders.is_empty(),
+        "G8：`E` 字面量只允许出现在登记表（registry.rs）与测试：{offenders:?}"
+    );
+
+    let registry_text = std::fs::read_to_string(&registry_file).expect("registry.rs 可读");
+    let literals = e_id_literals(production_part(&registry_text));
+    let expected: Vec<&str> = CoreEntry::ALL.iter().map(|entry| entry.id()).collect();
+    let mut quoted: Vec<String> = expected.iter().map(|id| format!("\"{id}\"")).collect();
+    quoted.sort();
+    let mut found: Vec<String> = literals.iter().map(|literal| literal.to_string()).collect();
+    found.sort();
+    assert_eq!(
+        found, quoted,
+        "G8：登记表里的 `E` 字面量必须与 CoreEntry::ALL 一一对应（单点定义）"
     );
 }
