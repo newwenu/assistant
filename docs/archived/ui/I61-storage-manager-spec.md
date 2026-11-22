@@ -4,7 +4,7 @@
 |---|---|
 | 状态 | 定稿（设计已定案，待按 §11 切片实施；观测承接原 I54 存储 tab（已迁入本文），新增回收与策略治理） |
 | 日期 | 2026-11-19 |
-| 关联 | [I54 资源监视器规格](./I54-resource-monitor-spec.md)（存储 tab 已由本文承接并在 I54 中收敛为指针；进程 / 自身占用仍归 I54）、[STORAGE-MONITOR-ANALYSIS](../analysis/STORAGE-MONITOR-ANALYSIS.md)（存储观测机制的唯一事实基线）、[CODE-SPLIT-PRINCIPLE](../principle/CODE-SPLIT-PRINCIPLE.md)（拆分原则唯一来源，本文只引用不复述）、I44 应用目录管理规格（已归档）（目录归属与字面量门禁）、I58 超级工具规格（已归档）（`tool-index/` 的 owner 与缓存边界） |
+| 关联 | [I54 资源监视器规格](../../store/I54-resource-monitor-spec.md)（存储 tab 已由本文承接并在 I54 中收敛为指针；进程 / 自身占用仍归 I54）、[STORAGE-MONITOR-ANALYSIS](../../analysis/STORAGE-MONITOR-ANALYSIS.md)（存储观测机制的唯一事实基线）、[CODE-SPLIT-PRINCIPLE](../../principle/CODE-SPLIT-PRINCIPLE.md)（拆分原则唯一来源，本文只引用不复述）、I44 应用目录管理规格（已归档）（目录归属与字面量门禁）、I58 超级工具规格（已归档）（`tool-index/` 的 owner 与缓存边界） |
 | 影响范围 | 后端：`src-tauri/src/cmd/storage/`（`mod.rs` 命令与快照、`ledger.rs` 附件引用账本、`section.rs` 可选功能分区契约、`entries/` 静态声明与条目装配、`sample/` 采样、`inventory/` 对账扫描、`reclaim/` 计划与执行；由现有 `cmd/storage.rs` 拆分而来）、`src-tauri/src/app_dirs/registry.rs`（受管根登记表）、`src-tauri/src/protocol/dto/storage.rs`（DTO 扩展）、`src-tauri/src/protocol/events.rs`（`storage:inventory-updated` 广播）、`src-tauri/src/ipc.rs`（命令注册）、各 owner 的 stats / 回收方法（`assistant-storage`、`assistant-tools`、`assistant-vault`、`assistant-crash`）；前端：`src/settings/pages/StorageSettings.tsx`、`src/services/desktop/storageService.ts`、i18n 两份 locale、`src/settings/__tests__/fixtures/*.json`（golden 投影） |
 
 > 一句话：存储管理器把「存储占用」从监视器的一行提升为**可观测、可计划、可回收**的资源监视条目集合——**对外是唯一的发起与展示通道，对内不是唯一执行者**（观测来自 owner stats、删除来自 owner 方法，owner 自己的自动清理照旧）；任何删除都必须先有 owner 的方法，任何数字都必须带可用性与采样时刻，任何「不知道」都不许写成 `0`。
@@ -21,10 +21,10 @@
 
 存储管理器是**存储类资源监视条目在 UI / IPC 层的唯一观测聚合与回收发起入口**（下称「唯一对外入口」）。它**不是唯一执行者**，owner 在自己路径上的自动清理不受本管理器约束：
 
-1. 它承接原 [I54](./I54-resource-monitor-spec.md) 存储 tab 的全部内容（12 行观测表、D1–D4 四个方向、三个口径、账本闭合），I54 §4 现已收敛为指向本文的指针；本文把 12 行扩展为 18 个**规格编号**（core 自有 12 条 + 可选功能分区自述 6 条，后者随功能挂载存在、随退役消失，§3.1.1；`E14` / `E15` / `E17` / `E18` 由 I67 §13 登记，`E16` 归 vault 分区自述，见 §3.1）；
+1. 它承接原 [I54](../../store/I54-resource-monitor-spec.md) 存储 tab 的全部内容（12 行观测表、D1–D4 四个方向、三个口径、账本闭合），I54 §4 现已收敛为指向本文的指针；本文把 12 行扩展为 18 个**规格编号**（core 自有 12 条 + 可选功能分区自述 6 条，后者随功能挂载存在、随退役消失，§3.1.1；`E14` / `E15` / `E17` / `E18` 由 I67 §13 登记，`E16` 归 vault 分区自述，见 §3.1）；
 2. 它新增原 I54 明确推迟的**回收动作**与**策略治理**（I54 §1.3 现已改为指向本文）；
 3. I54 收敛为「资源监视器」，只保留**进程**与**自身占用**两类资源监视条目；存储类条目不再由 I54 维护；
-4. 它不是新 crate：落在应用层 `src-tauri/src/cmd/storage/`（`mod.rs` 承载命令、`section.rs` 承载可选功能分区契约、`inventory/` 承载 §3.11 的对账扫描、`reclaim/` 承载计划与执行），因为它需要 `AppDirs` 与各 owner 的 stats / 回收方法（与 [STORAGE-MONITOR-ANALYSIS](../analysis/STORAGE-MONITOR-ANALYSIS.md) §10 第 1 条一致）；
+4. 它不是新 crate：落在应用层 `src-tauri/src/cmd/storage/`（`mod.rs` 承载命令、`section.rs` 承载可选功能分区契约、`inventory/` 承载 §3.11 的对账扫描、`reclaim/` 承载计划与执行），因为它需要 `AppDirs` 与各 owner 的 stats / 回收方法（与 [STORAGE-MONITOR-ANALYSIS](../../analysis/STORAGE-MONITOR-ANALYSIS.md) §10 第 1 条一致）；
 5. 它**不拥有任何目录**：目录名与基根只来自 `AppDirs` 与可选能力模块的 getter，本文不新增目录名、不新增目录字面量；
 6. 它的观测由**两层**组成，两者互不替代（§3.11）：**声明层**（core 12 条 + 已挂载分区自述条目，数字来自 owner 实测，回答「这块多大、属于谁、能否回收」）与**对账层**（对基根做有界枚举后与声明层相减，回答「还有多少没被认领」）。对账层不新增条目、不进任何合计、不可回收，因此「唯一对外入口」不变：存储数字仍然只来自 `get_storage_breakdown`。
 
@@ -45,7 +45,7 @@
 
 ### 1.2 三个身份在存储侧的落点（术语定义见 I54 §2.1）
 
-术语（所有者 / 观测者 / 回收者）由 [I54 §2.1](./I54-resource-monitor-spec.md) 定义，本文不重述；本节只写它们在本管理器里的**落点**，可验收的硬约束见 §3.8 的 `G1`–`G3`：
+术语（所有者 / 观测者 / 回收者）由 [I54 §2.1](../../store/I54-resource-monitor-spec.md) 定义，本文不重述；本节只写它们在本管理器里的**落点**，可验收的硬约束见 §3.8 的 `G1`–`G3`：
 
 | 身份 | 在本管理器里的落点 |
 |---|---|
@@ -183,7 +183,7 @@
 
 **为什么把条目声明交给功能**：这六条的身份、判据、策略数值（备份份数、审计保留期）本来就只由 vault 侧决定；core 再写一份就是双份声明，两者之间没有断言，改一处忘另一处会静默错位（这正是 G17 要防的形态）。移到功能内部后，core 只保留一条**磁盘格式事实**：`security/` 这个首段属于可选功能（§3.11.1 的 `OPTIONAL_SEGMENTS`），因此功能未挂载时仍能把它归 `optionalNotMounted`，而不是误报「未登记目录」。
 
-**与 I54 原 12 行的差异**：新增 `E4 tool-index`（I58 之后才出现的受管目录）；core 侧另新增 `E14 EBWebView` 与 `E15` / `E17` / `E18` 三个配置文件（均只观测、禁止回收，由 I67 §13 登记），`E16`（`security/vault-config.json`）归 vault 可选分区自述（同由 I67 §13 登记）；I54 说「安全域各子目录无保留策略」已过时（N11 的审计保留已存在）；I54 说「回收不在本期」由本文取代。其余条目的身份与字节口径沿用原 I54 §4 的结论（该节已改为指向本文的指针，事实基线仍为 [STORAGE-MONITOR-ANALYSIS](./../analysis/STORAGE-MONITOR-ANALYSIS.md)），不在此重述。
+**与 I54 原 12 行的差异**：新增 `E4 tool-index`（I58 之后才出现的受管目录）；core 侧另新增 `E14 EBWebView` 与 `E15` / `E17` / `E18` 三个配置文件（均只观测、禁止回收，由 I67 §13 登记），`E16`（`security/vault-config.json`）归 vault 可选分区自述（同由 I67 §13 登记）；I54 说「安全域各子目录无保留策略」已过时（N11 的审计保留已存在）；I54 说「回收不在本期」由本文取代。其余条目的身份与字节口径沿用原 I54 §4 的结论（该节已改为指向本文的指针，事实基线仍为 [STORAGE-MONITOR-ANALYSIS](../../analysis/STORAGE-MONITOR-ANALYSIS.md)），不在此重述。
 
 **本表是终态口径（T4 完成时）**：上表的 `eligibility` 描述的是「缺口补完后」的判定，**不是**某个中间切片的状态。中间切片（T1–T3）必须按 §11 的「切片期资格」表填 DTO，且遵守一条硬规则：
 

@@ -5,8 +5,8 @@
 | 状态 | 阶段规格（P14 的阶段定义；`shell` 工具规格已交接）；进度只在 [I52 tasklist](./I52-shell-sandbox-tasklist.md) 与 [I38 roadmap](./I38-agent-roadmap.md) §2 维护 |
 | 日期 | 2026-11-15（2026-11-18 完成规格交接） |
 | 阶段 | P14（工具能力轴；见 [I38 roadmap](./I38-agent-roadmap.md) §2 / §3） |
-| **交接** | 本文原 §5–§13 的 `shell` 工具规格已整体移交 **[I56 `shell` 工具规格](../achievement/I56-shell-tool-spec.md)**。本文此后只负责：阶段目标与非目标（§1）、术语与分层（§2）、沙箱指针（§3–§4）、分批（§6）、阶段验收口径（§7）、阶段边界（§8）。工具身份、输入、审批键、执行流程、输出、失败矩阵、审计、文案与工具级验收**一律**以 I56 为准，本文不复述 |
-| 关联 | [I56](../achievement/I56-shell-tool-spec.md)（`shell` 工具规格，唯一来源）、I53（已归档）（沙箱准备：后端抽象 / 链式探测 / 三平台实现）、[I52-Ext](./I52-ext-background-task.md)（阶段扩展：后台任务改动面，未立项）、I18 design §3.17（已归档）（审批链路预留与检测分层）、[OSCALLDESIGN](../designed/OSCALLDESIGN.md)（Shell 洋葱模型）、[I38g](./I38g-agent-approval-advisor-spec.md)（P10 顾问）、I50（已归档）（审计口径） |
+| **交接** | 本文原 §5–§13 的 `shell` 工具规格已整体移交 **I56 `shell` 工具规格（已归档）**。本文此后只负责：阶段目标与非目标（§1）、术语与分层（§2）、沙箱指针（§3–§4）、分批（§6）、阶段验收口径（§7）、阶段边界（§8）。工具身份、输入、审批键、执行流程、输出、失败矩阵、审计、文案与工具级验收**一律**以 I56 为准，本文不复述 |
+| 关联 | I56（已归档）（`shell` 工具规格，唯一来源）、I53（已归档）（沙箱准备：后端抽象 / 链式探测 / 三平台实现）、[I52-Ext](./I52-ext-background-task.md)（阶段扩展：后台任务改动面，未立项）、I18 design §3.17（已归档）（审批链路预留与检测分层）、[OSCALLDESIGN](../designed/OSCALLDESIGN.md)（Shell 洋葱模型）、[I38g](./I38g-agent-approval-advisor-spec.md)（P10 顾问）、I50（已归档）（审计口径） |
 | 影响范围 | 阶段级：`assistant-tools` 的 `sandbox/` 模块与工具注册（`os/mod.rs`）、`src-tauri/src/tool_setup.rs`（注册期探测收口）、`src-tauri/Cargo.toml`（平台特性）、前端模式预置。工具实现级影响面见 I56 表头 |
 
 > 一句话：本阶段把「审批」从**纸面声明**变成**可执行边界**。审批回答「要不要做」，沙箱回答「最多能做到哪」；
@@ -23,7 +23,7 @@
 ### 1.1 目标
 
 1. 交付一个**可验收的边界**：可写根之外的写入必须失败、进程树必须可被整体回收、敏感目录不可读（后端实现与判据见 I53（已归档））；
-2. 交付 `shell` 工具：`execute` 意图、命令级审批键、进程级超时、输出落盘与回读、结果可被模型纠错（工具规格见 [I56](../achievement/I56-shell-tool-spec.md)）；
+2. 交付 `shell` 工具：`execute` 意图、命令级审批键、进程级超时、输出落盘与回读、结果可被模型纠错（工具规格见 I56（已归档））；
 3. 让审批卡片如实回答「这次执行被什么边界包着」（隔离强度 / 可写根 / 网络可达）；
 4. 让 P10 的三个接入点有稳定事实源（`execute` 恒 `Ask` 的消费方、命令分类器、内核隔离已就绪）；
 5. 全程 fail-closed：**不存在「探测失败就无沙箱执行」的路径**；
@@ -117,7 +117,7 @@ Windows（Token + ACL + Job）/ Linux（Landlock）/ macOS（Seatbelt）三个�
 
 | 原 I52 章节 | 现位置 |
 |---|---|
-| §1.1 现状 N1–N8 | [I56 §2](../achievement/I56-shell-tool-spec.md)（以当前代码重写为 P1–P8 / G1–G8） |
+| §1.1 现状 N1–N8 | I56 §2（已归档）（以当前代码重写为 P1–P8 / G1–G8） |
 | §5.1–§5.12 `shell` 工具（身份 / schema / validate / intents / 分类器 / 预览 / execute / 超时取消 / 结果 / 环境变量 / 落盘回读 / 信封） | I56 §3–§8 |
 | §6 与审批链的集成（键 / `enforcement` / 卡片 / `Deny` 顺序 / 策略 / P10 接入点） | I56 §6 |
 | §7 失败矩阵 F1–F18 | I56 §9 |
@@ -140,7 +140,7 @@ Windows（Token + ACL + Job）/ Linux（Landlock）/ macOS（Seatbelt）三个�
 
 | 要改的东西 | 改这里 |
 |---|---|
-| 工具 schema / 校验 / 分类器 / execute 流程 / 输出与回读 / 失败矩阵 / 文案 | [I56](../achievement/I56-shell-tool-spec.md) |
+| 工具 schema / 校验 / 分类器 / execute 流程 / 输出与回读 / 失败矩阵 / 文案 | I56（已归档） |
 | 阶段范围、非目标、批次划分、阶段验收归属 | 本文 |
 | 沙箱后端行为、探测判据、ACL / Landlock / Seatbelt 细节 | **另立规格**（I53 已归档） |
 | 任务勾选进度 | [I52 tasklist](./I52-shell-sandbox-tasklist.md) |
@@ -171,7 +171,7 @@ S1 / S2（P14-b / P14-c，不在本规格验收范围）：S1 追加降级后端
 | 编号段 | 判据所在 | 说明 |
 |---|---|---|
 | A1–A5 | I53 §8（已归档） | 写边界 / 敏感读边界 / 进程树回收 / 无沙箱不执行 / 建立失败不降级 |
-| A6–A36 | [I56 §13](../achievement/I56-shell-tool-spec.md) | 审批键、输出、回读、编码、拒绝可见、描述契约、注册门禁等 |
+| A6–A36 | I56 §13（已归档） | 审批键、输出、回读、编码、拒绝可见、描述契约、注册门禁等 |
 
 阶段完成的判据是：**A1–A5 与 A6–A36 全部通过**，且 `clippy -D warnings` / `fmt --check` / `typecheck` / `vitest` 全绿（C8）。
 
@@ -193,7 +193,7 @@ S1 / S2（P14-b / P14-c，不在本规格验收范围）：S1 追加降级后端
 
 **本仓文档**
 
-- [I56](../achievement/I56-shell-tool-spec.md)：`shell` 工具规格（本文已交接的工具侧全部内容）；
+- I56（已归档）：`shell` 工具规格（本文已交接的工具侧全部内容）；
 - [I52 tasklist](./I52-shell-sandbox-tasklist.md)：任务级进度（唯一）；
 - [I52-Ext](./I52-ext-background-task.md)：后台任务改动面（未立项）；
 - [OSCALLDESIGN](../designed/OSCALLDESIGN.md)：Shell 洋葱模型（SafetyBelt / 结构守卫 / 环境隔离 / 命令分类），§2.3 与其边界划分一致，不重复其条目；

@@ -2,7 +2,7 @@
 
 > 性质：**执行步骤文档**（T0），不是任务基线。I61 待办仍以 [I61-storage-manager-remaining.md](./I61-storage-manager-remaining.md) 为唯一来源；规格仍以 [I61-storage-manager-spec.md](./I61-storage-manager-spec.md) 为唯一判据基线。本文件只定义「`R-01` 动手前把文件切在哪、按什么顺序切」。
 >
-> 拆分判据只引用 [CODE-SPLIT-PRINCIPLE.md](../principle/CODE-SPLIT-PRINCIPLE.md)（§1 变化原因 / §3 测试处理 / §4 目录模块 / §6 依赖方向 / §7 禁止事项），不复述条款。
+> 拆分判据只引用 [CODE-SPLIT-PRINCIPLE.md](../../principle/CODE-SPLIT-PRINCIPLE.md)（§1 变化原因 / §3 测试处理 / §4 目录模块 / §6 依赖方向 / §7 禁止事项），不复述条款。
 >
 > 本步是**纯机械搬移**：不改函数体、不改对外可见性、不改对外 `pub use` 路径、不动 wire DTO、不跑 `contract:gen`、不动前端、不外移任何测试（内联测试随被测实现一起搬，见 §2.1 / §2.2 / §2.3）。唯一允许的可见性调整是「跨子模块引用」：原本同文件内可见的私有项在拆分后按需放宽到 `pub(super)` / `pub(crate)`，`pub` 项一律不变（§2 首段）。
 

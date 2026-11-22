@@ -1,7 +1,7 @@
 # I61 存储管理器 · 前端设计（T4）
 
 > 性质：**前端实现设计（T4 唯一实现基线）**｜上位契约：[I61-storage-manager-spec.md](./I61-storage-manager-spec.md)（§1.1 / §3 / §5 / §6.1 / §6.2 / §7 / §10 / §11）
-> 拆分判据：[CODE-SPLIT-PRINCIPLE.md](../principle/CODE-SPLIT-PRINCIPLE.md)（只引用，不复述）
+> 拆分判据：[CODE-SPLIT-PRINCIPLE.md](../../principle/CODE-SPLIT-PRINCIPLE.md)（只引用，不复述）
 > 任务清单：[I61-storage-manager-tasklist.md](./I61-storage-manager-tasklist.md)（T4-a / T4-b）
 
 本文只回答「前端怎么做」：组件边界、视图模型、交互状态机、视觉与文案、测试方式。

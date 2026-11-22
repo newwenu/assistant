@@ -8,18 +8,19 @@
 
 | 域 | 内容 | 文件数 |
 |---|---|---|
-| [agent/](./agent/) | Agent 运行时、工具框架与 MCP、Agent Loop、审批、压缩与节点布局、身份与能力事实、运行时审计、沙箱与代码规模审计、Turn 观测面、长行读取与超级工具、工具三阶段状态 | 69 |
-| [vault/](./vault/) | 密码箱：密钥体系、条目加密、同步、审计、生物识别、恢复与 IPC 契约 | 36 |
+| [agent/](./agent/) | Agent 运行时、工具框架与 MCP、Agent Loop、审批、压缩与节点布局、身份与能力事实、运行时审计、沙箱与代码规模审计、Turn 观测面、长行读取与超级工具、工具三阶段状态 | 70 |
+| [vault/](./vault/) | 密码箱：密钥体系、条目加密、同步、审计、生物识别、恢复与 IPC 契约 | 37 |
 | [chat/](./chat/) | 对话与消息链路：服务拆分、流事件、历史、分支、重试、附件/多模态、截图提问、Token Usage | 35 |
-| [ui/](./ui/) | Orb、主窗口与 mini 模式、设置系统、i18n、Mascot、时钟与布局 | 36 |
-| [infra/](./infra/) | 编译与依赖、crate 架构、DTO 与协议、配置归属、命令层、日志、应用目录、拆分规划、横切分析 | 35 |
+| [ui/](./ui/) | Orb、主窗口与 mini 模式、设置系统、i18n、Mascot、时钟与布局 | 41 |
+| [infra/](./infra/) | 编译与依赖、crate 架构、DTO 与协议、配置归属、命令层、日志、应用目录、拆分规划、横切分析 | 41 |
 
 ## 文档清单
 
-### agent/ (69)
+### agent/ (70)
 
 | 文档 | 原批次 | 标题 |
 |---|---|---|
+| [`I56-shell-tool-spec.md`](./agent/I56-shell-tool-spec.md) | achievement | I56 — `shell` 工具规格 |
 | [`I6-spec.md`](./agent/I6-spec.md) | achievement | I6 — Agent 自定义模式 + Prompt 模板合并 规格说明 |
 | [`I6-tasklist.md`](./agent/I6-tasklist.md) | achievement | I6 — Agent 自定义模式 + Prompt 模板合并 任务清单 |
 | [`I7-context-window-refactor.md`](./agent/I7-context-window-refactor.md) | achievement | I7 前置 — 上下文窗口获取改造方案 |
@@ -90,10 +91,11 @@
 | [`I59-chat-error-null-contract-spec.md`](./agent/I59-chat-error-null-contract-spec.md) | achievement | I59 — 前端 ChatError null 语义与守卫对齐（含同类判据合并） |
 | [`I60-tool-running-status-spec.md`](./agent/I60-tool-running-status-spec.md) | achievement | I60 — 工具调用三阶段状态（preparing / running / 终态与全局活动指示器） |
 
-### vault/ (36)
+### vault/ (37)
 
 | 文档 | 原批次 | 标题 |
 |---|---|---|
+| [`I64-storage-vault-integration-audit-spec.md`](./vault/I64-storage-vault-integration-audit-spec.md) | achievement | I64 — vault 接入暴露面与特性存储接入方式审计规格 |
 | [`I9-vault-issues.md`](./vault/I9-vault-issues.md) | achievement1 | Vault 代码审查问题清单 |
 | [`I9-vault-responsibility-split.md`](./vault/I9-vault-responsibility-split.md) | achievement1 | I9 — Vault 职责拆分规格 |
 | [`I23-vault-ipc-contract-tasklist.md`](./vault/I23-vault-ipc-contract-tasklist.md) | achievement2 | I23 — vault IPC 契约收口 任务清单 |
@@ -171,7 +173,7 @@
 | [`I40-history-message-tree-spec.md`](./chat/I40-history-message-tree-spec.md) | achievement4 | I40 — 主窗口历史消息树渲染规格 |
 | [`I35-screenshot-qa-spec.md`](./chat/I35-screenshot-qa-spec.md) | achievement10 | I35 — 截屏提问规格（rev11 已实现；§11.3 手动验收待执行） |
 
-### ui/ (36)
+### ui/ (41)
 
 | 文档 | 原批次 | 标题 |
 |---|---|---|
@@ -197,6 +199,11 @@
 | [`I6-settings-optimize-tasklist.md`](./ui/I6-settings-optimize-tasklist.md) | achievement | I6 — 设置系统优化 任务清单 |
 | [`I8-declarative-settings-spec.md`](./ui/I8-declarative-settings-spec.md) | achievement | I8 — 声明式设置系统 规格说明 |
 | [`I8-declarative-settings-tasklist.md`](./ui/I8-declarative-settings-tasklist.md) | achievement | I8 — 声明式设置系统 任务清单 |
+| [`I61-storage-manager-frontend.md`](./ui/I61-storage-manager-frontend.md) | achievement | I61 存储管理器 · 前端设计（T4） |
+| [`I61-storage-manager-remaining.md`](./ui/I61-storage-manager-remaining.md) | achievement | I61 — 存储管理器 剩余任务清单 |
+| [`I61-storage-manager-spec.md`](./ui/I61-storage-manager-spec.md) | achievement | I61 — 存储管理器规格（资源监视条目 + 回收） |
+| [`I61-storage-manager-t0-split.md`](./ui/I61-storage-manager-t0-split.md) | achievement | I61 T0 — 长文件按职责拆分（T1-g 前置步骤） |
+| [`I61-storage-manager-tasklist.md`](./ui/I61-storage-manager-tasklist.md) | achievement | I61 — 存储管理器 任务清单 |
 | [`design-settings-page-shell-unify.md`](./ui/design-settings-page-shell-unify.md) | achievement1 | SettingsPageShell 统一壳改造设计（组合方案） |
 | [`frontend-timing-analysis.md`](./ui/frontend-timing-analysis.md) | achievement1 | 前端时序问题审查 |
 | [`I14-mascot-expression-extensibility-spec.md`](./ui/I14-mascot-expression-extensibility-spec.md) | achievement1 | I14 — Mascot 表情映射可扩展化 规格说明 |
@@ -212,16 +219,22 @@
 | [`I47-orb-runtime-state-spec.md`](./ui/I47-orb-runtime-state-spec.md) | achievement5 | I47 — Orb 运行态与可见性 实施规格 |
 | [`I47-orb-runtime-state-tasklist.md`](./ui/I47-orb-runtime-state-tasklist.md) | achievement5 | I47 — Orb 运行态与可见性 任务清单 |
 
-### infra/ (35)
+### infra/ (41)
 
 | 文档 | 原批次 | 标题 |
 |---|---|---|
 | [`DESIGN.md`](./infra/DESIGN.md) | achievement | Assistant - 智能助手应用设计文档（完整非当前版本） |
+| [`I62-protocol-crate-spec.md`](./infra/I62-protocol-crate-spec.md) | achievement | I62 — 协议 crate 抽取与依赖边断开规格 |
+| [`I62-protocol-crate-tasklist.md`](./infra/I62-protocol-crate-tasklist.md) | achievement | I62 — 协议 crate 抽取与依赖边断开 任务清单 |
+| [`I63-domain-placement-spec.md`](./infra/I63-domain-placement-spec.md) | achievement | I63 — 功能与领域归属修正规格 |
+| [`I63-domain-placement-tasklist.md`](./infra/I63-domain-placement-tasklist.md) | achievement | I63 — 功能与领域归属修正 任务清单 |
 | [`I7-cmd-split-spec.md`](./infra/I7-cmd-split-spec.md) | achievement | I7 — cmd.rs 模块拆分 规格说明 |
 | [`I7-cmd-split-tasklist.md`](./infra/I7-cmd-split-tasklist.md) | achievement | I7 — cmd.rs 模块拆分 任务清单 |
 | [`I9-handover.md`](./infra/I9-handover.md) | achievement | I9 交接 — Phase 1-6 + 核心测试 + H1 验收 已完成 |
 | [`I9-provider-multi-api-spec.md`](./infra/I9-provider-multi-api-spec.md) | achievement | I9 — Provider 多 API 格式适配 规格说明 |
 | [`I9-provider-multi-api-tasklist.md`](./infra/I9-provider-multi-api-tasklist.md) | achievement | I9 — Provider 多 API 格式适配 任务清单 |
+| [`error-swallowing-analysis.md`](./infra/error-swallowing-analysis.md) | achievement | 错误吞没分组分析（前端 / Rust） |
+| [`responses-endpoint-disposition.md`](./infra/responses-endpoint-disposition.md) | achievement | OpenAI Responses 端点处置 |
 | [`I16-naming-migration-spec.md`](./infra/I16-naming-migration-spec.md) | achievement1 | I16 命名迁移规格 — 后端 DTO + 前端 camelCase 统一 |
 | [`I16-naming-migration-tasklist.md`](./infra/I16-naming-migration-tasklist.md) | achievement1 | I16 — 命名迁移（后端 DTO + 前端 camelCase 统一）任务清单 |
 | [`I19-code-responsibility.md`](./infra/I19-code-responsibility.md) | achievement1 | 代码文件职能检查与功能提取分析 |

@@ -4,9 +4,9 @@
 |---|---|
 | 状态 | 草案（现状事实已核实，待排期） |
 | 日期 | 2026-11-20 |
-| 事实来源 | `docs/achievement/error-swallowing-analysis.md`（检索快照与分组分析；已移至待归档目录） |
+| 事实来源 | `error-swallowing-analysis.md`（已归档；检索快照与分组分析） |
 | 判定依据 | `docs/analysis/PROJECT-DESIGN-GUIDELINES.md` §4「错误处理」 |
-| 相邻规格 | `docs/achievement/I64-storage-vault-integration-audit-spec.md`（其 EXP-4 的配置 fail-open 议题不在本规格范围，见 OQ-2；已移至待归档目录） |
+| 相邻规格 | `I64-storage-vault-integration-audit-spec.md`（已归档；其 EXP-4 的配置 fail-open 议题不在本规格范围，见 OQ-2） |
 | 影响范围 | `src/`、`src-tauri/`、`eslint.config.ts`、`scripts/check.mjs`、新增 `scripts/check-error-swallow.mjs` |
 | 契约影响 | `VaultErrorCode` 扩展，需 `npm run contract:gen` 并提交 `src/vault/core/contract/vault.contract.ts` |
 | 前端影响 | Store 新增错误状态字段、失败提示与新增 i18n 键 |
@@ -57,7 +57,7 @@
 
 ## 2 分类与判定口径
 
-- 吞没分类（S1–S6）、后果等级（P0–P3）、吞没与降级的判定原则：唯一来源为 `docs/achievement/error-swallowing-analysis.md` §1.2 / §1.3 / §1.4（待归档目录），本规格不复制。
+- 吞没分类（S1–S6）、后果等级（P0–P3）、吞没与降级的判定原则：唯一来源为 `error-swallowing-analysis.md`（已归档）§1.2 / §1.3 / §1.4，本规格不复制。
 - 本规格在执行层面把 §1.4 展开为四条可操作口径（D1）：
 
 | 路径性质 | 失败处理要求 |

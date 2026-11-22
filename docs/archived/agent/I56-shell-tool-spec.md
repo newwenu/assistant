@@ -2,11 +2,11 @@
 
 | 项 | 值 |
 |---|---|
-| 状态 | 草稿（P14 的 C5–C7 实施规格；任务级进度只在 [I52 tasklist](./I52-shell-sandbox-tasklist.md) 维护） |
+| 状态 | 草稿（P14 的 C5–C7 实施规格；任务级进度只在 [I52 tasklist](../../store/I52-shell-sandbox-tasklist.md) 维护） |
 | 日期 | 2026-11-19 |
-| 阶段 | P14（工具能力轴；见 [I38 roadmap](./I38-agent-roadmap.md) §2 / §3） |
-| 交接 | 本文接管 [I52](./I52-shell-sandbox-spec.md) 原 §5–§13 的 `shell` 工具职能。I52 保留阶段定义、术语与分层（两根轴 / 三层职责 / 封闭词汇）与沙箱指针，**不再复述工具细节**；两份文档的分工见本文 §2.3 |
-| 关联 | [I52](./I52-shell-sandbox-spec.md)（阶段规格与术语唯一来源）、I53（已归档）（沙箱准备：后端抽象 / 三平台实现 / 探测收口）、[I52-Ext](./I52-ext-background-task.md)（后台任务改动面，未立项）、[I38g](./I38g-agent-approval-advisor-spec.md)（P10 顾问与三个接入点）、[I38f](./I38f-agent-subagent-spec.md)（子代理输出域）、I18 design §3.17 / I50（均已归档，分别给检测分层与审计词表）、[OSCALLDESIGN](../designed/OSCALLDESIGN.md)（Shell 洋葱模型）、[agent-sandbox-reference-analysis](./agent-sandbox-reference-analysis.md)（Codex / OpenHuman / DSH 实现细节） |
+| 阶段 | P14（工具能力轴；见 [I38 roadmap](../../store/I38-agent-roadmap.md) §2 / §3） |
+| 交接 | 本文接管 [I52](../../store/I52-shell-sandbox-spec.md) 原 §5–§13 的 `shell` 工具职能。I52 保留阶段定义、术语与分层（两根轴 / 三层职责 / 封闭词汇）与沙箱指针，**不再复述工具细节**；两份文档的分工见本文 §2.3 |
+| 关联 | [I52](../../store/I52-shell-sandbox-spec.md)（阶段规格与术语唯一来源）、I53（已归档）（沙箱准备：后端抽象 / 三平台实现 / 探测收口）、[I52-Ext](../../store/I52-ext-background-task.md)（后台任务改动面，未立项）、[I38g](../../store/I38g-agent-approval-advisor-spec.md)（P10 顾问与三个接入点）、[I38f](../../store/I38f-agent-subagent-spec.md)（子代理输出域）、I18 design §3.17 / I50（均已归档，分别给检测分层与审计词表）、[OSCALLDESIGN](../../designed/OSCALLDESIGN.md)（Shell 洋葱模型）、[agent-sandbox-reference-analysis](../../store/agent-sandbox-reference-analysis.md)（Codex / OpenHuman / DSH 实现细节） |
 | 影响范围 | `assistant-tools`：`os/tools/agent_shell/`（新增；`spawn.rs` 内做 `program` 候选解析，复用 `sandbox/windows/mod.rs` 的 `is_cmd_program`——须先提升为 `pub(crate)`，**不改沙箱后端行为**）、`os/mod.rs`（`register_shell_tools`）、`runtime/storage.rs`（sink + `SpilledOutput.output_encoding`，sink 已落地）、`runtime/compact`（信封分支）、`runtime/policy.rs`（`readToolOutput` 规则，已落地）、`runtime/gateway`（键与求值顺序，已落地）、`contract/trait.rs`（`sandbox_enforcement`，已落地）、`os/shared/path/resolve.rs`（`resolve_readable`，已落地）；`src-tauri/src/tool_setup.rs`（注册门禁，分支已就位）；结果 `data` 走 `OsToolResultDto` 显式字段映射（**无** `contract:gen`）；前端 i18n 与模式预置 |
 
 > 一句话：把 `shell` 从「一个能跑命令的工具」写成「一份可逐条验收的契约」——身份、输入、审批、执行、输出、失败、文案七个面各有唯一判据，
@@ -32,7 +32,7 @@
 - **不新增命令字符串黑名单**：字符串匹配不是边界，禁止作为拦截依据（I52 §2.3）；
 - **不替代审批**：沙箱不改变 Policy / Gateway 的决策（I52 §2.3 硬规则 1）；
 - **不做交互式会话**：无 PTY、无 stdin 写入、无中途返回，一次调用 = 一次执行；
-- **不做后台任务**：异步执行 / 任务 id / 状态机 / 轮询回收不在 P14，改动面与立项前置见 [I52-Ext](./I52-ext-background-task.md)，边界约束见 [I52 §8](./I52-shell-sandbox-spec.md)；
+- **不做后台任务**：异步执行 / 任务 id / 状态机 / 轮询回收不在 P14，改动面与立项前置见 [I52-Ext](../../store/I52-ext-background-task.md)，边界约束见 [I52 §8](../../store/I52-shell-sandbox-spec.md)；
 - **不做命令级授权归一化**（同一 `argv[0]` 合并键）——S1 候选，见本文 §15 OQ2；
 - **不开放跨会话输出读取**：回读只作用于本会话输出命名空间（§8.7）；
 - **不改 I50 审计词表**：隔离强度走工具结果与审批卡，不进 `AuditOutcome`（§10）；
@@ -42,10 +42,10 @@
 
 | 主题 | 唯一来源 |
 |---|---|
-| 术语、两根轴（检测层 / 虚拟化层）、三层职责（Policy / 审批 / 沙箱） | [I52 §2](./I52-shell-sandbox-spec.md) |
+| 术语、两根轴（检测层 / 虚拟化层）、三层职责（Policy / 审批 / 沙箱） | [I52 §2](../../store/I52-shell-sandbox-spec.md) |
 | 沙箱后端抽象、`SandboxPlan` 推导、链式探测、`enforcement` 判据、三平台实现、`kill_tree` 语义 | I53（已归档）；本文只消费结论 |
 | `shell` 工具的身份、输入、审批、执行、输出、失败与文案 | **本文** |
-| 阶段级验收（A1–A5）、阶段分批（C1–C8）与任务进度 | [I52](./I52-shell-sandbox-spec.md) §10 / §11、[I52 tasklist](./I52-shell-sandbox-tasklist.md) |
+| 阶段级验收（A1–A5）、阶段分批（C1–C8）与任务进度 | [I52](../../store/I52-shell-sandbox-spec.md) §10 / §11、[I52 tasklist](../../store/I52-shell-sandbox-tasklist.md) |
 
 ---
 
@@ -283,7 +283,7 @@ grant_store.is_granted(key)
 | 命令类别 | `CommandClass`（§5.2，纯函数） | P10-b 的**唯一**输入事实；顾问不得自行再判命令语义 |
 | 内核隔离 | `enforcement`（沙箱侧推导） | 关闭 I18 design §3.17.6 的 `Adjudicate` 门禁 1 |
 
-边界：P10-b 的放宽条件由 [I38g](./I38g-agent-approval-advisor-spec.md) 规定，本文**不写**放宽逻辑，只保证「`readOnly` + `full` 可被顾问识别」，且至少要求 `full` 才具备放宽资格（`partial` 不放宽）。`Adjudicate` 不因本阶段完成而开工（门禁 2 未关）。
+边界：P10-b 的放宽条件由 [I38g](../../store/I38g-agent-approval-advisor-spec.md) 规定，本文**不写**放宽逻辑，只保证「`readOnly` + `full` 可被顾问识别」，且至少要求 `full` 才具备放宽资格（`partial` 不放宽）。`Adjudicate` 不因本阶段完成而开工（门禁 2 未关）。
 
 ---
 
@@ -589,7 +589,7 @@ pub trait ToolResultSink: Send {
 
 第 3 步必须先于第 4 步：若输出域与工作区意外重叠（配置失误），路径必须走**更严**的 `ToolOutput` 分支。`read` 的三个调用点（`validate_input` / `permission_intents` / `execute`）必须一起换，少换一处就出现「校验按 A 口径、意图按 B 口径、IO 按 C 口径」。
 
-`tool_output_root` 是运行时字段（`#[serde(skip)]`），**由落盘存储自身派生**（`namespace_root`），不在第二处重算路径。子代理链路（[I38f](./I38f-agent-subagent-spec.md)）的存储根是 `tool-results/subagents/<slug>/`，因此子 turn 的输出可被自己回读、父会话读不到——回读域**跟着存储走**，而不是跟着硬编码根走。
+`tool_output_root` 是运行时字段（`#[serde(skip)]`），**由落盘存储自身派生**（`namespace_root`），不在第二处重算路径。子代理链路（[I38f](../../store/I38f-agent-subagent-spec.md)）的存储根是 `tool-results/subagents/<slug>/`，因此子 turn 的输出可被自己回读、父会话读不到——回读域**跟着存储走**，而不是跟着硬编码根走。
 
 **（2）意图**：`read` 按 `scope` 分流——`Workspace` → `read`（不变），`ToolOutput` → `readToolOutput`，`resource` 取**本会话输出命名空间目录**而非具体文件（一次授权覆盖本会话全部输出；跨会话仍由路径判定拒绝——隔离靠路径，不靠审批兜）。
 
@@ -791,7 +791,7 @@ pub fn is_sandbox_denied(
 
 ## 14 与批次的关系
 
-批次定义（C1–C8）与任务勾选**只在** [I52 §6](./I52-shell-sandbox-spec.md) 与 [I52 tasklist](./I52-shell-sandbox-tasklist.md) 维护，本文不另立批次表。映射：
+批次定义（C1–C8）与任务勾选**只在** [I52 §6](../../store/I52-shell-sandbox-spec.md) 与 [I52 tasklist](../../store/I52-shell-sandbox-tasklist.md) 维护，本文不另立批次表。映射：
 
 | 批次 | 本文对应章节 |
 |---|---|
@@ -833,12 +833,12 @@ pub fn is_sandbox_denied(
 
 ### 16.1 本仓文档
 
-- [I52](./I52-shell-sandbox-spec.md)：阶段定义、术语分层与三层职责（本文引用不复述）；
+- [I52](../../store/I52-shell-sandbox-spec.md)：阶段定义、术语分层与三层职责（本文引用不复述）；
 - I53（已归档）：沙箱后端抽象、三平台实现、探测收口与 `kill_tree` 语义；
-- [OSCALLDESIGN](../designed/OSCALLDESIGN.md)：Shell 洋葱模型（SafetyBelt / 结构守卫 / 环境隔离 / 命令分类），[I52 §2.3](./I52-shell-sandbox-spec.md) 与本文 §7.4 与其边界划分一致；
-- [agent-sandbox-reference-analysis](./agent-sandbox-reference-analysis.md)：Codex / OpenHuman / DSH 的**沙箱后端**实现细节（后端抽象、平台选择、升级阶梯、`kill_tree`）；**shell 种类选择与方言契约**的事实只在 §16.2 与 §16.4 维护，两处不互相复述；
-- [I38g](./I38g-agent-approval-advisor-spec.md)：P10 单向顾问与失败矩阵；
-- [I38f](./I38f-agent-subagent-spec.md)：子代理输出域；
+- [OSCALLDESIGN](../../designed/OSCALLDESIGN.md)：Shell 洋葱模型（SafetyBelt / 结构守卫 / 环境隔离 / 命令分类），[I52 §2.3](../../store/I52-shell-sandbox-spec.md) 与本文 §7.4 与其边界划分一致；
+- [agent-sandbox-reference-analysis](../../store/agent-sandbox-reference-analysis.md)：Codex / OpenHuman / DSH 的**沙箱后端**实现细节（后端抽象、平台选择、升级阶梯、`kill_tree`）；**shell 种类选择与方言契约**的事实只在 §16.2 与 §16.4 维护，两处不互相复述；
+- [I38g](../../store/I38g-agent-approval-advisor-spec.md)：P10 单向顾问与失败矩阵；
+- [I38f](../../store/I38f-agent-subagent-spec.md)：子代理输出域；
 - I50（已归档）：审计词表（本文不改）。
 
 ### 16.2 参考实现的事实
@@ -869,18 +869,18 @@ pub fn is_sandbox_denied(
 | 分歧点 | 各家做法 | 本规格 | 理由 |
 |---|---|---|---|
 | 默认超时 | 10 s（Codex）/ 120 s（DSH）/ 无默认（OpenHuman） | **120 s，上限 1800 s** | 本仓是 Rust 工作区，10 s 会让常规构建必然超时；无默认则挂死无兜底。上限放宽到 30 min 只改单次占用，不改并发（§15 R8） |
-| 前台超时之后 | 转后台继续跑（DSH `promoteOnTimeout`）/ 杀进程组（Codex）/ 仅 timeout（OpenHuman） | **杀树 + 保留已写输出** | P14 无后台任务（§1.2）：转后台要求把进程归属从调用栈上移，属 P9（[I52-Ext](./I52-ext-background-task.md)）；保留输出让超时退化为「有现场可查」 |
+| 前台超时之后 | 转后台继续跑（DSH `promoteOnTimeout`）/ 杀进程组（Codex）/ 仅 timeout（OpenHuman） | **杀树 + 保留已写输出** | P14 无后台任务（§1.2）：转后台要求把进程归属从调用栈上移，属 P9（[I52-Ext](../../store/I52-ext-background-task.md)）；保留输出让超时退化为「有现场可查」 |
 | 输出策略 | 内存截断：1 MiB 截中间（Codex）/ 64 KB/流 截尾（DSH）/ 1 MiB 截尾（OpenHuman） | **落盘 60 MiB + 2 MiB stderr 保留区 + 尾窗口预览** | 截断会让「日志很大但合法」被判失败；落盘消掉内存放大，stderr 保留区保证错误行不被进度条挤掉（§8.1） |
 | login shell / source profile | Codex 默认 `login = true`（PowerShell 默认加载 profile，另有 shell 快照抓取）；OpenHuman Unix 恒 `bash -lc`；DSH 两者都**不**加载（`bash -c`、`pwsh -NoProfile`） | **不 source、非 login** | 同一命令在不同机器上行为不同，与「命令效果只由沙箱与命令文本决定」冲突；代价由白名单 env 与绝对路径兜底（§7.7） |
 | shell 可执行文件如何解析 | 有序候选 + 存在性探测（三家一致），差别只在候选集与最后兜底：Codex 兜底为裸名，DSH 兜底为裸 `pwsh`，OpenHuman 兜底为 `sh` | **有序候选**：`%SystemRoot%\System32\cmd.exe` → `%COMSPEC%`（校验 basename），全失败即不注册 | 采纳「候选」这一解析方式、不采纳「种类探测」；候选集不含 `PATH` 与工作区（§7.3） |
 | Windows 方言选哪个 | Codex 默认 PowerShell（另留 `shell` 参数可切）；DSH 用 pwsh 并另设 bash 工具；OpenHuman 固定 cmd | **cmd**（带 `/d` 抑制 AutoRun） | 重定向字节透明、系统自带且路径确定；pwsh 的 profile / 编码 / 引号规则都更重，另立工具列为 S1（§7.7） |
 | 环境变量来源 | 继承 + 排除（Codex/DSH）/ `env_clear` + 白名单（OpenHuman） | **白名单 + 强制注入** | 继承会把 `*TOKEN*` 一类凭据带进子进程；白名单的漏项按「如实报错 + 模型纠错」处理（§15 R4） |
 | 审批升级通道 | Codex `sandbox_permissions` 三值 + `prefix_rule`；DSH `WIDER_MODES` + escalation 提示行 | **不提供**：三档是探测结论，不是可申请档位 | 没有更宽档位可升；因此 §8.5 只给拒绝标记、不给 escalation hint（否则模型会反复尝试不可能的升级） |
-| 后台任务原语 | session + `write_stdin`（Codex）/ job registry（DSH） | **不做**，登记 P9 | 见 §1.2 与 [I52 §8](./I52-shell-sandbox-spec.md)：判据是「进程归属由谁持有」，不是加参数 |
+| 后台任务原语 | session + `write_stdin`（Codex）/ job registry（DSH） | **不做**，登记 P9 | 见 §1.2 与 [I52 §8](../../store/I52-shell-sandbox-spec.md)：判据是「进程归属由谁持有」，不是加参数 |
 
 ### 16.4 shell 选择与方言：逐家展开
 
-§16.2 的 `shell-selection` / `shell-resolution` / `shell-dialect` / `login-profile` 四行压缩过度，本节展开，回答三个问题：**它们为什么这样选**、**Windows 端具体怎么落地**、**哪些做法本文不采纳**。沙箱后端的事实见 [agent-sandbox-reference-analysis](./agent-sandbox-reference-analysis.md)，此处不重复。
+§16.2 的 `shell-selection` / `shell-resolution` / `shell-dialect` / `login-profile` 四行压缩过度，本节展开，回答三个问题：**它们为什么这样选**、**Windows 端具体怎么落地**、**哪些做法本文不采纳**。沙箱后端的事实见 [agent-sandbox-reference-analysis](../../store/agent-sandbox-reference-analysis.md)，此处不重复。
 
 #### 16.4.1 DSH：平台整组换包，没有运行时种类探测
 

@@ -5,8 +5,8 @@
 | 状态 | 已决策（A：补正式入口）｜前端已实施，运行验收待真实端点 |
 | 日期 | 2026-11-17 |
 | 来源 | I9-provider-multi-api-spec.md（已归档）Phase 7 交付项的运行可达性复核 |
-| 关联 | code-structure-followups.md（已归档）（F1-b）、[crate-architecture.md](./crate-architecture.md) |
-| 判据 | [CODE-SPLIT-PRINCIPLE.md](../principle/CODE-SPLIT-PRINCIPLE.md)（结构整理不改语义） |
+| 关联 | code-structure-followups.md（已归档）（F1-b）、[crate-architecture.md](../../store/crate-architecture.md) |
+| 判据 | [CODE-SPLIT-PRINCIPLE.md](../../principle/CODE-SPLIT-PRINCIPLE.md)（结构整理不改语义） |
 
 ---
 
@@ -88,7 +88,7 @@ A 落地后：自定义 Provider 的 type 默认取所选 format 的 `customType
 | **B. 保留现状并记录事实** | 不改代码，把「无正式入口 / 仅自定义手输可达」写入本文与 F1-b 条目 | 无 | 极小 | 继续背一段无人验证的代码；`responses_stream` 无 fixture |
 | **C. 移除** | 删枚举变体 + `responses_stream.rs` + `responses_types.rs` + 全部能力声明分支 | **功能删除** | 中（含存量数据迁移） | 已有 `type = "openairesponses"` 的行会落到 `Custom` 分支，需迁移或明确降级 |
 
-**三选一的判据**：按 [CODE-SPLIT-PRINCIPLE.md](../principle/CODE-SPLIT-PRINCIPLE.md)「结构整理只改结构、不改语义」，A 与 C 都不是代码拆分任务，不能混入 F1-b 的提交里。
+**三选一的判据**：按 [CODE-SPLIT-PRINCIPLE.md](../../principle/CODE-SPLIT-PRINCIPLE.md)「结构整理只改结构、不改语义」，A 与 C 都不是代码拆分任务，不能混入 F1-b 的提交里。
 
 ---
 

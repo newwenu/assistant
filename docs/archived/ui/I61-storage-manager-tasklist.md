@@ -1,12 +1,12 @@
 # I61 — 存储管理器 任务清单
 
 > 规格：[I61-storage-manager-spec.md](./I61-storage-manager-spec.md)（**唯一事实基线**，判据 / 词表 / 白名单 / 门禁全部以它为准；本清单只拆解「改哪里、验收跑什么」，不重述规格语义）
-> 事实基线：I61 §2 的 N1–N18；分析：[STORAGE-MONITOR-ANALYSIS.md](../analysis/STORAGE-MONITOR-ANALYSIS.md)
-> 关联：[I54-resource-monitor-spec.md](./I54-resource-monitor-spec.md) §3（资源监视器页面壳，存储 tab 的挂载容器）
+> 事实基线：I61 §2 的 N1–N18；分析：[STORAGE-MONITOR-ANALYSIS.md](../../analysis/STORAGE-MONITOR-ANALYSIS.md)
+> 关联：[I54-resource-monitor-spec.md](../../store/I54-resource-monitor-spec.md) §3（资源监视器页面壳，存储 tab 的挂载容器）
 
 切片对应规格章节：T1 观测补全（§3.1–§3.2 / §3.9 / §3.10 / §3.11 / §6.2 / §7.1）→ T2 骨架 + 低风险回收（§5.1–§5.4 / §6.1 / §3.3 白名单）→ T3 中风险回收（§3.10 接口形状 / §5.5 / §3.6）→ T4 前端与收尾（[前端设计文档](./I61-storage-manager-frontend.md) / §10 / §12；规格 §6.3 已整体划出作废）。
 
-> **条目计数口径**：本清单记录的「core 8 条」「13 条 / 8 行」均为 T1–T4 实施期口径。T5 / T6（[I67](./../store/I67-storage-inventory-totals-spec.md) §13）登记 `E14`–`E18` 后，core 条目为 **13 条**，`entries` 合计为 `vault` 构建 18 条 / `vaultless` 构建 13 条；下文的历史计数按当时事实保留，现行口径以 I61 §3.1 与 I67 §13 为准。
+> **条目计数口径**：本清单记录的「core 8 条」「13 条 / 8 行」均为 T1–T4 实施期口径。T5 / T6（[I67](../../store/I67-storage-inventory-totals-spec.md) §13）登记 `E14`–`E18` 后，core 条目为 **13 条**，`entries` 合计为 `vault` 构建 18 条 / `vaultless` 构建 13 条；下文的历史计数按当时事实保留，现行口径以 I61 §3.1 与 I67 §13 为准。
 
 **可选功能分区自管理**（§3.1.1 / §3.10「可选功能分区自注册」/ §3.8 G16–G19 / §3.11.1 登记纪律 2–6 / V21–V24）是 T1 之后的装配层修订，任务落在 **T1-g 修订**，替换 T1-c 与 T1-c 修订的旧实现；该修订未完成前，T4 不得按「未挂载补占位行」实现。
 
@@ -21,8 +21,8 @@
 | T2 骨架 + 低风险回收 | 完成 2026-11-20 | — |
 | T3 中风险回收 | 完成 2026-11-20（`E8` 形态已按 T1-g 改写） | — |
 | T4 前端与收尾 | 主体完成（`R-19`–`R-36` 已落地）；`R-37` 附件明细区手动回归待做 | — |
-| T5 登记 `EBWebView`（`E14`） | 完成（[I67](./../store/I67-storage-inventory-totals-spec.md) §13） | — |
-| T6 登记四个配置文件（`E15`–`E18`） | 完成（[I67](./../store/I67-storage-inventory-totals-spec.md) §13） | — |
+| T5 登记 `EBWebView`（`E14`） | 完成（[I67](../../store/I67-storage-inventory-totals-spec.md) §13） | — |
+| T6 登记四个配置文件（`E15`–`E18`） | 完成（[I67](../../store/I67-storage-inventory-totals-spec.md) §13） | — |
 
 > 本清单不管理提交。提交粒度按代码依赖与可编译性现场决定；这里只回答「代码改没改、验收跑没跑」。
 > 勾选表示代码已改且对应验收已跑。

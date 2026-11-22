@@ -1,8 +1,8 @@
 # I65 — 错误吞没整改 任务清单
 
 > 规格：[I65-error-swallowing-remediation-spec.md](./I65-error-swallowing-remediation-spec.md)（**唯一事实基线**；四口径判定 / D1–D7 决议 / V1–V7 验收 / G1–G4 门禁 / X1–X6 拒绝方案全部以它为准，本清单只拆「改哪里、怎么改、跑什么验收」，不重述语义）
-> 事实基线：规格 §3 的 N1–N28；分析：`error-swallowing-analysis.md`（已移至 `docs/achievement/`，待归档）
-> 关联：`I64-storage-vault-integration-audit-spec.md`（已移至 `docs/achievement/`，待归档）；其 OQ-2 由该规格处理，**不在本清单范围**
+> 事实基线：规格 §3 的 N1–N28；分析：`error-swallowing-analysis.md`（已归档）
+> 关联：`I64-storage-vault-integration-audit-spec.md`（已归档）；其 OQ-2 由该规格处理，**不在本清单范围**
 
 切片对应规格条目：**S0** 规格基线对齐（文档-only）→ **S1** 存量收口（T3 / T10）→ **S2** 门禁落地（G1 / G2）→ **S3** 可感知（T5 / T4 / T9）→ **S4** Rust 与后台（T6 / T7 / T8 / T8b / T11）→ **S5** P0 与契约（T1 / T1b / T1c / T2）→ **S6** 可选（T12）。
 
@@ -33,8 +33,8 @@
 
 ### S0-a 失效引用路径
 
-- [x] `docs/store/I65-error-swallowing-remediation-spec.md` 头部「事实来源」：`docs/analysis/error-swallowing-analysis.md` → 现实际位于 `docs/achievement/error-swallowing-analysis.md`（待归档目录）
-- [x] 同文件头部「相邻规格」：`docs/store/I64-storage-vault-integration-audit-spec.md` → `docs/achievement/I64-storage-vault-integration-audit-spec.md`
+- [x] `docs/store/I65-error-swallowing-remediation-spec.md` 头部「事实来源」：`docs/analysis/error-swallowing-analysis.md` → 现实际位于 `error-swallowing-analysis.md`（已归档）
+- [x] 同文件头部「相邻规格」：`docs/store/I64-storage-vault-integration-audit-spec.md` → `I64-storage-vault-integration-audit-spec.md`（已归档）
 - [x] 规格正文内对分析文档章节的引用（§1.2 / §1.3 / §1.4）随路径同步；归档完成后按项目文档规范改为「文档名 +（已归档）」的写法，不再带路径
 
 ### S0-b §3 行号漂移修正
@@ -360,7 +360,7 @@
 | 编号 | 内容 | 状态 | 影响 |
 |---|---|---|---|
 | OQ-1 | 前端 5 处静默吞没的日志级别（warn vs debug） | 本清单按 S1-a 逐条定级，已在条目内写明 | S1-a |
-| OQ-2 | 审计双通道失败的重试/补录 | 归 I64（已归档为 `docs/achievement/`） | 不影响本清单 |
+| OQ-2 | 审计双通道失败的重试/补录 | 归 I64（已归档） | 不影响本清单 |
 | OQ-3 | 是否新增吞没统计上报通道 | 未决 | S6 / S5-b 计数出口 |
 | OQ-4 | `VaultErrorCode` 新增四码的 wire 兼容性 | 仅新增变体、不改既有值，前端 `ERROR_TEXT_KEYS` 编译期强制补齐 | S5-d |
 | OQ-5 | 门禁白名单范围 | 先最小白名单（FFI + 测试），后续按误报再增 | S2-b |

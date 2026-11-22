@@ -2,16 +2,16 @@
 
 | 项 | 值 |
 |---|---|
-| 状态 | 草稿（观测层规格；存储 tab 已迁出至 [I61](../achievement/I61-storage-manager-spec.md)，本文只保留页面壳与进程 / 自身占用） |
+| 状态 | 草稿（观测层规格；存储 tab 已迁出至 I61（已归档），本文只保留页面壳与进程 / 自身占用） |
 | 日期 | 2026-11-15 |
-| 关联 | [I61 存储管理器规格](../achievement/I61-storage-manager-spec.md)（**存储 tab 的唯一维护方**：13 条资源监视条目 + 回收 + 策略）、[STORAGE-MONITOR-ANALYSIS](./../analysis/STORAGE-MONITOR-ANALYSIS.md)（存储观测机制的唯一事实基线，其结论现由 I61 引用）、[TASK-RESOURCE-MANAGER-ANALYSIS](./../analysis/TASK-RESOURCE-MANAGER-ANALYSIS.md)（进程与自身占用；其 §8 是自监控的唯一来源）、I44 应用目录管理规格（已归档）（目录归属与字面量门禁）、I53（已归档）（沙箱准备；进程树回收的判据来源）、feature-mount-traversal-spec（已归档）（可选能力挂载边界）、[CODE-SPLIT-PRINCIPLE](./../principle/CODE-SPLIT-PRINCIPLE.md)（拆分原则唯一来源，本文只引用不复述）。参考实现：Chromium（浏览器内核参考项目，按需稀疏检出、不在仓内；本文取其任务管理器与进程度量两处形态），本文中标注「参考实现」的形态判断均出自该处 |
-| 影响范围 | 前端：`src/settings/pages/StorageSettings.tsx`（改造为容器）、`src/settings/core/builtinRegistry.ts`（页面 label 与 keywords）、`src/services/storageService.ts`、i18n 两份 locale、`src/settings/__tests__/fixtures/*.json`（golden 投影）。后端：新增 `src-tauri/src/cmd/resource.rs`（能力声明与两条转发）、`src-tauri/src/ipc.rs`（命令注册）、新增 `src-tauri/crates/assistant-resource-probe/`（进程内采样缝，不依赖 `dirs`）、新增 `src-tauri/src/bin/resource_report.rs`（进程外诊断二进制，不进 bundle）。**存储 tab 的后端落点（`cmd/storage.rs`、`protocol/dto/storage.rs`、各 owner 的 stats / 回收方法）归 [I61](../achievement/I61-storage-manager-spec.md) §12 的迁移清单，本文不再维护**。进程与自身占用**本期交付树级数字与当前值，不交付任务级归因**（§5.4） |
+| 关联 | I61 存储管理器规格（已归档）（**存储 tab 的唯一维护方**：13 条资源监视条目 + 回收 + 策略）、[STORAGE-MONITOR-ANALYSIS](./../analysis/STORAGE-MONITOR-ANALYSIS.md)（存储观测机制的唯一事实基线，其结论现由 I61 引用）、[TASK-RESOURCE-MANAGER-ANALYSIS](./../analysis/TASK-RESOURCE-MANAGER-ANALYSIS.md)（进程与自身占用；其 §8 是自监控的唯一来源）、I44 应用目录管理规格（已归档）（目录归属与字面量门禁）、I53（已归档）（沙箱准备；进程树回收的判据来源）、feature-mount-traversal-spec（已归档）（可选能力挂载边界）、[CODE-SPLIT-PRINCIPLE](./../principle/CODE-SPLIT-PRINCIPLE.md)（拆分原则唯一来源，本文只引用不复述）。参考实现：Chromium（浏览器内核参考项目，按需稀疏检出、不在仓内；本文取其任务管理器与进程度量两处形态），本文中标注「参考实现」的形态判断均出自该处 |
+| 影响范围 | 前端：`src/settings/pages/StorageSettings.tsx`（改造为容器）、`src/settings/core/builtinRegistry.ts`（页面 label 与 keywords）、`src/services/storageService.ts`、i18n 两份 locale、`src/settings/__tests__/fixtures/*.json`（golden 投影）。后端：新增 `src-tauri/src/cmd/resource.rs`（能力声明与两条转发）、`src-tauri/src/ipc.rs`（命令注册）、新增 `src-tauri/crates/assistant-resource-probe/`（进程内采样缝，不依赖 `dirs`）、新增 `src-tauri/src/bin/resource_report.rs`（进程外诊断二进制，不进 bundle）。**存储 tab 的后端落点（`cmd/storage.rs`、`protocol/dto/storage.rs`、各 owner 的 stats / 回收方法）归 I61（已归档） §12 的迁移清单，本文不再维护**。进程与自身占用**本期交付树级数字与当前值，不交付任务级归因**（§5.4） |
 
-> 一句话：本规格把现有「存储管理」设置页升级为**资源监视器**，升级的不是能力而是**结构**——页面壳内三个 tab，存储 tab 的条目与回收由 [I61](../achievement/I61-storage-manager-spec.md) 供数，进程与自身占用 tab 走「**一个进程内采样缝、一个根、一棵子树、两种投影**」；任何 tab 都不许用 `0` 冒充「读不到」，也不许把不同单位的数相加成一个「总占用」，更不许把不可加的量求和当作总量。
+> 一句话：本规格把现有「存储管理」设置页升级为**资源监视器**，升级的不是能力而是**结构**——页面壳内三个 tab，存储 tab 的条目与回收由 I61（已归档） 供数，进程与自身占用 tab 走「**一个进程内采样缝、一个根、一棵子树、两种投影**」；任何 tab 都不许用 `0` 冒充「读不到」，也不许把不同单位的数相加成一个「总占用」，更不许把不可加的量求和当作总量。
 
 本文中的「必须 / 禁止」为可验收约束；「应当」为默认做法，偏离需在代码注释里写明理由。
 
-**编号约定**：`P1–P5` 是受管进程侧方向，`S1–S4` 是自身占用侧方向，`N1–N16` 是现状事实编号。`D1–D6` 是**存储侧观测方向**，已随存储 tab 迁出至 [I61](../achievement/I61-storage-manager-spec.md)（§3–§4），本文保留编号不复用，仅为跨文档引用留锚点。方向编号与 [STORAGE-MONITOR-ANALYSIS](./../analysis/STORAGE-MONITOR-ANALYSIS.md) §4 / §7 对齐，不另立一套。
+**编号约定**：`P1–P5` 是受管进程侧方向，`S1–S4` 是自身占用侧方向，`N1–N16` 是现状事实编号。`D1–D6` 是**存储侧观测方向**，已随存储 tab 迁出至 I61（已归档）（§3–§4），本文保留编号不复用，仅为跨文档引用留锚点。方向编号与 [STORAGE-MONITOR-ANALYSIS](./../analysis/STORAGE-MONITOR-ANALYSIS.md) §4 / §7 对齐，不另立一套。
 
 ---
 
@@ -38,13 +38,13 @@
 | N15 | `assistant_crash::install` 在 `assistant_app::run()` **之前**、同一进程内调用；`install_crash_handler` 的回调在异常处理上下文内做 `fs::write` 与 minidump 写入 | `src-tauri/src/main.rs`、`crash_dump.rs` |
 | N16 | 仓库已有「独立二进制但不进 Tauri bundle」的先例：`dev_mcp_server` 以显式 `[[bin]]` 声明，注释写明「仅测试用，不进 Tauri bundle」 | `src-tauri/Cargo.toml` |
 
-**存储域事实已迁出**：`N2` / `N3` / `N4` / `N5` / `N6` / `N7` 只服务存储 tab，现由 [I61](../achievement/I61-storage-manager-spec.md) §2 以 `N1–N14` 维护（含 `indexes/` 这第 7 个 `AppDirs` 入口，本表 N6 的「6 个入口」已过时）。本表保留原编号不复用，仅为跨文档引用留锚点；**禁止**据本表推导存储结论，存储结论只以 I61 §2 为准。
+**存储域事实已迁出**：`N2` / `N3` / `N4` / `N5` / `N6` / `N7` 只服务存储 tab，现由 I61（已归档） §2 以 `N1–N14` 维护（含 `indexes/` 这第 7 个 `AppDirs` 入口，本表 N6 的「6 个入口」已过时）。本表保留原编号不复用，仅为跨文档引用留锚点；**禁止**据本表推导存储结论，存储结论只以 I61 §2 为准。
 
 ### 1.2 目标
 
 1. 把设置页从「附件清理」升级为**多 tab 资源监视器**，页面身份从「存储管理」改为「资源监视器」；
-2. 三个 tab 各自由**自己的取数缝**供数：存储 tab 由 [I61](../achievement/I61-storage-manager-spec.md) 的条目快照供数，进程 tab 与自身占用 tab 共用**同一个进程内采样缝**（根 = 自身 PID，一次全系统快照推导出整棵子树，§2.3）并投影成两种视图（§6.2）；三者不共用回收语义、不共用停止语义；
-3. 存储 tab 在 v1 交付 D1–D4 四个方向（体量 / 时间 / 分层归属 / 可用性状态）——**已迁出**，现由 [I61](../achievement/I61-storage-manager-spec.md) §3 交付条目清单（core 12 条 + 可选功能分区自述条目）并追加 D5 资格 / D6 策略；
+2. 三个 tab 各自由**自己的取数缝**供数：存储 tab 由 I61（已归档） 的条目快照供数，进程 tab 与自身占用 tab 共用**同一个进程内采样缝**（根 = 自身 PID，一次全系统快照推导出整棵子树，§2.3）并投影成两种视图（§6.2）；三者不共用回收语义、不共用停止语义；
+3. 存储 tab 在 v1 交付 D1–D4 四个方向（体量 / 时间 / 分层归属 / 可用性状态）——**已迁出**，现由 I61（已归档） §3 交付条目清单（core 12 条 + 可选功能分区自述条目）并追加 D5 资格 / D6 策略；
 4. 进程 tab 与自身占用 tab 在 v1 交付**采样缝 + 树级数字 + 口径定案**，数字只到「树级、无任务归因」的粒度（§5.4、§6.6）；
 5. 任何数字必须携带「来源 owner 或采样器、口径、采样时刻、可用性状态」四件套；
 6. 任何读不到的对象显示**状态与原因**，禁止显示 `0`。
@@ -52,13 +52,13 @@
 ### 1.3 非目标
 
 - **不做跨 tab 汇总**：磁盘字节与内存字节不是同一维度，相加无意义（§3.4）；
-- **不做存储侧的回收、资格（D5）与策略（D6）**：已迁出至 [I61](../achievement/I61-storage-manager-spec.md) §3.3–§3.6，本文不重复定义，也不得在进程 / 自身占用侧自行引入删除入口；
+- **不做存储侧的回收、资格（D5）与策略（D6）**：已迁出至 I61（已归档） §3.3–§3.6，本文不重复定义，也不得在进程 / 自身占用侧自行引入删除入口；
 - 不做进程登记表、不做任务级归因（§5.2）；
 - 不做「峰值」的自采样实现：峰值只能由外部留痕（§6.5 约束 2）；
 - **不新建承载「存储观测」的 crate**：存储侧必须放应用层，因为它需要 `AppDirs` 与各 owner 的 stats（同 [STORAGE-MONITOR-ANALYSIS](./../analysis/STORAGE-MONITOR-ANALYSIS.md) §10 第 1 条；该结论现由 I61 承接）；
 - **允许新建承载「自身与子树采样」的 crate**：它只依赖 OS API、不读 `dirs`、路径与根 PID 由调用方注入（§6.4）；这条豁免的边界是「不得引用应用层任何模块」，越界即退回上一条；
 - 不自持目录清单：路径只从 `AppDirs` 与可选能力模块的 getter 来；
-- 不改存储侧既有 wire 语义：`get_storage_breakdown` 的字段扩展与账本闭合归 [I61](../achievement/I61-storage-manager-spec.md) §6，本文只规定「扩展不重定义旧字段」这一条通用约束。
+- 不改存储侧既有 wire 语义：`get_storage_breakdown` 的字段扩展与账本闭合归 I61（已归档） §6，本文只规定「扩展不重定义旧字段」这一条通用约束。
 
 ---
 
@@ -74,13 +74,13 @@
 
 这条分工对应 I44（已归档）的两条门禁：目录字面量只允许命中 `app_dirs::dir_name` 与可选能力模块；`dirs::` 只允许出现在 `app_dirs` 与 `assistant-config`。一旦自己 `read_dir` + `join`，两条门禁同时失效。
 
-**身份表在本文的适用范围**：三身份描述的是**存储侧**的分工，其完整落地（含「回收只能请求 owner」的 13 条条目 × 动作矩阵）见 [I61](../achievement/I61-storage-manager-spec.md) §1 与 §4。本文的进程 / 自身占用 tab 只有**观测者**一种身份，没有所有者也没有回收者——采样器不写任何受管目录（§6.5 约束 1）。
+**身份表在本文的适用范围**：三身份描述的是**存储侧**的分工，其完整落地（含「回收只能请求 owner」的 13 条条目 × 动作矩阵）见 I61（已归档） §1 与 §4。本文的进程 / 自身占用 tab 只有**观测者**一种身份，没有所有者也没有回收者——采样器不写任何受管目录（§6.5 约束 1）。
 
 ### 2.2 行与列：对象 ≠ 方向
 
 这是本规格最容易混淆的一处，必须先分清，否则「几个监视方向」会算错：
 
-- **观测对象**是**行**：存储侧共 13 行，清单见 [I61](../achievement/I61-storage-manager-spec.md) §3.1；
+- **观测对象**是**行**：存储侧共 13 行，清单见 I61（已归档） §3.1；
 - **观测方向**是**列**：体量、时间、归属、状态、资格、策略，共 6 列（D1–D6，字段见 I61 §3.2，资格与策略见 I61 §3.4–§3.5）；
 - 一个「tab」是**一组行 + 一组合法列**，不是一根方向轴。
 
@@ -90,7 +90,7 @@
 
 | 缝 | 观测对象 | 数据源 | 失败模式 |
 |---|---|---|---|
-| **缝 A：owner 报数** | 有稳定路径的目录 / 文件（**条目清单与失败降级由 [I61](../achievement/I61-storage-manager-spec.md) §3、§7 维护**） | 文件系统 + 各 owner 的 stats | 单项不可读 → 该行标状态，整账仍返回 |
+| **缝 A：owner 报数** | 有稳定路径的目录 / 文件（**条目清单与失败降级由 I61（已归档） §3、§7 维护**） | 文件系统 + 各 owner 的 stats | 单项不可读 → 该行标状态，整账仍返回 |
 | **缝 B：进程内子树采样** | 自身进程 + 由父子链推导出的全部后代 | OS 的**一次全系统进程快照**（按 `root = 自身 PID` 在内存里过滤出子树） | 采样器与被观测者同生共死；PID 复用会误归属 |
 
 缝 B 只有**一个采样器、一个根、一次遍历**，输出**两种投影**：
@@ -120,7 +120,7 @@
 
 ### 2.4 可用性状态词表（封闭）
 
-本表是**跨 tab 唯一出处**：存储 tab 的条目可用性（[I61](../achievement/I61-storage-manager-spec.md) §3.2）与本文进程 / 自身占用 tab 共用同一词表，不得各立一套。
+本表是**跨 tab 唯一出处**：存储 tab 的条目可用性（I61（已归档） §3.2）与本文进程 / 自身占用 tab 共用同一词表，不得各立一套。
 
 | 状态 | 含义 | 典型来源 |
 |---|---|---|
@@ -149,7 +149,7 @@
 
 | tab | 取数缝 | v1 交付 | 不可用时的显示 |
 |---|---|---|---|
-| **存储** | 缝 A（owner 报数；**条目与回收由 [I61](../achievement/I61-storage-manager-spec.md) 维护**） | **数字**（13 条资源监视条目 × D1–D6，见 I61 §3） | —（条目级降级，不按 tab 降级；见 I61 §7.1） |
+| **存储** | 缝 A（owner 报数；**条目与回收由 I61（已归档） 维护**） | **数字**（13 条资源监视条目 × D1–D6，见 I61 §3） | —（条目级降级，不按 tab 降级；见 I61 §7.1） |
 | **进程** | 缝 B 投影 B | **树级数字**（存在 / CPU / 内存 / `exeName`），**无任务归因、无角色列**；内存列名必须带口径（§6.3.2 约束 3） | `notImplemented` + 原因（平台方案未定案，§10 第 8 项） |
 | **自身占用** | 缝 B 投影 A + 外部报告 | **当前值**（宿主 + WebView）**+ 峰值区为报告阅读器** | 当前值 `notImplemented`；峰值区 `noReportYet` / `staleReport`（§6.6） |
 
@@ -191,7 +191,7 @@
 
 ## 4 存储 tab（已迁出）
 
-本节原定义 12 行观测表、D1–D4 四个方向、三个写死口径与账本闭合。**全部迁出至 [I61 存储管理器规格](../achievement/I61-storage-manager-spec.md)**：存储侧从「只观测」升级为「观测 + 回收 + 策略治理」，需要一份独立的管理器规格承载；若继续留在本文，就会出现两套 `StorageEntryDto` 与两条删除路径。
+本节原定义 12 行观测表、D1–D4 四个方向、三个写死口径与账本闭合。**全部迁出至 I61 存储管理器规格（已归档）**：存储侧从「只观测」升级为「观测 + 回收 + 策略治理」，需要一份独立的管理器规格承载；若继续留在本文，就会出现两套 `StorageEntryDto` 与两条删除路径。
 
 | 原内容 | 现落点 |
 |---|---|
@@ -342,7 +342,7 @@ v1 的进程 tab 交付**树级数字、无任务归因**：
 | 提交量 / commit | 可加 | 含未驻留部分，不是「占了多少内存条」 |
 | 虚拟内存 | 可加（但对「占多少内存」无意义） | 禁止作展示口径 |
 
-**约束（与存储侧账本闭合同构，见 [I61](../achievement/I61-storage-manager-spec.md) §3.7）**：
+**约束（与存储侧账本闭合同构，见 I61（已归档） §3.7）**：
 
 1. **可加性是「按指标」的属性，不是「按视图」的属性**：同一个视图里可以同时有可加的指标（CPU 百分比）与不可加的指标（工作集）。因此 DTO 里该标志挂在**指标**上（`memoryAdditive`），不挂在 tab 或行上（§8.2）；
 2. 若展示内存合计，**必须**用私有工作集；若用工作集，**禁止**把子项求和当作总量，只能标注「各进程工作集之和（含共享页重复计数）」；
@@ -440,7 +440,7 @@ v1 的自身占用 tab 由两块组成，**两块的数据性质不同，必须�
 
 ## 7 反模式
 
-**存储侧反模式已迁出**：自行 `read_dir` 求和、自行 `remove_*`、自拼基根或目录名、把 `config.json` / 工作区根 / 系统 temp 纳入观测、用 `to_string_lossy` 拼比较键、缺失时间回退到当前时刻、自读配置当判据、为凑表自建目录清单——这些现在由 [I61](../achievement/I61-storage-manager-spec.md) §3.8 的门禁 `G1–G12` 逐条约束。**本文不重复定义**（两处措辞必然漂移），只允许引用门禁编号。
+**存储侧反模式已迁出**：自行 `read_dir` 求和、自行 `remove_*`、自拼基根或目录名、把 `config.json` / 工作区根 / 系统 temp 纳入观测、用 `to_string_lossy` 拼比较键、缺失时间回退到当前时刻、自读配置当判据、为凑表自建目录清单——这些现在由 I61（已归档） §3.8 的门禁 `G1–G12` 逐条约束。**本文不重复定义**（两处措辞必然漂移），只允许引用门禁编号。
 
 下表只保留**跨 tab 通用**与**进程 / 自身占用专属**的反模式：
 
@@ -476,7 +476,7 @@ v1 的自身占用 tab 由两块组成，**两块的数据性质不同，必须�
 | `get_process_snapshot`（新增） | 缝 B 的一次采样结果：`sampledAt` + 整棵子树（两种投影聚合 + 逐进程明细），供进程 tab 与自身占用当前值共用 | `src-tauri/src/cmd/resource.rs` → `assistant-resource-probe` |
 | `get_self_usage_report`（新增） | 只读外部诊断产物（C），返回产物内容 + 产物生成时刻 + `availability` | `src-tauri/src/cmd/resource.rs` |
 
-存储 tab 的命令（`get_storage_breakdown`、`reclaim_storage` 与既有的 `delete_attachments`）**全部归 [I61](../achievement/I61-storage-manager-spec.md) §6.1**，本文不登记、不改其签名。
+存储 tab 的命令（`get_storage_breakdown`、`reclaim_storage` 与既有的 `delete_attachments`）**全部归 I61（已归档） §6.1**，本文不登记、不改其签名。
 
 **为什么能力声明要单独一条命令**：若把能力与数字塞进同一个响应，就必须有一个「跨 tab 聚合响应」，而那正是 §3.4 禁止的东西。分开后，每个 tab 各自取数、各自失败、互不影响——存储 tab 的某个条目读失败不会让进程 tab 显示「不可用」。
 
@@ -492,7 +492,7 @@ v1 的自身占用 tab 由两块组成，**两块的数据性质不同，必须�
 
 ### 8.2 DTO 字段口径
 
-**存储侧 DTO**（`StorageBreakdownDto`、`StorageEntryDto` 与 `reclaim` 视图）**全部归 [I61](../achievement/I61-storage-manager-spec.md) §6.2**，本文不列字段、不改字段。本文只保留一条通用约束：**任何 DTO 的 `Option` 输出字段都不加 `skip_serializing_if`**（键恒在、值 `null`），因为「缺键」与「值为空」在前端是两种完全不同的语义。
+**存储侧 DTO**（`StorageBreakdownDto`、`StorageEntryDto` 与 `reclaim` 视图）**全部归 I61（已归档） §6.2**，本文不列字段、不改字段。本文只保留一条通用约束：**任何 DTO 的 `Option` 输出字段都不加 `skip_serializing_if`**（键恒在、值 `null`），因为「缺键」与「值为空」在前端是两种完全不同的语义。
 
 **能力声明侧**：
 
@@ -560,10 +560,10 @@ v1 的自身占用 tab 由两块组成，**两块的数据性质不同，必须�
 
 | 项 | 变更 |
 |---|---|
-| `StorageSettings.tsx` | 改造为**容器**：内嵌 antd `Tabs`（`activeKey` + 三 tab）。本文只负责容器壳与另两个 tab 的挂载；**存储 tab 的内部结构（条目表、回收按钮、计划确认弹窗）由 [I61 存储管理器前端设计](../achievement/I61-storage-manager-frontend.md) 定义** |
+| `StorageSettings.tsx` | 改造为**容器**：内嵌 antd `Tabs`（`activeKey` + 三 tab）。本文只负责容器壳与另两个 tab 的挂载；**存储 tab 的内部结构（条目表、回收按钮、计划确认弹窗）由 I61 存储管理器前端设计（已归档） 定义** |
 | 进程 tab 组件 | 渲染 `get_process_snapshot` 中 `projection == children` 的明细（PID / 父 PID / `exeName` / CPU / 内存）+ 顶部 `sampledAt` 与 `coverage` / `truncated` 说明；**无停止按钮、无任务名、无角色列** |
 | 自身占用 tab 组件 | **两块分开渲染**：当前值（同一次 `get_process_snapshot` 的 `selfProjection` + `projection == self` 明细）+ 峰值区（`get_self_usage_report`，必须显示 `generatedAt` 与 `attributionNote`）；内存合计仅在 `memoryAdditive == true` 时显示，内存列名必须带口径（§6.3.2 约束 3） |
-| `storageService.ts` | 本文追加 `getResourceCapabilities()` / `getProcessSnapshot()` / `getSelfUsageReport()`；**存储相关调用（`getStorageBreakdown` / `reclaim_storage` / `deleteAttachments`）的封装与返回类型归 I61（[规格](../achievement/I61-storage-manager-spec.md) §6.1 / §6.2、[前端设计](../achievement/I61-storage-manager-frontend.md) §4）**，同一文件内两部分不互相引用 |
+| `storageService.ts` | 本文追加 `getResourceCapabilities()` / `getProcessSnapshot()` / `getSelfUsageReport()`；**存储相关调用（`getStorageBreakdown` / `reclaim_storage` / `deleteAttachments`）的封装与返回类型归 I61（规格（已归档） §6.1 / §6.2、前端设计（已归档） §4）**，同一文件内两部分不互相引用 |
 | i18n | 两份 locale 同步新增 tab 标题、状态文案、原因文案、口径说明；`common.navigation.storage.title` 只改值不改键（§3.3）；存储条目文案归 I61 |
 
 **前端必须按 `memoryAdditive` 分支**，不能无条件显示内存合计：`memoryAdditive == false` 时只显示各进程行，或显示合计但带「含共享页重复计数」标注（§6.3.2）。这条判断不能放在文案里靠人自觉，必须由字段驱动。CPU 合计不受此约束（天然可加），但必须注明「单核百分比之和，可超过 100」（§6.3.3）。
@@ -572,7 +572,7 @@ v1 的自身占用 tab 由两块组成，**两块的数据性质不同，必须�
 
 ## 9 失败模式
 
-**存储侧失败模式（目录不存在 / 不可读 / 安全库未解锁 / 遍历中被删 / 非 UTF-8 名 / owner 无 stats / 自指计数）已迁出**，逐条语义见 [I61](../achievement/I61-storage-manager-spec.md) §7。本文只保留跨 tab 的两条与进程 / 自身占用专属的行。
+**存储侧失败模式（目录不存在 / 不可读 / 安全库未解锁 / 遍历中被删 / 非 UTF-8 名 / owner 无 stats / 自指计数）已迁出**，逐条语义见 I61（已归档） §7。本文只保留跨 tab 的两条与进程 / 自身占用专属的行。
 
 | 失败模式 | 表现 | 必须的语义 |
 |---|---|---|
@@ -593,7 +593,7 @@ v1 的自身占用 tab 由两块组成，**两块的数据性质不同，必须�
 
 ## 10 待定案项
 
-**第 1–5 项已迁出**（D5 资格 / D6 策略、`tool-results` 可回收性、审计保留期、`derived/` 是否计入、`created_at` 语义）：它们都是存储侧判据，现由 [I61](../achievement/I61-storage-manager-spec.md) §3.4–§3.9 定案（资格词表、策略值、fail-closed 回退、`modifiedAt` 改名）。本表保留编号不复用，避免与其它章节的「§10 第 N 项」引用错位。
+**第 1–5 项已迁出**（D5 资格 / D6 策略、`tool-results` 可回收性、审计保留期、`derived/` 是否计入、`created_at` 语义）：它们都是存储侧判据，现由 I61（已归档） §3.4–§3.9 定案（资格词表、策略值、fail-closed 回退、`modifiedAt` 改名）。本表保留编号不复用，避免与其它章节的「§10 第 N 项」引用错位。
 
 | # | 待定 | 为什么必须定 | 本期态度 |
 |---|---|---|---|
@@ -613,7 +613,7 @@ v1 的自身占用 tab 由两块组成，**两块的数据性质不同，必须�
 
 ## 11 验收判据
 
-**存储侧判据 `V3` / `V4` / `V5` / `V8` 已迁出**至 [I61](../achievement/I61-storage-manager-spec.md) §10 的 `V1–V15`（条目不可用不出 0、账本恒等式、共享标注、`modifiedAt` 改名）。编号保留不复用，只为与其它文档的引用对齐。
+**存储侧判据 `V3` / `V4` / `V5` / `V8` 已迁出**至 I61（已归档） §10 的 `V1–V15`（条目不可用不出 0、账本恒等式、共享标注、`modifiedAt` 改名）。编号保留不复用，只为与其它文档的引用对齐。
 
 | 编号 | 判据 | 失败含义 |
 |---|---|---|
@@ -646,7 +646,7 @@ v1 的自身占用 tab 由两块组成，**两块的数据性质不同，必须�
 | 批次 | 内容 | 前置 |
 |---|---|---|
 | **R0** | 页面身份变更（label / keywords / golden fixture）+ 页内 tab 骨架 + `get_resource_capabilities` | 无 |
-| **R1–R4** | **已迁出**：存储观测补全 / 账本闭合 / `modifiedAt` 改名 / `crashes/` 补 `list`·`stat`·`prune`，对应 [I61](../achievement/I61-storage-manager-spec.md) §11 的 `T1`–`T4` | 见 I61 |
+| **R1–R4** | **已迁出**：存储观测补全 / 账本闭合 / `modifiedAt` 改名 / `crashes/` 补 `list`·`stat`·`prune`，对应 I61（已归档） §11 的 `T1`–`T4` | 见 I61 |
 | **R5** | `assistant-resource-probe` 骨架 + 平台方案定案（§10 第 8 项）+ **一次全系统快照 + 内存父子表 + 从根 DFS**（§2.3）+ 角色分类 + PID 复用校验 + 空闲超时停表（§6.5.2）+ 指标位掩码（§6.5.1） | 平台方案定案 |
 | **R6** | 进程 tab 树级数字（投影 B）+ 同一 `sampledAt` 共用 + 首拍 `null` 的「待定」渲染态 | R5 |
 | **R7** | 自身占用 tab 当前值（投影 A）+ `memoryAdditive` 驱动内存合计显示 + 内存列名带口径 | R5 |
@@ -663,7 +663,7 @@ v1 的自身占用 tab 由两块组成，**两块的数据性质不同，必须�
 
 ## 13 开放问题
 
-**`OQ1` / `OQ2` / `OQ3` / `OQ9` 已迁出**（审计目录归属表、条目 key 命名、存储 tab 按层折叠、`crashes/` 保留上限）：均为存储侧问题，现由 [I61](../achievement/I61-storage-manager-spec.md) §9 跟踪。编号保留不复用。
+**`OQ1` / `OQ2` / `OQ3` / `OQ9` 已迁出**（审计目录归属表、条目 key 命名、存储 tab 按层折叠、`crashes/` 保留上限）：均为存储侧问题，现由 I61（已归档） §9 跟踪。编号保留不复用。
 
 | # | 问题 | 影响 |
 |---|---|---|
