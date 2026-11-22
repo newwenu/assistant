@@ -4,12 +4,12 @@
 |---|---|
 | 状态 | 已实施（S1–S8 全部落地；门禁、编译、测试、关闭态探针全绿） |
 | 日期 | 2026-11-21 |
-| 关联 | [可选功能二进制编译规格](./feature-optional-binary-spec.md)（契约唯一来源：R1–R28、B1–B12、F1–F7、CI-1/CI-2、§8.1 新增特性序列）、[crate-architecture](./crate-architecture.md) §5（后端 crate 拆分判据唯一来源）、[vault-optional-build](./vault-optional-build.md)（L1 参考实现）、[CODE-SPLIT-PRINCIPLE](../principle/CODE-SPLIT-PRINCIPLE.md)（拆分原则，只引用不复述） |
+| 关联 | [可选功能二进制编译规格](../../store/feature-optional-binary-spec.md)（契约唯一来源：R1–R28、B1–B12、F1–F7、CI-1/CI-2、§8.1 新增特性序列）、[crate-architecture](../../store/crate-architecture.md) §5（后端 crate 拆分判据唯一来源）、[vault-optional-build](../vault/vault-optional-build.md)（L1 参考实现）、[CODE-SPLIT-PRINCIPLE](../../principle/CODE-SPLIT-PRINCIPLE.md)（拆分原则，只引用不复述） |
 | 影响范围 | 后端 12 处装配点 + 新建 1 个 crate + 新建 1 个插件文件；前端 6 处装配点 + 新建 1 个声明模块；门禁/脚本 4 处扩展；CI 增加 2 条单特性 lane；`config/presets.json` 首次落地（N 由 1 变 2） |
 
 > 一句话：clock 是本仓库**第二个**可选特性，也是第一个「工具型」特性。本文的价值不在时钟本身，而在把「一个工具如何从默认二进制里整块消失」的**装配点模板**固化下来——后端一个薄 crate + 一个插件边界，前端一个空声明模块 + 工具注册表里的一处编译期守卫，门禁把 `src/tools/<id>/` 纳入产物证据。便签等后续工具照此模板执行，只需替换 id。
 
-编号约定：`N*` 现状事实；`P*` 装配点（**实施动作**）；`G*` 门禁/脚本扩展；`S*` 实施步骤；`R*` 残余与风险。契约条款一律引用 [可选功能二进制编译规格](./feature-optional-binary-spec.md) 的 R/B/F 编号（如 `R8`、`B6`、`F7`），本文不复述其内容。
+编号约定：`N*` 现状事实；`P*` 装配点（**实施动作**）；`G*` 门禁/脚本扩展；`S*` 实施步骤；`R*` 残余与风险。契约条款一律引用 [可选功能二进制编译规格](../../store/feature-optional-binary-spec.md) 的 R/B/F 编号（如 `R8`、`B6`、`F7`），本文不复述其内容。
 
 ---
 
@@ -195,7 +195,7 @@ pub(crate) use mounted::{init, on_exit, on_setup};
 |---|---|---|---|
 | P19 | `config/presets.json`（新建）+ `scripts/feature-build.ps1` | 新建四条 preset：`full = ["vault","clock"]`、`slim = []`、`vault-only = ["vault"]`、`clock-only = ["clock"]`；`feature-build.ps1` 增 `-Preset`（与 `-Features` / `-Without` 互斥），解析后走现有 `Resolve-Features` | 每条 `features` ⊆ 清单键集合、`full` = 清单全集、`slim` = 空、字段只允许 `features`（§7.2）；校验落在脚本内（GG-1 式：解析 0 条 → 失败） |
 
-> 若审查决定本次不落 P19，必须在本文登记偏差：改用 `-Without vault` / `-Without clock` 穷举单特性变体（N=2 时可穷举），并把「`config/presets.json` 延后至 N≥3」写入 [可选功能二进制编译规格](./feature-optional-binary-spec.md) §7.2。**默认按 R27 落地**，不擅自偏离契约。
+> 若审查决定本次不落 P19，必须在本文登记偏差：改用 `-Without vault` / `-Without clock` 穷举单特性变体（N=2 时可穷举），并把「`config/presets.json` 延后至 N≥3」写入 [可选功能二进制编译规格](../../store/feature-optional-binary-spec.md) §7.2。**默认按 R27 落地**，不擅自偏离契约。
 
 ---
 

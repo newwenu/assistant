@@ -9,10 +9,10 @@
 | 域 | 内容 | 文件数 |
 |---|---|---|
 | [agent/](./agent/) | Agent 运行时、工具框架与 MCP、Agent Loop、审批、压缩与节点布局、身份与能力事实、运行时审计、沙箱与代码规模审计、Turn 观测面、长行读取与超级工具、工具三阶段状态 | 70 |
-| [vault/](./vault/) | 密码箱：密钥体系、条目加密、同步、审计、生物识别、恢复与 IPC 契约 | 37 |
+| [vault/](./vault/) | 密码箱：密钥体系、条目加密、同步、审计、生物识别、恢复与 IPC 契约 | 38 |
 | [chat/](./chat/) | 对话与消息链路：服务拆分、流事件、历史、分支、重试、附件/多模态、截图提问、Token Usage | 35 |
-| [ui/](./ui/) | Orb、主窗口与 mini 模式、设置系统、i18n、Mascot、时钟与布局 | 41 |
-| [infra/](./infra/) | 编译与依赖、crate 架构、DTO 与协议、配置归属、命令层、日志、应用目录、拆分规划、横切分析 | 41 |
+| [ui/](./ui/) | Orb、主窗口与 mini 模式、设置系统、i18n、Mascot、时钟与布局、观测画布与存储管理器 | 45 |
+| [infra/](./infra/) | 编译与依赖、crate 架构、DTO 与协议、配置归属、命令层、日志、应用目录、拆分规划、横切分析、错误吞没 | 43 |
 
 ## 文档清单
 
@@ -91,7 +91,7 @@
 | [`I59-chat-error-null-contract-spec.md`](./agent/I59-chat-error-null-contract-spec.md) | achievement | I59 — 前端 ChatError null 语义与守卫对齐（含同类判据合并） |
 | [`I60-tool-running-status-spec.md`](./agent/I60-tool-running-status-spec.md) | achievement | I60 — 工具调用三阶段状态（preparing / running / 终态与全局活动指示器） |
 
-### vault/ (37)
+### vault/ (38)
 
 | 文档 | 原批次 | 标题 |
 |---|---|---|
@@ -132,6 +132,7 @@
 | [`I9-vault-runtime-session-spec.md`](./vault/I9-vault-runtime-session-spec.md) | achievement5 | I9 密码箱 — 运行时密钥与会话驻留规格（S4） |
 | [`I9-vault-sync-crypto-spec.md`](./vault/I9-vault-sync-crypto-spec.md) | achievement5 | I9 密码箱 — 仓库与同步完整性规格（S3） |
 | [`I9-vault-v15-tasklist.md`](./vault/I9-vault-v15-tasklist.md) | achievement5 | I9 — 密码箱 v1.5 任务清单 |
+| [`vault-optional-build.md`](./vault/vault-optional-build.md) | achievement13 | Vault 可选编译（编译拆分）方案（L1 已实施，L2–L5 未实施） |
 
 ### chat/ (35)
 
@@ -173,7 +174,7 @@
 | [`I40-history-message-tree-spec.md`](./chat/I40-history-message-tree-spec.md) | achievement4 | I40 — 主窗口历史消息树渲染规格 |
 | [`I35-screenshot-qa-spec.md`](./chat/I35-screenshot-qa-spec.md) | achievement10 | I35 — 截屏提问规格（rev11 已实现；§11.3 手动验收待执行） |
 
-### ui/ (41)
+### ui/ (45)
 
 | 文档 | 原批次 | 标题 |
 |---|---|---|
@@ -218,8 +219,12 @@
 | [`I1-orb-touch-compat-tasklist.md`](./ui/I1-orb-touch-compat-tasklist.md) | achievement5 | I1-orb-touch — Orb 触摸兼容任务清单 |
 | [`I47-orb-runtime-state-spec.md`](./ui/I47-orb-runtime-state-spec.md) | achievement5 | I47 — Orb 运行态与可见性 实施规格 |
 | [`I47-orb-runtime-state-tasklist.md`](./ui/I47-orb-runtime-state-tasklist.md) | achievement5 | I47 — Orb 运行态与可见性 任务清单 |
+| [`I66-agent-canvas-ui-spec.md`](./ui/I66-agent-canvas-ui-spec.md) | achievement13 | I66 — Agent 观测画布 UI 规格（W1 设施与示例；W2 归 I68） |
+| [`I67-storage-inventory-totals-spec.md`](./ui/I67-storage-inventory-totals-spec.md) | achievement13 | I67 — 存储管理器对账余量规格（基根分母 / 全类合计 / 受管条目扩至 12 条） |
+| [`I68-agent-canvas-preset-spec.md`](./ui/I68-agent-canvas-preset-spec.md) | achievement13 | I68 — Agent 画布预设与摆放规格（W2） |
+| [`clock-optional-feature-spec.md`](./ui/clock-optional-feature-spec.md) | achievement13 | 时钟工具可选化（clock feature）规格（S1–S8 已实施） |
 
-### infra/ (41)
+### infra/ (43)
 
 | 文档 | 原批次 | 标题 |
 |---|---|---|
@@ -264,4 +269,6 @@
 | [`feature-mount-traversal-spec.md`](./infra/feature-mount-traversal-spec.md) | achievement11 | 可选特性装配点遍历化规格（S1–S7 已落地，关闭态证据由 feature-optional-binary-spec 接续） |
 | [`code-structure-followups.md`](./infra/code-structure-followups.md) | achievement12 | 代码结构优化后续账目（F3 判定收口、F1-b 暂缓；随本批归档冻结） |
 | [`command-error-contract-spec.md`](./infra/command-error-contract-spec.md) | achievement12 | 命令错误契约规格（B0–B2 首批落地，C6 仍开放） |
+| [`I65-error-swallowing-remediation-spec.md`](./infra/I65-error-swallowing-remediation-spec.md) | achievement13 | I65 — 错误吞没整改规格（S0–S5 已落地，S6 未开工） |
+| [`I65-error-swallowing-remediation-tasklist.md`](./infra/I65-error-swallowing-remediation-tasklist.md) | achievement13 | I65 — 错误吞没整改任务清单（S0–S5 完成，S6 未开工） |
 

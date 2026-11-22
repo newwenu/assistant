@@ -4,7 +4,7 @@
 > 逐文件事实（路径 / 领域 / 角色 / 关键导出 / 行数）见 `CODE-INDEX.md`：全文由 `node scripts/structure-index.mjs` 生成，勿手改，代码变动后重跑即刷新。
 > 更新日期：2026-11-20。
 > 读法：找具体文件 → `CODE-INDEX.md`（Ctrl+F 路径或导出名）；找「改什么去哪」→ §8；找层与依赖方向 → §2 / §4.5。
-> 相关文档：`ARCHITECTURE.md`（组件职责与交互语义）、`FRONTEND.md`（UI 设计与参考项目）、`docs/store/crate-architecture.md`（后端 crate 规模与编译归属实测）、`docs/principle/CODE-SPLIT-PRINCIPLE.md`（文件拆分判据）、`docs/store/vault-optional-build.md`（vault 可选构建）。
+> 相关文档：`ARCHITECTURE.md`（组件职责与交互语义）、`FRONTEND.md`（UI 设计与参考项目）、`docs/store/crate-architecture.md`（后端 crate 规模与编译归属实测）、`docs/principle/CODE-SPLIT-PRINCIPLE.md`（文件拆分判据）、`vault-optional-build.md`（已归档，vault 可选构建）。
 
 ---
 

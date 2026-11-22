@@ -3,7 +3,7 @@
 > 测量日期：2026-10-30
 > 被测目标：`src-tauri` workspace（`cargo build --timings`，dev profile，冷启动）
 > 采样次数：3 次独立 `cargo clean` + `cargo build --timings`
-> 关联文档：`docs/store/vault-optional-build.md`（待编写）
+> 关联文档：`vault-optional-build.md`（已归档）
 
 ---
 

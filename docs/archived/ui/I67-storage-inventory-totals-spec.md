@@ -4,7 +4,7 @@
 |---|---|
 | 状态 | 定稿（待按 §11 切片实施；`E12` 相关口径已按 E12 全链路修订复核，见 §2 N13 / §3.5 / §12；同日修订 §13 登记判据：准入只看「有没有 owner」，登记后必须上报大小（R1），四个配置文件改为登记，见 §13.2.2 / §13.4 / T6；同日修订归属：登记表只记录归属、不造常量——`EBWebView` 作为受管目录由 `dir_name::WEBVIEW_PROFILE` 持有（落点与 Tauri 默认逐字相同、零迁移），配置名引用 owner 的 `ConfGroup::FILE_NAME`，见 §13.3 / N16；同日修订 `E16` 归属：`vault-config.json` 不再由 core 登记，改由 vault 特性在可选分区内自注册为 `security/vault-config.json`（落点 `<data>/security/`，core 侧零知识、零字面量、不做旧位置迁移），见 §13.4 / T6；同日修订 `E14` 定性：由「只观测、不接管」改为「应用接管落点声明 / 目录创建 / 回收时机 / 观测」，落点仍与 Tauri 强制默认逐字相同、零迁移，见 §13.3 接管表 / T5；同日新增 §3.8：锁定不构成观测豁免，`E9` 锁定态仍须上报大小、锁的信息只走资格侧，见 N17 / T7 / V16） |
 | 日期 | 2026-11-22（同日复核：breakdown 侧 `E12` 占用已落地，对账侧仍待 §11 T1；同日修订 §13 登记判据与切片 T6；同日新增 §3.8 观测与资格解耦、切片 T7） |
-| 关联 | I61 存储管理器规格（已归档）（§3.11 对账余量的**事实基线**，本文只做增量修订，不复述其分类与减法）、I61 前端设计（已归档）（前端唯一实现基线，本文只给增量条款）、[I54 资源监视器规格](./I54-resource-monitor-spec.md)（存储侧已迁出，本文不涉及进程 / 自身占用） |
+| 关联 | I61 存储管理器规格（已归档）（§3.11 对账余量的**事实基线**，本文只做增量修订，不复述其分类与减法）、I61 前端设计（已归档）（前端唯一实现基线，本文只给增量条款）、[I54 资源监视器规格](../../store/I54-resource-monitor-spec.md)（存储侧已迁出，本文不涉及进程 / 自身占用） |
 | 影响范围 | 后端：`src-tauri/src/cmd/storage/inventory/`（`walk.rs` 累计、`cache.rs` 汇总、`mod.rs` 快照结构）、`src-tauri/crates/assistant-protocol/src/storage.rs`（DTO 扩展）、`src-tauri/src/cmd/storage/entries/`（`E` 编号常量收敛、静态档）、`src-tauri/src/app_dirs/dir_name.rs`（新增 `WEBVIEW_PROFILE`）、`src-tauri/src/app_dirs/registry.rs`（登记表：`E14` / `E15` / `E17` / `E18`，首段引用 `dir_name` / owner 常量）、`src-tauri/src/app_dirs/roots.rs`（按登记表拼路径，不持字面量；`E14` 的 `webview_data_directory` / `webview_profile` / `ensure_webview_profile`）、`src-tauri/src/window.rs`（编程创建窗口显式声明 `data_directory`）、`src-tauri/src/main.rs` / `src-tauri/src/setup.rs`（`E14` 建窗前创建目录与建窗后漂移守卫）、`src-tauri/src/cmd/storage/sample/`（配置条目采样与分派）、`src-tauri/crates/assistant-vault/src/storage_section.rs`（`E9` 锁定态观测解耦（T7）与 `E16` 条目自注册（T6））、`src-tauri/src/vault_plugin.rs`（`E16` 配置文件路径注入）；前端：`src/settings/pages/storage/residualView.ts`、`src/settings/pages/storage/lexicon.ts`、`src/features/vault/module.ts`（`E16` 条目名称自注册）、`src/i18n/locales/*.json`、`src/types/protocol.contract.ts`（生成物） |
 
 > 一句话：**分母必须存在**——对账余量现在只有「未登记」这一个分子，没有「受管目录一共多大」这个分母，也没有「所有类别余量之和」这个可闭合的分子；本规格补齐三者并规定：统计**不许丢弃**任何盘上字节，不知道的部分**必须显式标成下界**，而不是悄悄少算。
@@ -69,7 +69,7 @@ I61 §3.11 定义的对账余量回答「**有没有**没被条目认领的东�
 | N5 | `walk::list_root` 对「名字不是合法 UTF-8」或「不是安全单段名」的首层条目 `continue`：既不建节点，也不进任何合计——**分母因此结构性偏小**，且无法从任何字段看出少了多少 |
 | N6 | `build_node` 由 `reconciled()` 同时决定「是否 `observe`」，对 `inventory = false` 的首段（`E12`）直接写 `Observed { bytes: None, count: None }`，该节点 `scanBytes` / `scanCount` 恒 `null`（§3.5 落地后改为「观测一次、`declaredBytes` 置 `null`」） |
 | N7 | 每个首层节点在 `observe` 内各取一份独立预算（`Budget::new()`），节点子树互不重叠，因此 `Σ 节点 scanBytes` 在数学上等于该基根总量（除 N5 丢弃项）——**可推导但未上报** |
-| N8 | `partial` 目前 = 任一节点触界 ∨ 任一节点 `overRegistered`；它不表达「合计本身是不是完整值」 |
+| N8 | `partial` 目前 = 任一节点触界 ∨ 任一节点 `overRegistered`；它不表达「合计本身是不是完整值」（后者由 `totals.partial` 表达，§3.6）。前端消费已按 `truncatedNodes` 收窄到「真触界」，避免 `overRegistered` 冒充「只扫描了一部分目录」（§3.6.1） |
 | N9 | `StorageInventoryNodeDto.entry` 是唯一跨 wire 的 `E` 编号；前端 `residualView.rowView` 不读它，`StorageEntryDto` 根本没有 `E` 字段 |
 | N10 | 前端条目名称按 `key` 索引（`lexicon.ts` 的 `ENTRY_NAME_KEYS`），渲染路径不出现 `E*`（前端设计 D13） |
 | N11 | 后端 `E*` 是裸字符串字面量，分散在登记表 `MANAGED_ROOTS`、`entries/decl.rs`、`entries/eligibility.rs`、`reclaim/execute.rs`、`reclaim/plan.rs`、`sample/collect.rs`、`entries/mod.rs` 七处 |
@@ -202,12 +202,20 @@ I61 让 `E12`（`logs`，`inventory = false`）的 `scanBytes` 恒 `null`，理�
 
 | 字段 | 含义 |
 |---|---|
-| `inventory.partial` | 有节点触界 ∨ 有节点 `overRegistered`（I61 既有） |
+| `inventory.partial` | 有节点触界 ∨ 有节点 `overRegistered`（I61 既有）。**前端只对触界出提示**：`truncatedNodes` 非空才显示「只扫描了一部分目录」，`overRegistered` 由节点级标红与 error 提示独立表达（§3.6.1） |
 | `inventory.totals.partial` | 本结构的数字是**下界**（少算的部分不知多大） |
 
 **空基根 = `0`，不是 `null`**：某 scope 一个首层条目都没有时，`scanBytes = 0` 且 `totals.partial = false`——「确实没有」是已知事实，与「不知道」必须区分（I61 同一原则）。
 
 **前端硬规则**：`totals.partial = true` 时，合计必须显示为下界形式（前缀 `≥` 或文案标注「以下为下界」），不得只显示数字（前端设计 §7.4 需同步回写，清单见 §12）。
+
+#### 3.6.1 两个 `partial` 提示必须各归其因
+
+`inventory.partial` 把两个互不相干的原因拼成一个布尔：**真触界**（深度 / 条目数 / 耗时上限，此时 `truncatedNodes` 必非空）与 **`overRegistered`**（`declaredBytes > scanBytes`，扫描本身是完整的）。前端提示若只判 `partial`，后一种情况也会弹出「只扫描了一部分目录，下面显示的数字可能偏小」——而事实正好相反：扫描完整，是登记侧的采样更旧 / 更大。
+
+`E14`（`EBWebView`）在持续写入，`declared` 与 `scan` 又是两次独立遍历，因此会偶发 `overRegistered`（§13.3.6 已接受此噪声）。若提示只看 `partial`，这条 warning 会在该条目上常亮，从「异常可见」退化为背景噪音，并掩盖同栈里真正表达该原因的 error 提示。
+
+**规则**：前端「只扫描了一部分目录」提示的唯一触发条件是 `inventory.truncatedNodes.length > 0`（与真触界等价）；`overRegistered` 只由节点级标红 + `residual.notice.over_registered` 表达。后端 `inventory.partial` 字段语义与取值不变（契约不动），收窄只发生在前端消费侧。
 
 ### 3.7 分 scope 与不合并的理由
 
@@ -613,7 +621,8 @@ WebView2 运行中持有 profile 文件句柄，运行期删除会失败或损�
 2. **执行结果用 `scheduled` 表达**（`StorageReclaimStatusDto` 的封闭枚举新增值）：执行器只写标记（`mark_pending`），零删除，返回 `status = scheduled` + `removed = 0`。与 `skipped` 的区别是「已登记、有明确后续执行点」而非「没做也不需要做」；与 `done` 的区别是「本次没有删除任何字节」。前端据此显示「已登记清理请求，将在下次启动时执行」，不假装删过、不静默吞掉；
 3. **执行时机**：用户请求清理 → 记「待执行」→ 下次启动在 `Builder::run` 之前（webview 尚未创建、目录未被打开）执行白名单删除。`setup` 钩子晚于配置窗口创建（`tauri-2.12.5/src/app.rs` 的 `setup()` 先建配置窗口再调用户钩子），因此**不能**把清理放在 `setup`；`main` 里在 `Builder::run` 之前调用 `ensure_webview_profile()` 与 `run_pending_purge()`，这是唯一安全点；
 4. **白名单**：只删缓存子目录（`BrowserMetrics` / `Crashpad` / `GrShaderCache` / `GPUCache` / `component_crx_cache` / `extensions_crx_cache` / `Default/Cache` 等），用户态部分（Cookies / Local Storage / IndexedDB / Login Data）一律不删；删除前逐项校验存在，失败如实计数不吞错；
-5. **标记文件**：`<profile>/reclaim-pending.tmp`，`.tmp` 属伴生文件，`tree_stats` 不计入 `bytes` / `count`（§3.9），不会让统计多出无主字节；标记只消费一次，清完即删。
+5. **标记文件**：`<profile>/reclaim-pending.tmp`，`.tmp` 与普通文件同口径计入 `tree_stats` 的 `bytes` / `count`，因此也计入 `E14` 的已记录（8 B，只存在到下次启动清理为止）；它不在缓存白名单子目录内，故不计入 `reclaimable`。标记只消费一次，清完即删。
+   **伴生文件口径（取代 I61 §3.9 的「不计入」）**：`tree_stats` 的 owner 条目（`E5` / `E12` / `E14`）把伴生文件与普通文件一并计入 `bytes` / `count`，与对账扫描同一口径——它们确实占盘，扫描侧也计入 `scanBytes`，两侧同口径才不会留下「已登记·未计入」的假余量；首层伴生文件（如 `assistant.db-wal`，其 owner 是只观测自身的文件条目）仍归 `companion`、不带登记值。
 
 这是 T5 执行器的实现契约；本规格规定「资格恒 `eligible` + 执行返回 `scheduled`」这一组合不得退化成运行期硬删，也不得退化成「资格 `locked`、请求发不出去」。
 

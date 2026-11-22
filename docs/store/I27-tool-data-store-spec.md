@@ -201,7 +201,7 @@ const TOOL_DATA_KEY_SEED: &[u8] = b"<编译期固定盐值>";
 **为什么用 HKDF 而不是直接写死 32 字节**：常量字面量会以明文出现在二进制中，被 `strings` 一扫即得。经 HKDF 派生后，二进制里只有 seed，派生逻辑在代码里——**成本几乎为零，但让「随手 grep」失效**。这只是提高一点门槛，不改变上述任何一条「不成立」。
 
 **为什么不做 keyring / 密码档位**：
-- `keyring` 目前只是 `assistant-vault` 的依赖，`--no-default-features` 构建下不在依赖图中（§4 实测）。一旦工具数据用它，`keyring` 变成**无条件依赖**，破坏 `docs/store/vault-optional-build.md` 的门禁性质。
+- `keyring` 目前只是 `assistant-vault` 的依赖，`--no-default-features` 构建下不在依赖图中（§4 实测）。一旦工具数据用它，`keyring` 变成**无条件依赖**，破坏 `vault-optional-build.md`（已归档）的门禁性质。
 - 密码档位会让「打开便签」变成「先输密码」，与「工具是零成本功能」直接冲突。
 - 需要真保护的内容应进 vault，工具数据不在其信任域内（§3）。
 

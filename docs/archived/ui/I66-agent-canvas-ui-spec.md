@@ -177,7 +177,7 @@ W1 的交付物是**可被组合的设施 + 一次性示例**。示例只证明�
 
 | 约束 | 来源 | 效力 |
 |---|---|---|
-| 画布不是控制源：运行模式只读，不写 store、不发命令、不回写 wire | 概念清单 O6 / O10；分析 P1 | 硬：违反即不通过 |
+| 画布不是控制源：运行模式不写 store、不发命令、不回写 wire；画布编辑（W2）只改视图本地状态 | 概念清单 O6 / O10；分析 P1；I68 §6.1 | 硬：违反即不通过 |
 | 布局与渲染零 DOM 测量 | 分析 P11 / N7 | 硬 |
 | 颜色只取 antd 变量、禁止硬编码与 fallback | DESIGN §5.3；项目规则「antd 主题对齐」 | 硬 |
 | 文案只取 i18n、禁止内联中文 | 项目规则「i18n」；分析 P12 | 硬（设施键 `canvas.*`；内容文案由调用方传入） |
@@ -233,12 +233,18 @@ export interface CanvasBadgeView {
 export interface CanvasCardView {
   id: string;
   box: CanvasBox;
-  /** 已本地化的标题与副标题；设施不调用任何内容 i18n 键。 */
+  /** 头部左侧序号徽标（如 ①）；省略 = 不画（设施不判断来源）。 */
+  index?: string;
+  /** 头部名称（已本地化）；设施不调用任何内容 i18n 键。 */
   title: string;
-  subtitle?: string;
+  /** 头部右侧短标记（圈 / 分支，如 `#2`）；省略 = 不画。 */
+  mark?: string;
+  /** 主体运行摘要（已本地化，如「已执行 · 1.2s」）；省略 = 主体留空。 */
+  summary?: string;
+  /** 脚部徽标。 */
   badges?: readonly CanvasBadgeView[];
   tone?: CardTone;
-  /** `null` / 省略 = 不画出口角标（§8.4）。 */
+  /** 脚部右下角出口角标；`null` / 省略 = 不画（§8.4）。 */
   exit?: ExitTone | null;
 }
 
@@ -265,11 +271,13 @@ export interface CanvasLabelView {
 
 | 类型 | 允许 | 禁止 |
 |---|---|---|
-| `CanvasCardView` | `id` / `box` / 已本地化文案 / `tone` / `badges` / `exit` | 状态枚举、证据等级、耗时起点、圈数、任何观测字段 |
+| `CanvasCardView` | `id` / `box` / 已本地化槽位文案（`index` / `title` / `mark` / `summary` / `badges`）/ `tone` / `exit` | 状态枚举、证据等级、耗时起点、圈数、任何观测字段 |
 | `CanvasEdgeView` | `id` / `from` / `to` / `route` / `phase` | `kind` / 标签 / 路径字符串 / 像素坐标 / 箭头样式 |
 | `CanvasLabelView` | `id` / `box` / `text` / `tone` | 点击处理器、图标组件、可聚焦标记 |
 
 `from` / `to` 引用卡片 `id`；边渲染器按 id 在盒子表里取盒子，取不到即不渲染（并触发开发期断言，不做兜底画线）。
+
+卡片的槽位语义（头部 / 主体 / 脚部 + 选择态，以及端口区、拖拽柄为何缺席）由 W2 §7 定义；本设施只按槽位渲染，不判断槽位背后的状态语义。
 
 ### 5.2 内容映射归属调用方
 
@@ -406,11 +414,17 @@ export function worldToScreen(p: Point, v: CanvasViewportState): Point {
 
 | 手势 | 行为 | 约束 |
 |---|---|---|
-| `Ctrl` / `⌘` + 滚轮 | 缩放，以**指针位置**为锚点 | 步进 `1.1`；`scale` 夹在 `[0.5, 2]`；`preventDefault`（否则页面会整体缩放） |
-| 滚轮（无修饰键） | 纵向平移，`y += deltaY`；`Shift` + 滚轮为横向平移 | `preventDefault` |
+| `Ctrl` / `⌘` + 滚轮、触控板捏合 | 缩放，以**指针位置**为锚点 | 连续因子 `exp(-deltaY * k)`，`k` 分两档：整格滚轮（`\|deltaY\| ≥ 50`）取 `0.001`（一格 ≈ `1.10`，与按钮步进一致）；触控板捏合的细分事件（`\|deltaY\| < 50`）取 `0.002`——捏合是高频小幅事件，用滚轮那一档会被指数映射压平、手感只有触屏捏合的一半；锚点落在视口矩形外时退回视口中心（捏合的 `clientX/clientY` 是光标而非指尖，可能为 `0, 0`）；`scale` 夹在 `[0.5, 2]`；`preventDefault`。触控板捏合在 WebView2 里是合成的 `ctrlKey` wheel，**前置条件是主窗口配置 `zoomHotkeysEnabled: true`**（wry 把该属性同时映射到 `IsZoomControlEnabled` 与 `IsPinchZoomEnabled`，默认 `false` 时手势在 WebView2 层被丢弃，页面收不到任何事件）；整页缩放由 `registerPageZoomGuard()` 兜底拦掉 |
+| 滚轮 / 触控板双指滑动（无修饰键） | 平移，`x -= deltaX * 0.5`、`y += deltaY * 0.5`，**两个轴都取**（触控板双指可斜向滑动）；`Shift` + 滚轮把 `deltaY` 映射到横向（同样取反，`x -= deltaY * 0.5`） | `deltaMode` 先归一化成像素（行 `×16`、页 `×100`）；`preventDefault`；系数 `0.5` 避免一格滚轮跳一大段。**横向取反**：纵向沿用「内容随滚动方向下移」，横向若同号相加会与手势相反（实测双指右滑内容左移），故 `x` 与 `deltaX` 反号；`Shift` + 滚轮复用同一横向符号，两条横向通道只有一条符号规则 |
 | 指针拖拽空白处 | 平移，`x += dx`、`y += dy` | 拖拽起点必须是视口或世界层背景，不是卡片/边 |
-| 缩放按钮（`+` / `-` / 复位） | 以**视口中心**为锚点 | 中心由视口矩形算出（同 §6.2 的读取时机），不在渲染路径 |
+| 双指触摸（触摸屏） | 捏合缩放 + 双指平移：两指中点与间距变化由 `pinchTo` 一次算出，中点下的世界点保持不动 | 中点 = 两指屏幕坐标的算术平均；间距 = 两点欧氏距离；`scale` 同范围夹取；`touch-action: none` 阻止浏览器自身手势 |
+| 缩放按钮（`+` / `-`） | 以**视口中心**为锚点 | 中心由视口矩形算出（同 §6.2 的读取时机），不在渲染路径 |
+| 复位按钮（`Ctrl` / `⌘` + `0`） | 回到**调用方基线**：`initialViewport`，未传时 `{ x: 0, y: 0, scale: 1 }` | 复位不是「跳回世界原点」而是「回到初始视图」——示例页把内容让开浮层后，跳回原点会与首次进入的位置不一致 |
 | 双击卡片 | 无行为（W1 不做 fit-to-card） | 双击空白处也不复位，避免误触 |
+
+触控板与触摸屏是两条独立输入通道：精密触控板不产生 `pointer` 事件，双指滑动被系统转成 `wheel`，捏合被转成带 `ctrlKey` 的 `wheel`（WebView2 侧的前置开关见上表）；触摸屏产生两个 `pointer`（`pointerType: "touch"`）走 `pinchTo`。两条通道都汇入同一个 `flushGesture`，一帧最多提交一次（§12.6），因此高回报率触控板不会把 React 渲染打穿。`zoomHotkeysEnabled` 同时打开了整页缩放（`ctrl+wheel`、`ctrl+±/0`），由 `registerPageZoomGuard()` 在 `window` 上兜底：画布已 `preventDefault` 的事件放过，其余位置一律拦掉。
+
+触摸屏单指落在卡片上不进入平移（保留点按选中），但**双指**无论落在何处都进入捏合；双指抬起一指后，剩余一指从当前位置重新起算平移基线，不产生跳变。
 
 缩放锚点的数学（保持锚点下的世界坐标不动）：
 
@@ -422,7 +436,7 @@ y' = py - (py - y) * (s' / s)
 
 滚轮监听必须用**原生非 passive** 监听器（`useEffect` 里 `addEventListener("wheel", handler, { passive: false })`）：React 的 `onWheel` 在部分环境下是 passive，`preventDefault()` 无效，会导致整个页面跟着缩放。
 
-**视口状态走 React state**（`useState<CanvasViewportState>`），不用 ref + 命令式写 DOM。代价是拖拽每帧触发一次重渲染，因此 `CanvasCard` / `CanvasEdge` 必须 `React.memo`，且 `transform` 只落在世界层——每帧重渲染的只有视口容器本身与子元素的 props 比对，不触碰内容数据（§12.5）。
+**输入模态**（`data-modality="pointer" | "keyboard"`，挂在视口根节点，只影响焦点框，不进几何）：`pointerdown` 一律回到指针模态（含浮层控件，故用捕获阶段）；`keydown` 只有**移动焦点的按键**（`Tab` / `Shift+Tab`）才切到键盘模态。`Shift`（横向平移）、`Ctrl+0`（复位）、`Esc`（清选中）都会让 Chromium 把当前焦点元素判成 `:focus-visible`，若按「任意按键」切换，这几个常用操作会各自冒出一圈描边；只认 `Tab` 才与真实键盘导航一致。CSS 侧用 `.viewport[data-modality="pointer"] :focus-visible` 抑制描边，选择器特异性高于 `:focus-visible` 单条规则，不依赖声明顺序。
 
 ### 6.4 锚点与边几何
 
@@ -583,7 +597,7 @@ export function edgeGeometryOf(
 
 - 选中对象是**卡片**（不是「格子 × 圈」，§1.3 D-7）。`selectedId: string | null`，存在 `CanvasViewport` 的本地 state（N4）。
 - 选中是**受控/非受控二选一**：`CanvasViewport` 提供 `selectedId` + `onSelect` 两个可选 props；调用方不传时由设施内部 state 持有（示例与 W2 都用非受控，宿主若要与 Inspector 联动则传受控）。
-- 选中态**不跨实例保留**：内容切换（`cards` 数组换源）时重置为 `null`（不同内容的状态不同，保留选中会让人误读）。视口状态**跨实例保留**（布局恒定，视口有意义）。
+- 选中态**不跨实例保留**：内容切换（`cards` 数组换源）时重置为 `null`（不同内容的状态不同，保留选中会让人误读）。视口状态**跨实例保留**（布局恒定，视口有意义）；首次挂载可由调用方通过 `initialViewport` 给一个起点，用户一旦操作即写入模块级快照，后续实例沿用快照；**复位即回到这个基线**（快照随之改写为基线值），而不是回到世界原点。
 - 选中只影响：卡片 `data-selected` 属性 + 调用方的 `onSelect` 回调。**不**改变边相位、不改变出口、不写 store（N1 / N2）。
 
 ### 9.2 键盘
@@ -596,23 +610,27 @@ export function edgeGeometryOf(
 | `Ctrl` / `⌘` + `+` / `-` | 缩放（同按钮） | 容器内 `keydown` + `preventDefault` |
 | `Ctrl` / `⌘` + `0` | 视口复位 | 同上 |
 
-卡片是原生 `<button type="button">`，`aria-pressed={selected}`，`aria-label` 由 `title` + `subtitle` 拼接（文案由调用方给，设施不拼 i18n 键）。焦点环用 `outline: 2px solid var(--ant-color-primary)` + `outline-offset: 2px`，缩放后仍在视野内（`outline` 随 `transform` 缩放，可接受）。
+卡片是原生 `<button type="button">`，`aria-pressed={selected}`，`aria-label` 由 `index` + `title` + `mark` + `summary` 拼接（文案由调用方给，设施不拼 i18n 键）。焦点环用 `outline: 2px solid var(--ant-color-primary)` + `outline-offset: 2px`，缩放后仍在视野内（`outline` 随 `transform` 缩放，可接受）。
 
-### 9.3 头信息行（视口外，不随缩放）
+### 9.3 悬浮信息与缩放控件（视口内浮层，不随缩放）
 
-设施提供一条固定高度（`32px`）的头信息行，内容由调用方以 `header` 插槽传入（`ReactNode`），设施自身只放**缩放倍率 + 缩放按钮组**：
+画布铺满整个宿主区域（`CanvasViewport` 根元素 `height: 100%`，无边框、无圆角、无内边距），视口本身占满，**不**把画布装进卡片。信息与控件以浮层叠在视口之上：
 
-| 项 | 归属 | 说明 |
-|---|---|---|
-| 缩放倍率 | 设施 | `×1.00` 形式，只读展示 |
-| 缩放按钮组 | 设施 | `+` / `-` / 复位，`aria-label` 走 i18n（`canvas.zoom_*`） |
-| 内容摘要（活动边 / 圈 / 出口等） | 调用方 | 通过 `header` 插槽传入；设施不读任何内容字段 |
+| 浮层 | 位置 | 归属 | 说明 |
+|---|---|---|---|
+| 头信息胶囊 | 左上 `12px` | 调用方 | 内容由 `header` 插槽传入（`ReactNode`）；`pointer-events: none`，不挡平移；不传则不渲染 |
+| 缩放倍率 + 按钮组 | 右上 `12px` | 设施 | 一枚胶囊：`×1.00` 只读倍率 + `+` / `-` / 复位，`aria-label` 走 i18n（`canvas.zoom_*`） |
+| 图例 | 左下 `12px` | 设施 + 调用方 | 见 §10 |
 
-W1 示例页在 `header` 里放「示例内容 · 非真实数据」标记（§11.2）；W2 在 `header` 里放预设名、内置/只读标记与活动边摘要（W2 §8.1）。
+浮层全部是视口的**兄弟节点**（不在 `.surface` 内部），因此浮层上的指针事件不会进入平移处理器，不需要 `stopPropagation`。浮层容器 `z-index: 2`，背景 `--ant-color-bg-elevated` + `--shadow-orb` + `1px` 次边框，与画布背景形成层次。
+
+W1 示例页在 `header` 里放「示例内容 · 非真实数据」标记（§11.2）；W2 在 `header` 里放预设名、内置标记与编辑提示（W2 §8.1）。
 
 ### 9.4 指针手势与焦点的冲突
 
 卡片上按下指针**不**开始平移（`pointerdown` 判断 `target.closest("[data-canvas-card]")`，命中即跳过）。拖拽平移期间设置 `cursor: grabbing`，且不改变选中——避免「拖了一下画布就换了选中」。
+
+触摸按同一规则：单指落在卡片上不平移（保留点按选中），但**双指**无论落在何处都进入捏合；双指抬起一指后，剩余一指从当前位置重新起算平移基线，不产生跳变。
 
 ---
 
@@ -620,7 +638,7 @@ W1 示例页在 `header` 里放「示例内容 · 非真实数据」标记（§1
 
 ### 10.1 两组设施图例 + 调用方可追加组
 
-图例是画布的**固定部分**，放在视口下方（不随缩放、不随平移）。设施自带两组（相位、出口），其余组（卡片状态、证据等级等）由调用方通过 `groups` 追加：
+图例是画布的**固定部分**，以浮层固定在视口左下（`12px`），不随缩放、不随平移；`max-width: calc(100% - 24px)`、`max-height: 45%`、内容超出时自身滚动。设施自带两组（相位、出口），其余组（卡片状态、证据等级等）由调用方通过 `groups` 追加：
 
 ```ts
 export type CanvasLegendItem =
@@ -697,11 +715,11 @@ export interface CanvasLegendProps {
 
 | 项 | 值 |
 |---|---|
-| 文件 | `src/features/canvas/module.ts`（`FeatureModule`，只有 `routes`，无 `sidebar`） |
-| 路由 | `path: "/canvas-demo"`，`boundary: "画布设施自检"`，`visibility: "deepLinkOnly"` |
-| 页面 | `demo/CanvasDemoPage.tsx`：`CanvasViewport`（`cards` / `edges` / `labels` / `legendGroups` 来自 `demoContent`）+ `header` 里的「示例内容 · 非真实数据」标记 |
+| 文件 | `src/features/canvas/module.ts`（`FeatureModule`，含 `routes` 与 `sidebar`） |
+| 路由 | `path: "/canvas-demo"`，`boundary: "画布示例"`，`navParent: "canvas-demo"`，默认可见性（侧栏可达） |
+| 页面 | `demo/CanvasDemoPage.tsx`：`CanvasViewport`（`cards` / `edges` / `labels` 来自 `demoContent`，`initialViewport` 让开浮层）+ `header` 里的「示例内容 · 非真实数据」标记；页面铺满内容区，无外层卡片/内边距 |
 | 装载 | `src/features/registry.ts` 在 `observationModule` 之后无条件 `await import("./canvas/module")`（示例不含数据依赖，无需编译期开关） |
-| 侧栏 | 无条目：`deepLinkOnly` 保证不出现在导航里，只能手输 URL 或开发期直开 |
+| 侧栏 | 条目 `canvas-demo`，`slot: "after-history"`，`order: 80`，标签键 `common.navigation.canvas_demo` |
 | 退场 | W2 删除 `demo/` 与 `module.ts`，并删除 `registry.ts` 的装载段（W2 §1.2 第 7 条） |
 
 ### 11.3 为什么示例必须可整体删除
@@ -785,7 +803,7 @@ memo 的前提是 props **引用稳定**：`cards` / `edges` 数组由调用方�
 | 缩放按钮 | 有 `aria-label`，不使用纯符号 |
 | 非颜色编码 | 四相靠线型 + 线宽区分（§7.1） |
 | 减少动效 | `prefers-reduced-motion` 分支保留活动态语义（§7.3） |
-| 焦点可见 | `outline` 2px，缩放后不隐藏 |
+| 焦点可见 | `outline` 2px，缩放后不隐藏；只在**键盘模态**显示——指针模态下抑制 `:focus-visible`，否则点过画布后按 `Shift`（横向平移）或 `Ctrl`（缩放）时，浏览器会把焦点元素判成键盘聚焦，凭空冒出一圈蓝色描边（§6.3） |
 
 ### 13.4 性能预算
 
@@ -817,7 +835,7 @@ memo 的前提是 props **引用稳定**：`cards` / `edges` 数组由调用方�
 
 | 产出 | 文件 | 验收 |
 |---|---|---|
-| 三层结构 + `transform` + 头信息行（缩放部分） | `src/features/canvas/CanvasViewport.tsx` | K6 / K7 / K8 |
+| 三层结构 + `transform` + 悬浮信息/缩放控件 | `src/features/canvas/CanvasViewport.tsx` | K6 / K7 / K8 |
 | 画布样式与变量 | `src/features/canvas/canvas.module.css`、`src/assets/styles/global.css` | K23 |
 | 缩放 / 平移 / 复位 / 键盘 | 同上 | K7 / K8 |
 
@@ -882,6 +900,9 @@ memo 的前提是 props **引用稳定**：`cards` / `edges` 数组由调用方�
 | K26 | 无活动边时页面零动画（DevTools Animations 面板为空） |
 | K27 | 拖拽平移不改变选中；拖拽期间内容不重算（React DevTools 提交次数） |
 | K28 | 缩放/平移后重挂载视口保留、选中清空 |
+| K29 | 双指捏合以两指中点为锚：缩放后中点下的内容不动（误差 ≤ 0.5px）；抬起一指后单指继续平移不跳变 |
+| K30 | 触控板双指滑动可斜向平移（`deltaX` 与 `deltaY` 同时生效）；捏合在 Tauri 窗口内真实触发（不是只有触屏可用，且不缩放整个界面），缩放连续无跳档（同一手势内 `scale` 单调变化，不出现固定 1.1 步进） |
+| K31 | 画布铺满宿主内容区（根元素无边框/圆角/内边距）；头信息胶囊、缩放胶囊、图例三块浮层互不重叠且不遮挡平移（浮层上的指针事件不进入平移处理器） |
 
 ---
 
@@ -909,7 +930,7 @@ memo 的前提是 props **引用稳定**：`cards` / `edges` 数组由调用方�
 
 | # | 问题 | 影响 | 建议 |
 |---|---|---|---|
-| OQ-1 | 示例内容是否允许进生产包（`deepLinkOnly` 路由仍在产物里） | 产物多一个懒加载 chunk 与示例文案键 | W1 接受（仅 deep-link，无侧栏入口）；W2 删除后归零 |
+| OQ-1 | 示例内容是否允许进生产包（示例路由仍在产物里） | 产物多一个懒加载 chunk 与示例文案键 | W1 接受（侧栏可见、便于自检）；W2 删除后归零 |
 | OQ-2 | 多实例 / 多内容层是否要并排对比 | 会影响画布是否引入「分屏视口」 | 另立规格；W1 单内容层 |
 | OQ-3 | 时间线与卡片联动高亮 | 需要跨面板 hover 与双向选中 | 暂不做；若做，需定义「悬停是否算选中」 |
 | OQ-4 | `Tab` 走全部卡片是否太长（W2 起 12 张） | 可达性体验 | 可考虑 roving tabindex（方向键移动），但会增加自定义键盘逻辑；先按原生 `Tab` |
@@ -925,7 +946,10 @@ memo 的前提是 props **引用稳定**：`cards` / `edges` 数组由调用方�
 
 | 日期 | 章节 | 计划 | 实际 | 原因 |
 |---|---|---|---|---|
-| — | — | — | — | 实施后回填；无偏差时写「无」 |
+| 2026-11-22 | §6.3 / K30 | 视口只依赖页面内手势 | 增加平台前置：`tauri.conf.json` 主窗口 `zoomHotkeysEnabled: true`，并新增 `registerPageZoomGuard()` 拦整页缩放 | 主窗口由 `tauri.conf.json` 的 `app.windows` 在启动时创建，`show_or_create()` 命中已存在窗口即返回、不走 builder，故该开关只能写在配置里；wry 把 `zoom_hotkeys_enabled` 同时映射到 `IsZoomControlEnabled` 与 `IsPinchZoomEnabled`，默认 `false` 时 WebView2 直接丢弃触控板捏合，页面收不到 `ctrlKey` 的 wheel（触屏走 `pointer` 通道，不受影响） |
+| 2026-11-22 | §6.3 / K30 | 单一 `WHEEL_ZOOM_SENSITIVITY`（`0.001`）覆盖滚轮与捏合 | 拆成两档：整格滚轮 `0.001`，捏合细分事件 `0.002`（阈值 `\|deltaY\| < 50`） | 捏合是 WebView2 合成的高频小幅 `ctrlKey` wheel，与滚轮共用一个常数时，指数映射把每次的增量压平，实测手感约为触屏捏合的一半；触屏走 `pinchTo` 的间距比，是 1:1 映射，两条通道只能各自标定 |
+| 2026-11-22 | §6.3 | 横向平移 `x += deltaX * 0.5`、`Shift` + 滚轮 `x += deltaY * 0.5` | 横向改反号：`x -= deltaX * 0.5`、`Shift` + 滚轮 `x -= deltaY * 0.5`；纵向不变 | 实测触控板双指横滑时内容与手势反向（纵向正常）；横向同号相加会把手势方向翻成相反，故只反横向，两条横向通道共用同一符号 |
+| 2026-11-22 | §6.3 / §13.3 | 焦点框只靠 `:focus-visible` | 增加输入模态 `data-modality`：指针模态抑制视口与卡片的 `:focus-visible` 描边；`pointerdown` 回指针，仅 `Tab` / `Shift+Tab` 切键盘 | 点过画布（视口 `tabIndex=0`、卡片是 `<button>`）后按 `Shift` 横向平移，Chromium 会把当前焦点元素判成键盘聚焦，视口与卡片上凭空冒出一圈蓝色描边；`Ctrl+0`、`Esc` 同理，故只有移动焦点的 `Tab` 才算键盘导航 |
 
 ---
 

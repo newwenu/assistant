@@ -114,7 +114,7 @@
 3. **可选性只体现在一处**：`vault_plugin.rs` 用一对互斥 cfg 包住自身并提供同签名空实现，`feature_mounts.rs` 恒含该条目，因此装配层零 cfg——这正是 B1/B3/B5 在守的东西。
 4. **三方一致性有断言**：清单键 ↔ `MOUNTS` 的 `id` ↔ 磁盘 `*_plugin.rs` 全等（B2），插件命令 ↔ ACL 双向相等（A7），特性权限 ↔ capability 文件（B8）。
 
-**已实测支撑**：L1 阶段 `cargo check --no-default-features` 零错误通过，且 `cargo tree --no-default-features -i assistant-vault` 确认依赖图中不存在该 crate（记录见 `docs/store/vault-optional-build.md`）。这说明"关闭 = 真的不编"，不是"关闭 = 编了但不用"。遍历化改造（S1–S8）未触碰依赖门控，该结论继续成立，但**尚未在 CI 中固化为断言**（见 §8 G-1）。
+**已实测支撑**：L1 阶段 `cargo check --no-default-features` 零错误通过，且 `cargo tree --no-default-features -i assistant-vault` 确认依赖图中不存在该 crate（记录见 `vault-optional-build.md`（已归档））。这说明"关闭 = 真的不编"，不是"关闭 = 编了但不用"。遍历化改造（S1–S8）未触碰依赖门控，该结论继续成立，但**尚未在 CI 中固化为断言**（见 §8 G-1）。
 
 **边界**：D1 的"自由"在现有机制下的实际边界是「受支持组合可枚举 + 机制统一」，而不是「2^N 组合全可编译」。后者会把门禁成本推高到不可维护。
 

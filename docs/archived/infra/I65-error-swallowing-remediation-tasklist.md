@@ -187,7 +187,7 @@
   - `history.load_messages_failed` / `history.load_conversations_failed`（`history` 根下，与 `history.export_failed`（zh `:1289`）同级，该块起于 `:1269`）
   - `settings.load_conf_failed`（`settings` 根下，作为 `settings.not_found`（zh `:88`，对象）的字符串兄弟键）
   - `settings.provider.load_failed`（`settings.provider` 块内（zh `:769` 起），紧邻既有 `settings.provider.empty`（zh `:773`））
-  - `I18nPath` 由 `zh-CN.json` 编译期推导（[index.ts](file:///g:/codeversion/assistant3/src/i18n/index.ts#L34-L46) 的 `DeepKeys<typeof zhCN>`），**无需**跑生成脚本；改完 `tsc` 即校验键名
+  - `I18nPath` 由 `zh-CN.json` 编译期推导（[index.ts](../../../src/i18n/index.ts#L34-L46) 的 `DeepKeys<typeof zhCN>`），**无需**跑生成脚本；改完 `tsc` 即校验键名
   - 同步项的读取失败**不需要**新键：复用 `error` + `syncErrorText`（见上）
 - [x] 单测（沿用各 store 现有 `__tests__` 风格）：每个读取动作 2 例（成功 → `xxxError === null`；`vi.mocked(service).xxx.mockRejectedValue(...)` → 文案非空）
 
