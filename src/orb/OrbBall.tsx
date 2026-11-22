@@ -6,6 +6,7 @@ import {
 } from "../config/constants";
 import { useOrbStore } from "../stores/orbStore";
 import { useOrbDrag } from "./OrbDrag";
+import { useOrbCursor } from "./orbCursor";
 import { collapseOrbOnInit } from "./OrbExpand";
 import { useOrbConfSync } from "./useOrbConfSync";
 import {
@@ -32,13 +33,16 @@ export const OrbBall: React.FC = () => {
   const {
     activePointerType,
     isPressed,
+    isMenuOpen,
     onPointerDown,
     onPointerMove,
     onPointerUp,
     onPointerCancel,
+    onPointerLeave: onDragPointerLeave,
     onLostPointerCapture,
     onContextMenu,
   } = useOrbDrag();
+  const hitboxRef = useOrbCursor(mascotConf?.primaryColor);
 
   const [settled, setSettled] = useState(false);
   const [settledIn, setSettledIn] = useState(false);
@@ -77,6 +81,14 @@ export const OrbBall: React.FC = () => {
     setHovering(false);
   }, [setHovering]);
 
+  const handleHitboxLeave = useCallback(
+    (e: React.PointerEvent<HTMLElement>) => {
+      onDragPointerLeave(e);
+      handlePointerLeave();
+    },
+    [handlePointerLeave, onDragPointerLeave],
+  );
+
   const ballLeft =
     isExpanded && expandDirection === "left"
       ? `calc(100% - ${ORB_CHROME_INSET + ORB_COLLAPSED_SIZE}px)`
@@ -100,7 +112,8 @@ export const OrbBall: React.FC = () => {
 
   return (
     <div
-      className={`orb-hitbox${!isBallVisible ? " orb-ball-hidden" : ""}${!settled ? " orb-settling" : ""}${settledIn ? " orb-settled-in" : ""}${touchClass} ${stateClass}`}
+      ref={hitboxRef}
+      className={`orb-hitbox${!isBallVisible ? " orb-ball-hidden" : ""}${!settled ? " orb-settling" : ""}${settledIn ? " orb-settled-in" : ""}${touchClass}${isMenuOpen ? " orb-menu" : ""} ${stateClass}`}
       style={{
         position: "absolute",
         top: ballTop,
@@ -116,7 +129,7 @@ export const OrbBall: React.FC = () => {
       onLostPointerCapture={onLostPointerCapture}
       onContextMenu={onContextMenu}
       onPointerEnter={handlePointerEnter}
-      onPointerLeave={handlePointerLeave}
+      onPointerLeave={handleHitboxLeave}
     >
       <MascotRenderer
         renderer={asRendererId(mascotConf?.renderer ?? "svg")}

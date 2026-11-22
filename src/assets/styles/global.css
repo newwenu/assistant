@@ -184,7 +184,7 @@ div[data-orb-window] {
 
 div[data-orb-window] .orb-hitbox {
   pointer-events: auto !important;
-  cursor: grab !important;
+  cursor: var(--orb-cursor-idle, grab) !important;
   touch-action: none !important;
   -webkit-user-drag: none !important;
   background: transparent;
@@ -200,8 +200,14 @@ div[data-orb-window] .orb-hitbox {
     transform 200ms ease-out;
 }
 
-div[data-orb-window] .orb-hitbox:active {
-  cursor: grabbing !important;
+div[data-orb-window] .orb-hitbox:active,
+div[data-orb-window] .orb-hitbox.orb-pressed,
+div[data-orb-window] .orb-hitbox.orb-dragging {
+  cursor: var(--orb-cursor-active, grabbing) !important;
+}
+
+div[data-orb-window] .orb-hitbox.orb-menu {
+  cursor: var(--orb-cursor-menu, default) !important;
 }
 
 div[data-orb-window] .orb-hitbox:not(.orb-ball-hidden) {

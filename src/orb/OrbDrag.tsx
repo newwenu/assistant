@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useRef,
   useState,
@@ -37,7 +38,18 @@ const currentDpr = (): number => window.devicePixelRatio || 1;
 const isValidScale = (scale: number): boolean =>
   Number.isFinite(scale) && scale > 0;
 
-function pointerScreen(e: { clientX: number; clientY: number }): GesturePoint {
+function pointerScreen(e: {
+  clientX: number;
+  clientY: number;
+  screenX?: number;
+  screenY?: number;
+}): GesturePoint {
+  // 优先用事件自带的绝对屏幕坐标：`window.screenX + clientX` 里的 screenX 是处理器
+  // 执行时刻的窗口位置，比事件生成时刻晚一帧；拖拽中窗口正被 pump 以 60fps 移动，
+  // 快速拖动时这一帧的滞后可达数十像素，会让窗口落点系统性偏移、把光标甩出命中区。
+  if (typeof e.screenX === "number" && typeof e.screenY === "number") {
+    return { x: e.screenX, y: e.screenY };
+  }
   return { x: window.screenX + e.clientX, y: window.screenY + e.clientY };
 }
 
@@ -66,10 +78,12 @@ interface DragSession {
 export interface OrbDragApi {
   activePointerType: PointerKind | null;
   isPressed: boolean;
+  isMenuOpen: boolean;
   onPointerDown: PointerEventHandler<HTMLElement>;
   onPointerMove: PointerEventHandler<HTMLElement>;
   onPointerUp: PointerEventHandler<HTMLElement>;
   onPointerCancel: PointerEventHandler<HTMLElement>;
+  onPointerLeave: PointerEventHandler<HTMLElement>;
   onLostPointerCapture: PointerEventHandler<HTMLElement>;
   onContextMenu: MouseEventHandler<HTMLElement>;
 }
@@ -83,12 +97,22 @@ export function useOrbDrag(): OrbDragApi {
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const snapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastPointerTypeRef = useRef<PointerKind>("mouse");
+  /** 左键是否仍按住：拖拽被中断（cancel / 丢失捕获）时用它决定能不能立刻贴边。 */
+  const pointerHeldRef = useRef(false);
   const expandRef = useRef(expand);
   expandRef.current = expand;
 
   const [phase, setPhase] = useState<GesturePhase>("idle");
   const [activePointerType, setActivePointerType] =
     useState<PointerKind | null>(null);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const menuOpenRef = useRef(false);
+
+  const setMenuOpen = useCallback((open: boolean): void => {
+    if (menuOpenRef.current === open) return;
+    menuOpenRef.current = open;
+    setIsMenuOpen(open);
+  }, []);
 
   function clearLongPress(): void {
     if (longPressTimerRef.current !== null) {
@@ -108,17 +132,32 @@ export function useOrbDrag(): OrbDragApi {
     clearSnap();
     snapTimerRef.current = setTimeout(() => {
       snapTimerRef.current = null;
+      // 到点再校验一次：松手后 1s 内用户可能已经重新按住小球（此时 phase 为 pressed
+      // 或正在拖拽，还没跨过 8px 阈值），贴边会把球从用户手底下拽走。
+      if (useOrbStore.getState().isDragging) return;
+      if (gestureRef.current.phase !== "idle") return;
+      // 指针还按着：多半是拖拽被系统收回捕获（`lostcapture`）后立即排队的贴边，
+      // 此刻用户并没有松手，贴边会把球从手底下拽走。
+      if (pointerHeldRef.current) return;
       void orbService
         .snapOrbToEdge()
         .catch((e) => log.warn("snap orb to edge failed", e));
     }, ORB_SNAP_DELAY_MS);
   }
 
-  function showMenu(x: number, y: number): void {
-    void orbService
-      .showOrbContextMenu(x, y)
-      .catch((e) => log.warn("show orb context menu failed", e));
-  }
+  const clearSnapRef = useRef(clearSnap);
+  clearSnapRef.current = clearSnap;
+
+  const showMenu = useCallback(
+    (x: number, y: number): void => {
+      setMenuOpen(true);
+      void orbService
+        .showOrbContextMenu(x, y)
+        .catch((e) => log.warn("show orb context menu failed", e))
+        .finally(() => setMenuOpen(false));
+    },
+    [setMenuOpen],
+  );
 
   function applyStep(session: DragSession, step: DragStep): void {
     if (step.kind === "hold") {
@@ -367,28 +406,41 @@ export function useOrbDrag(): OrbDragApi {
     };
   }, []);
 
-  const onPointerDown: PointerEventHandler<HTMLElement> = (e) => {
-    if (e.button !== 0) return;
-    const screen = pointerScreen(e);
-    dispatch(
-      {
-        kind: "down",
-        pointerId: e.pointerId,
-        pointerType: toPointerKind(e.pointerType),
-        isPrimary: e.isPrimary,
-        button: e.button,
-        x: e.clientX,
-        y: e.clientY,
-        sx: screen.x,
-        sy: screen.y,
-      },
-      e.currentTarget,
-    );
-  };
+  const onPointerDown = useCallback<PointerEventHandler<HTMLElement>>(
+    (e) => {
+      // 按下即撤销上一次松手排队的贴边：从「按下」到「位移跨过 8px 进入 dragging」之间
+      // 可能停顿很久（尤其贴边抓取时），不撤销会让 1s 定时器在拖拽途中准点触发。
+      clearSnapRef.current();
+      // 右键按下先切到箭头光标：原生菜单弹起后会阻塞渲染线程，此刻再改 CSS 已来不及。
+      if (e.button === 2) {
+        setMenuOpen(true);
+        return;
+      }
+      setMenuOpen(false);
+      if (e.button !== 0) return;
+      pointerHeldRef.current = true;
+      const screen = pointerScreen(e);
+      dispatchRef.current(
+        {
+          kind: "down",
+          pointerId: e.pointerId,
+          pointerType: toPointerKind(e.pointerType),
+          isPrimary: e.isPrimary,
+          button: e.button,
+          x: e.clientX,
+          y: e.clientY,
+          sx: screen.x,
+          sy: screen.y,
+        },
+        e.currentTarget,
+      );
+    },
+    [setMenuOpen],
+  );
 
-  const onPointerMove: PointerEventHandler<HTMLElement> = (e) => {
+  const onPointerMove = useCallback<PointerEventHandler<HTMLElement>>((e) => {
     const screen = pointerScreen(e);
-    dispatch({
+    dispatchRef.current({
       kind: "move",
       pointerId: e.pointerId,
       x: e.clientX,
@@ -396,43 +448,80 @@ export function useOrbDrag(): OrbDragApi {
       sx: screen.x,
       sy: screen.y,
     });
-  };
+  }, []);
 
-  const onPointerUp: PointerEventHandler<HTMLElement> = (e) => {
-    dispatch({ kind: "up", pointerId: e.pointerId }, e.currentTarget);
-  };
+  const onPointerUp = useCallback<PointerEventHandler<HTMLElement>>(
+    (e) => {
+      // 先清「按住」标记再派发：finishDrag 会在派发内同步 scheduleSnap，
+      // 定时器到点时要能看到「已经松手」。
+      if (e.button !== 2) pointerHeldRef.current = false;
+      // 右键抬起后 contextmenu 会紧接着补一次 showMenu（Windows 顺序是 up → contextmenu），
+      // 这里先复位，避免没弹菜单的右键把箭头光标留在小球上。
+      if (e.button === 2) setMenuOpen(false);
+      dispatchRef.current(
+        { kind: "up", pointerId: e.pointerId },
+        e.currentTarget,
+      );
+    },
+    [setMenuOpen],
+  );
 
-  const onPointerCancel: PointerEventHandler<HTMLElement> = (e) => {
-    dispatch({ kind: "cancel", pointerId: e.pointerId }, e.currentTarget);
-  };
+  const onPointerCancel = useCallback<PointerEventHandler<HTMLElement>>(
+    (e) => {
+      pointerHeldRef.current = false;
+      setMenuOpen(false);
+      dispatchRef.current(
+        { kind: "cancel", pointerId: e.pointerId },
+        e.currentTarget,
+      );
+    },
+    [setMenuOpen],
+  );
 
-  const onLostPointerCapture: PointerEventHandler<HTMLElement> = (e) => {
-    dispatch({ kind: "lostcapture", pointerId: e.pointerId }, e.currentTarget);
-  };
+  // 指针离开命中区就复位菜单光标：右键按下后移到窗口外松开时既不会收到 pointerup，
+  // 也不会在命中区触发 contextmenu，否则箭头会一直留在小球上。
+  const onPointerLeave = useCallback<PointerEventHandler<HTMLElement>>(() => {
+    setMenuOpen(false);
+  }, [setMenuOpen]);
 
-  const onContextMenu: MouseEventHandler<HTMLElement> = (e) => {
-    e.preventDefault();
-    const nativeType = (e.nativeEvent as PointerEvent).pointerType;
-    const pointerType = isPointerKind(nativeType)
-      ? nativeType
-      : lastPointerTypeRef.current;
-    const now = Date.now();
-    const { show } = resolveContextMenu(gestureRef.current, {
-      pointerType,
-      now,
-    });
-    if (!show) return;
-    gestureRef.current = { ...gestureRef.current, menuShownAt: now };
-    showMenu(e.clientX, e.clientY);
-  };
+  const onLostPointerCapture = useCallback<PointerEventHandler<HTMLElement>>(
+    (e) => {
+      dispatchRef.current(
+        { kind: "lostcapture", pointerId: e.pointerId },
+        e.currentTarget,
+      );
+    },
+    [],
+  );
+
+  const onContextMenu = useCallback<MouseEventHandler<HTMLElement>>(
+    (e) => {
+      e.preventDefault();
+      const nativeType = (e.nativeEvent as PointerEvent).pointerType;
+      const pointerType = isPointerKind(nativeType)
+        ? nativeType
+        : lastPointerTypeRef.current;
+      const now = Date.now();
+      const { show } = resolveContextMenu(gestureRef.current, {
+        pointerType,
+        now,
+      });
+      if (!show) return;
+      gestureRef.current = { ...gestureRef.current, menuShownAt: now };
+      showMenu(e.clientX, e.clientY);
+    },
+    [showMenu],
+  );
 
   return {
     activePointerType,
     isPressed: phase === "pressed" && activePointerType !== "mouse",
+    isMenuOpen,
     onPointerDown,
     onPointerMove,
     onPointerUp,
     onPointerCancel,
+    onPointerLeave,
     onLostPointerCapture,
     onContextMenu,
   };
