@@ -15,6 +15,7 @@ import { subscribeSettingEvents } from "@/services/settingEvents";
 import { initSettingSystem } from "@/settings/core/registry/initSettingSystem";
 import { bootstrapLogger } from "@/services/system/logger";
 import { registerGlobalErrorHandlers } from "@/services/system/globalErrorHandler";
+import { registerPageZoomGuard } from "@/services/system/pageZoomGuard";
 import { AppErrorBoundary } from "@/components/AppErrorBoundary";
 import { applyLocaleChange } from "@/i18n/localeApplier";
 import { loadFeatures } from "@/features/registry";
@@ -38,6 +39,7 @@ initSettingSystem();
 
 bootstrapLogger();
 registerGlobalErrorHandlers();
+registerPageZoomGuard();
 
 async function bootstrap(): Promise<void> {
   await loadFeatures();

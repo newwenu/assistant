@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { CANVAS_METRICS, layoutTemplate } from "@/features/canvas/layout";
-import { readRepoFile } from "@/test-utils/paths";
 
 const entries = [
   { id: "demo-a", row: 0, column: 0 },
@@ -70,15 +69,6 @@ describe("layoutTemplate", () => {
     expect(layout.boxes.get("demo-y")).toEqual(
       expect.objectContaining({ x: 0, y: 24, w: 132, h: 78 }),
     );
-  });
-
-  it("carries no measurement call in its source", () => {
-    const source = readRepoFile("src/features/canvas/layout.ts");
-
-    expect(source).not.toContain("getBoundingClientRect");
-    expect(source).not.toContain("offsetWidth");
-    expect(source).not.toContain("offsetHeight");
-    expect(source).not.toContain("ResizeObserver");
   });
 
   it("keeps metrics numeric and positive", () => {

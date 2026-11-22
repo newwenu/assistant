@@ -41,38 +41,39 @@ export function edgeGeometryOf(
   route: EdgeRoute,
   gutter: number,
 ): EdgeGeometry {
-  const fromRight = from.x + from.w;
-  const fromMidY = from.y + from.h / 2;
-  const fromMidX = from.x + from.w / 2;
-  const fromBottom = from.y + from.h;
-  const toLeft = to.x;
-  const toMidY = to.y + to.h / 2;
-  const toMidX = to.x + to.w / 2;
-  const toTop = to.y;
+  const source = anchorOf(from, "right");
+  const sourceBottom = anchorOf(from, "bottom");
+  const target = anchorOf(to, "left");
+  const targetTop = anchorOf(to, "top");
 
   switch (route) {
     case "horizontal":
       return {
         segments: [
-          { x: fromRight, y: fromMidY - 0.5, w: toLeft - fromRight, h: 1 },
+          { x: source.x, y: source.y - 0.5, w: target.x - source.x, h: 1 },
         ],
-        arrow: { x: toLeft, y: toMidY, direction: "right" },
+        arrow: { x: target.x, y: target.y, direction: "right" },
       };
     case "vertical":
       return {
         segments: [
-          { x: fromMidX - 0.5, y: fromBottom, w: 1, h: toTop - fromBottom },
+          {
+            x: sourceBottom.x - 0.5,
+            y: sourceBottom.y,
+            w: 1,
+            h: targetTop.y - sourceBottom.y,
+          },
         ],
-        arrow: { x: toMidX, y: toTop, direction: "down" },
+        arrow: { x: targetTop.x, y: targetTop.y, direction: "down" },
       };
     case "outer-track":
       return {
         segments: [
-          { x: fromRight - 0.5, y: gutter, w: 1, h: from.y - gutter },
-          { x: toLeft, y: gutter - 0.5, w: fromRight - toLeft, h: 1 },
-          { x: toLeft, y: gutter, w: 1, h: to.y - gutter },
+          { x: source.x - 0.5, y: gutter, w: 1, h: from.y - gutter },
+          { x: target.x, y: gutter - 0.5, w: source.x - target.x, h: 1 },
+          { x: target.x, y: gutter, w: 1, h: to.y - gutter },
         ],
-        arrow: { x: toLeft, y: gutter, direction: "left" },
+        arrow: { x: target.x, y: gutter, direction: "left" },
       };
   }
 }

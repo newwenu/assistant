@@ -6,6 +6,19 @@ export interface CanvasLayoutEntry {
   column: number;
 }
 
+/**
+ * 摆放度量（I68 §4.3）：几何公式只认这四个字段，
+ * 观测栅格用 `CANVAS_METRICS`，画布卡片用 `CARD_METRICS`，两者互不引用。
+ */
+export interface CanvasMetrics {
+  cellW: number;
+  cellH: number;
+  gap: number;
+  loopGutter: number;
+  gridMinor?: number;
+  gridMajor?: number;
+}
+
 export const CANVAS_METRICS = {
   cellW: 132,
   cellH: 78,
@@ -13,7 +26,7 @@ export const CANVAS_METRICS = {
   loopGutter: 16,
   gridMinor: 40,
   gridMajor: 200,
-} as const;
+} as const satisfies CanvasMetrics;
 
 export interface CanvasLayout {
   boxes: ReadonlyMap<string, CanvasBox>;
@@ -23,13 +36,14 @@ export interface CanvasLayout {
 
 export function layoutTemplate(
   entries: readonly CanvasLayoutEntry[],
+  metrics: CanvasMetrics = CANVAS_METRICS,
 ): CanvasLayout {
   const boxes = new Map<string, CanvasBox>();
   if (entries.length === 0) {
     return { boxes, width: 0, height: 0 };
   }
 
-  const { cellW, cellH, gap, loopGutter } = CANVAS_METRICS;
+  const { cellW, cellH, gap, loopGutter } = metrics;
   let maxColumn = 0;
   let maxRow = 0;
 

@@ -26,13 +26,13 @@
 
 .body {
   display: grid;
-  grid-template-columns: 240px minmax(0, 1fr);
+  grid-template-columns: 240px 220px minmax(0, 1fr);
   min-height: 0;
   overflow: hidden;
 }
 
 .body[data-empty="true"] {
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: 220px minmax(0, 1fr);
 }
 
 .instancePane {
@@ -113,21 +113,21 @@
   overflow: hidden;
 }
 
-.canvasPane {
-  display: grid;
-  grid-template-rows: auto auto;
-  gap: 8px;
-  min-width: 0;
-  padding: 10px 16px 12px;
-  border-bottom: 1px solid var(--ant-color-border);
+.mainPane[data-inspector="true"] {
+  grid-template-rows: auto minmax(0, 1fr) 220px;
 }
 
-.canvasHeader {
+.mainPane[data-notice="true"] {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+.canvasMetaBar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  gap: 10px;
   flex-wrap: wrap;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--ant-color-border);
 }
 
 .canvasMeta {
@@ -140,148 +140,24 @@
   font-size: 11px;
 }
 
-.canvasScroll {
+.canvasHost {
   min-width: 0;
-  padding-bottom: 2px;
-  overflow-x: auto;
-  overflow-y: hidden;
-}
-
-.canvas {
-  display: grid;
-  gap: 8px;
-  align-items: stretch;
-}
-
-.laneLabel {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 4px 8px;
-  border: 1px dashed var(--ant-color-border-secondary);
-  border-radius: var(--radius-md, 8px);
-  color: var(--ant-color-text-quaternary);
-  font-size: 11px;
-  text-align: center;
-}
-
-.cell {
-  display: grid;
-  gap: 2px;
-  align-content: start;
-  min-width: 0;
-  min-height: 78px;
-  padding: 6px 8px;
-  border: 1px solid var(--ant-color-border);
-  border-radius: var(--radius-md, 8px);
-  background: var(--ant-color-bg-container);
-}
-
-.cell[data-source="observed"] {
-  border-style: solid;
-}
-
-.cell[data-source="derived"] {
-  border-style: dashed;
-  opacity: 0.72;
-}
-
-.cell[data-source="assumed"] {
-  border-style: dotted;
-  opacity: 0.8;
-}
-
-.cell[data-state="pending"] {
-  color: var(--ant-color-text-quaternary);
-  background: var(--ant-color-bg-layout);
-}
-
-.cell[data-state="running"] {
-  border-color: var(--ant-color-primary);
-  background: var(--ant-color-primary-bg);
-  color: var(--ant-color-primary);
-}
-
-.cell[data-state="waiting"] {
-  border-color: var(--ant-color-warning);
-  background: var(--ant-color-warning-bg);
-  color: var(--ant-color-warning);
-}
-
-.cell[data-state="finished"] {
-  border-color: var(--ant-color-success-border);
-  background: var(--ant-color-success-bg);
-  color: var(--ant-color-success);
-}
-
-.cell[data-state="error"] {
-  border-color: var(--ant-color-error-border);
-  background: var(--ant-color-error-bg);
-  color: var(--ant-color-error);
-}
-
-.cell[data-state="skipped"] {
-  color: var(--ant-color-text-tertiary);
-  background: var(--ant-color-bg-layout);
-}
-
-.cell[data-state="cancelled"] {
-  color: var(--ant-color-text-tertiary);
-  background: var(--ant-color-bg-layout);
-}
-
-.cell[data-active-source="true"] {
-  box-shadow: 0 0 0 2px var(--ant-color-primary-bg);
-}
-
-.cell[data-active-target="true"] {
-  box-shadow: 0 0 0 2px var(--ant-color-primary);
-}
-
-.cellHead {
-  display: flex;
-  align-items: flex-start;
-  gap: 4px;
-  min-width: 0;
-}
-
-.cellOrder {
-  flex-shrink: 0;
-  color: var(--ant-color-text-tertiary);
-  font-size: 11px;
-  line-height: 1.35;
-}
-
-.cellName {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  min-width: 0;
+  min-height: 0;
   overflow: hidden;
+}
+
+.emptyBar {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 16px;
+  border-top: 1px solid var(--ant-color-border);
+}
+
+.emptyTitle {
   font-size: 12px;
   font-weight: 500;
-  line-height: 1.35;
-  overflow-wrap: anywhere;
-}
-
-.cellBadges {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  flex-wrap: wrap;
-}
-
-.cellBadge {
-  padding: 0 4px;
-  border-radius: 4px;
-  background: var(--ant-color-fill-secondary);
-  color: var(--ant-color-text-secondary);
-  font-size: 10px;
-  line-height: 16px;
-}
-
-.cellState {
-  font-size: 11px;
 }
 
 .inspector {
@@ -399,14 +275,6 @@
 
 .detailKey {
   color: var(--ant-color-text-quaternary);
-}
-
-.emptyWrap {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 100%;
-  min-height: 0;
 }
 
 .notice {

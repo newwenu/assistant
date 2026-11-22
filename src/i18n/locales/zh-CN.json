@@ -13,7 +13,6 @@
       "vault_settings": { "title": "密码保险库设置" },
       "chat_history": "消息历史",
       "agent_observation": "Agent 观测",
-      "canvas_demo": "画布示例",
       "settings": "设置",
       "category": {
         "general": "通用",
@@ -2168,7 +2167,6 @@
       "loop": "回边",
       "unfinished": "未完成",
       "preview": "模板预览（本次运行尚未收到节点事件）",
-      "tool_lane": "工具分支：仅当 ⑦ 判定需要调用工具时才进入",
       "no_percent": "V1 只显示状态，不显示百分比"
     },
     "state": {
@@ -2211,6 +2209,20 @@
       "persist-tools": "工具结果落库",
       "after-iteration": "迭代尾"
     },
+    "role": {
+      "admit": "校验本轮请求能否进入编排",
+      "prepare": "冻结输入并生成上下文投影",
+      "brake": "检查停止与预算信号，决定是否中断",
+      "ladder": "按预算裁剪上下文层级",
+      "model": "调用模型生成 assistant 回复",
+      "persist-assistant": "把 assistant 消息写入会话记录",
+      "branch": "判定继续、收尾还是转入工具",
+      "budget-split": "按剩余预算分配本轮额度",
+      "pipeline": "执行工具调用并回收结果",
+      "after-tool": "加工工具结果，决定是否回注上下文",
+      "persist-tools": "把工具结果写入会话记录",
+      "after-iteration": "收束本轮，决定是否进入下一圈"
+    },
     "inspector": {
       "summary": "汇总",
       "timeline": "时间线",
@@ -2238,6 +2250,7 @@
     "zoom_reset": "复位视图",
     "zoom_level": "缩放",
     "edge": {
+      "label": "连线",
       "untaken": "未通行",
       "idle": "待通行",
       "passed": "已通行",
@@ -2252,25 +2265,75 @@
       "edge_phase": "边相位",
       "exit": "出口"
     },
-    "demo": {
-      "card": {
-        "a": "示例卡片 A",
-        "b": "示例卡片 B",
-        "c": "示例卡片 C",
-        "d": "示例卡片 D",
-        "e": "示例卡片 E",
-        "f": "示例卡片 F"
+    "preset": {
+      "badge_builtin": "内置",
+      "badge_example": "示例数据",
+      "readonly_hint": "可编辑：仅本视图生效，刷新后恢复初始摆放",
+      "builtin_agent": {
+        "name": "Agent 轮次",
+        "description": "内置 Agent 单轮编排的预置呈现方案"
       },
-      "subtitle": {
-        "a": "演示占位",
-        "b": "演示占位",
-        "c": "演示占位",
-        "d": "演示占位",
-        "e": "演示占位",
-        "f": "演示占位"
+      "zone": {
+        "main_lane": "主链区带",
+        "branch_lane": "分支区带：仅当需要时才进入"
+      }
+    },
+    "card": {
+      "badge_example": "示例",
+      "category": {
+        "execution": "执行卡片",
+        "container": "容器卡片"
       },
-      "lane": "第二行留白（示例）",
-      "notice": "示例内容 · 非真实数据"
+      "form": {
+        "turn": "轮次",
+        "tool": "工具调用",
+        "conversation": "会话",
+        "hitl": "人工介入"
+      },
+      "name": {
+        "turn": "轮次卡片",
+        "tool": "工具调用卡片",
+        "conversation": "会话卡片",
+        "hitl": "人工介入卡片",
+        "container": "会话容器卡片"
+      },
+      "summary": {
+        "turn": "一次模型轮次，内含阶段轨道",
+        "tool": "一次工具调用的执行与输出",
+        "conversation": "会话消息的读写",
+        "hitl": "等待人工回答的问题",
+        "container": "承载一张子图"
+      },
+      "stages": "阶段轨道",
+      "reference": "引用",
+      "param": {
+        "model": "模型",
+        "budget": "预算",
+        "toolset": "工具集",
+        "command": "命令",
+        "timeout": "超时",
+        "sandbox": "沙箱",
+        "session_key": "会话键",
+        "retain": "保留",
+        "messages": "消息数",
+        "question": "问题",
+        "options": "选项",
+        "wait": "等待上限",
+        "subgraph_nodes": "子图节点",
+        "iteration_limit": "迭代上限",
+        "level": "层级"
+      },
+      "body": {
+        "output": "输出预览",
+        "messages": "消息流",
+        "question": "问题文本",
+        "subgraph": "子图缩略"
+      }
+    },
+    "palette": {
+      "title": "卡片放置栏",
+      "hint": "可拖入画布；不保存、不校验、不自动连线",
+      "place_hint": "回车放到视口中心"
     }
   }
 }

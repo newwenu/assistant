@@ -13,7 +13,6 @@
       "vault_settings": { "title": "Vault Settings" },
       "chat_history": "Chat History",
       "agent_observation": "Agent Observation",
-      "canvas_demo": "Canvas Sample",
       "settings": "Settings",
       "category": {
         "general": "General",
@@ -2195,7 +2194,6 @@
       "loop": "Loop",
       "unfinished": "Unfinished",
       "preview": "Template preview (no node events in this run yet)",
-      "tool_lane": "Tool branch: entered only when ⑦ decides a tool call is needed",
       "no_percent": "V1 shows states only, no percentages"
     },
     "state": {
@@ -2238,6 +2236,20 @@
       "persist-tools": "Persist Tool Results",
       "after-iteration": "After Iteration"
     },
+    "role": {
+      "admit": "Validate whether this turn may enter orchestration",
+      "prepare": "Freeze input and build the context projection",
+      "brake": "Check stop and budget signals, decide whether to interrupt",
+      "ladder": "Trim context tiers against the budget",
+      "model": "Call the model to produce the assistant reply",
+      "persist-assistant": "Write the assistant message row into the conversation",
+      "branch": "Decide whether to continue, wrap up, or enter tools",
+      "budget-split": "Split this turn's allowance from the remaining budget",
+      "pipeline": "Execute tool calls and collect results",
+      "after-tool": "Post-process tool results, decide whether to feed them back",
+      "persist-tools": "Write tool result rows into the conversation",
+      "after-iteration": "Close the iteration, decide whether to loop again"
+    },
     "inspector": {
       "summary": "Summary",
       "timeline": "Timeline",
@@ -2265,6 +2277,7 @@
     "zoom_reset": "Reset view",
     "zoom_level": "Zoom",
     "edge": {
+      "label": "Connector",
       "untaken": "Not taken",
       "idle": "Idle",
       "passed": "Passed",
@@ -2279,25 +2292,75 @@
       "edge_phase": "Edge phase",
       "exit": "Exit"
     },
-    "demo": {
-      "card": {
-        "a": "Sample card A",
-        "b": "Sample card B",
-        "c": "Sample card C",
-        "d": "Sample card D",
-        "e": "Sample card E",
-        "f": "Sample card F"
+    "preset": {
+      "badge_builtin": "Built-in",
+      "badge_example": "Example data",
+      "readonly_hint": "Editable: applies to this view only; layout resets on reload",
+      "builtin_agent": {
+        "name": "Agent turn",
+        "description": "Built-in preset presenting a single agent turn orchestration"
       },
-      "subtitle": {
-        "a": "Placeholder",
-        "b": "Placeholder",
-        "c": "Placeholder",
-        "d": "Placeholder",
-        "e": "Placeholder",
-        "f": "Placeholder"
+      "zone": {
+        "main_lane": "Main lane",
+        "branch_lane": "Branch lane: entered only when needed"
+      }
+    },
+    "card": {
+      "badge_example": "Example",
+      "category": {
+        "execution": "Execution card",
+        "container": "Container card"
       },
-      "lane": "Row 2 gutter (sample)",
-      "notice": "Sample content · not real data"
+      "form": {
+        "turn": "Turn",
+        "tool": "Tool call",
+        "conversation": "Conversation",
+        "hitl": "Human-in-the-loop"
+      },
+      "name": {
+        "turn": "Turn card",
+        "tool": "Tool call card",
+        "conversation": "Conversation card",
+        "hitl": "Human-in-the-loop card",
+        "container": "Conversation container card"
+      },
+      "summary": {
+        "turn": "A model turn with its stage track",
+        "tool": "One tool call with its output",
+        "conversation": "Reading and writing conversation messages",
+        "hitl": "A question waiting for a human answer",
+        "container": "Holds a subgraph"
+      },
+      "stages": "Stage track",
+      "reference": "Ref",
+      "param": {
+        "model": "Model",
+        "budget": "Budget",
+        "toolset": "Tool set",
+        "command": "Command",
+        "timeout": "Timeout",
+        "sandbox": "Sandbox",
+        "session_key": "Session key",
+        "retain": "Retain",
+        "messages": "Messages",
+        "question": "Question",
+        "options": "Options",
+        "wait": "Wait limit",
+        "subgraph_nodes": "Subgraph nodes",
+        "iteration_limit": "Iteration limit",
+        "level": "Level"
+      },
+      "body": {
+        "output": "Output preview",
+        "messages": "Message stream",
+        "question": "Question text",
+        "subgraph": "Subgraph thumbnail"
+      }
+    },
+    "palette": {
+      "title": "Card palette",
+      "hint": "Drag into canvas; not saved, not validated, not auto-wired",
+      "place_hint": "Press Enter to place at the viewport centre"
     }
   }
 }

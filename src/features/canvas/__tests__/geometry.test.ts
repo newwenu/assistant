@@ -43,6 +43,43 @@ describe("edgeGeometryOf", () => {
     expect(geometry.arrow).toEqual({ x: 0, y: 16, direction: "left" });
   });
 
+  it("derives the endpoints from the box anchors", () => {
+    const horizontal = edgeGeometryOf(a, b, "horizontal", gutter);
+    expect(horizontal.segments[0]).toEqual(
+      expect.objectContaining({
+        x: anchorOf(a, "right").x,
+        y: anchorOf(a, "right").y - 0.5,
+      }),
+    );
+    expect(horizontal.arrow).toEqual({
+      x: anchorOf(b, "left").x,
+      y: anchorOf(b, "left").y,
+      direction: "right",
+    });
+
+    const vertical = edgeGeometryOf(c, d, "vertical", gutter);
+    expect(vertical.segments[0]).toEqual(
+      expect.objectContaining({
+        x: anchorOf(c, "bottom").x - 0.5,
+        y: anchorOf(c, "bottom").y,
+      }),
+    );
+    expect(vertical.arrow).toEqual({
+      x: anchorOf(d, "top").x,
+      y: anchorOf(d, "top").y,
+      direction: "down",
+    });
+
+    const outer = edgeGeometryOf(d, a, "outer-track", gutter);
+    expect(outer.segments[0].x).toBe(anchorOf(d, "right").x - 0.5);
+    expect(outer.segments[2].x).toBe(anchorOf(a, "left").x);
+    expect(outer.arrow).toEqual({
+      x: anchorOf(a, "left").x,
+      y: gutter,
+      direction: "left",
+    });
+  });
+
   it("keeps both ends of every segment on a box border within half a pixel", () => {
     const cases = [
       { route: "horizontal", from: a, to: b },

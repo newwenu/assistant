@@ -88,7 +88,7 @@ function LegendGroupView({ group }: { group: CanvasLegendGroup }) {
 }
 
 /**
- * 图例（§10）：设施自带相位 / 出口两组，内容组由调用方追加；挂在视口下方，不随缩放平移。
+ * 图例（§10）：设施自带相位 / 出口两组，内容组由调用方追加；以浮层固定在视口左下，不随缩放平移。
  */
 function CanvasLegendImpl({ showFacilityGroups, groups }: CanvasLegendProps) {
   const { t } = useTranslation();

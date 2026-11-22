@@ -25,8 +25,6 @@ export async function loadFeatures(): Promise<void> {
   }
   const { observationModule } = await import("./observation/module");
   modules.push(observationModule);
-  const { canvasModule } = await import("./canvas/module");
-  modules.push(canvasModule);
   if (modules.length === 0) return;
   features = aggregate(modules);
   for (const slot of features.confs) registerConfSlot(slot);
