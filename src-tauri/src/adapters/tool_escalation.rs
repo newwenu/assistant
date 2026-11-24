@@ -37,11 +37,12 @@ impl RegistryEscalationPort {
         }
     }
 
-    /// 申请按 `id` 或 `name` 均可：先查模型可见名，再回落到内部 id。
+    /// 申请按模型可见名解析，且只接受 `audience().agent` 的工具（I72 §2.5）。
+    ///
+    /// 不再回落到 `find`：生产工具里 `id == name`，回落分支实际不可达；
+    /// 保留宽松路径等于保护一个「必须不存在」的状态（模型申请 `TOOLBOX_ONLY` 工具）。
     fn resolve(&self, key: &str) -> Option<RegisteredTool> {
-        self.registry
-            .find_by_name(key)
-            .or_else(|| self.registry.find(key))
+        self.registry.find_for_agent(key)
     }
 
     /// `brief` 档：工具未覆写 `brief()` 时回落到 `description()` 的首句（I58 §3.6）。

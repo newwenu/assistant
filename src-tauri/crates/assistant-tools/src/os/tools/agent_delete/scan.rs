@@ -1,6 +1,5 @@
 use std::path::Path;
 
-use crate::os::output::human_bytes;
 use crate::r#trait::ApprovalPreview;
 
 use super::attrs::is_link_like;
@@ -69,94 +68,62 @@ pub(crate) fn scan_tree(root: &Path) -> Result<ScanOutcome, String> {
     })
 }
 
-pub(crate) fn describe_preview(
-    target: &Path,
-    recursive: bool,
-    permanent: bool,
-) -> Option<ApprovalPreview> {
+/// 预演：只回填结构化量级，`summary` 留给诊断（I72 §5.3）。
+///
+/// 量级来自 `scan_tree`（与 `execute` 同源），因此 `estimated = false`；
+/// 目标已消失（`symlink_metadata` 失败）时返回 `None`，由调用方回落到无预演。
+pub(crate) fn describe_preview(target: &Path) -> Option<ApprovalPreview> {
     let metadata = std::fs::symlink_metadata(target).ok()?;
     let file_type = metadata.file_type();
 
     if is_link_like(&metadata) {
-        let summary = if permanent {
-            format!(
-                "delete the link at {} (its target is not touched)",
-                target.display()
-            )
-        } else {
-            format!(
-                "move the link at {} to the system recycle bin (its target is not touched)",
-                target.display()
-            )
-        };
         return Some(ApprovalPreview {
-            summary,
+            summary: String::new(),
             truncated: false,
-            estimated: true,
+            estimated: false,
+            entries: Some(1),
+            bytes: None,
+            target_kind: Some("link".to_string()),
+            exists: Some(true),
+            symlink: Some(true),
+            verb_code: None,
+            shell: None,
         });
     }
     if !file_type.is_dir() {
-        let size = human_bytes(metadata.len() as usize);
-        let summary = if permanent {
-            format!(
-                "permanently delete the file at {} ({})",
-                target.display(),
-                size
-            )
-        } else {
-            format!(
-                "move the file at {} ({}) to the system recycle bin",
-                target.display(),
-                size
-            )
-        };
         return Some(ApprovalPreview {
-            summary,
+            summary: String::new(),
             truncated: false,
-            estimated: true,
+            estimated: false,
+            entries: Some(1),
+            bytes: Some(metadata.len()),
+            target_kind: Some("file".to_string()),
+            exists: Some(true),
+            symlink: Some(false),
+            verb_code: None,
+            shell: None,
         });
     }
 
-    let scan = scan_tree(target).ok()?;
-    let entries = if scan.truncated {
-        format!("at least {} entries", DELETE_SCAN_LIMIT)
-    } else {
-        format!("{} entries", scan.entries)
-    };
-    let bytes = if scan.truncated {
-        format!("at least {} bytes", DELETE_SCAN_LIMIT)
-    } else {
-        human_bytes(scan.bytes as usize)
-    };
-    let summary = match (permanent, recursive) {
-        (true, true) => format!(
-            "permanently delete the directory at {} ({}, {})",
-            target.display(),
-            entries,
-            bytes
+    let (entries, bytes, truncated, summary) = match scan_tree(target) {
+        Ok(scan) => (
+            Some(scan.entries as u64),
+            Some(scan.bytes),
+            scan.truncated,
+            String::new(),
         ),
-        (true, false) => format!(
-            "delete the directory at {} ({}, {}); it is only deleted if it is empty",
-            target.display(),
-            entries,
-            bytes
-        ),
-        (false, true) => format!(
-            "move the directory at {} ({}, {}) to the system recycle bin",
-            target.display(),
-            entries,
-            bytes
-        ),
-        (false, false) => format!(
-            "move the directory at {} ({}, {}) to the system recycle bin; it is only moved if it is empty",
-            target.display(),
-            entries,
-            bytes
-        ),
+        Err(error) => (None, None, false, error),
     };
     Some(ApprovalPreview {
         summary,
-        truncated: scan.truncated,
-        estimated: true,
+        truncated,
+        estimated: false,
+        entries,
+        bytes,
+        target_kind: Some("directory".to_string()),
+        exists: Some(true),
+        symlink: Some(false),
+        verb_code: None,
+        shell: None,
     })
 }

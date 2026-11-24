@@ -50,10 +50,42 @@ resultRetentionDays: number,
  */
 auditRetentionDays: number, };
 export type ApprovalContextDto = { tier: ToolTierDto, behavior: ToolBehaviorDto, reasons: Array<ApprovalReasonDto>, preview: ApprovalPreviewDto | null, extensions: Array<ApprovalExtensionDto>, };
-export type ApprovalExtensionDto = { kind: string, label: string, value: string, severity: ApprovalExtensionSeverityDto, };
+export type ApprovalExtensionDto = { kind: string, code: string, severity: ApprovalExtensionSeverityDto, };
 export type ApprovalExtensionSeverityDto = "info" | "caution" | "danger";
 export type ApprovalLevelDto = "none" | "workspace_write" | "dangerous_only" | "all_os_tools";
-export type ApprovalPreviewDto = { summary: string, truncated: boolean, estimated: boolean, };
+export type ApprovalPreviewDto = { 
+/**
+ * 诊断 / 降级原文；结构化字段齐备时为空串，前端不渲染。
+ */
+summary: string, truncated: boolean, estimated: boolean, 
+/**
+ * 条目数；`null` = 未知，前端不得渲染成 `0`。
+ */
+entries: number | null, 
+/**
+ * 字节数；`null` = 未知。
+ */
+bytes: number | null, 
+/**
+ * `file` / `directory` / `link`；`null` = 未判定。
+ */
+targetKind: string | null, 
+/**
+ * 目标是否已存在；`null` = 预演降级。
+ */
+exists: boolean | null, 
+/**
+ * 目标是否为链接。
+ */
+symlink: boolean | null, 
+/**
+ * 动词码（`mkdir` 等无判别参数的工具由后端直给）。
+ */
+verbCode: string | null, 
+/**
+ * `shell` 命令的结构化语义；非 `shell` 工具为 `null`。
+ */
+shell: ShellPreviewDto | null, };
 export type ApprovalReasonDto = { "kind": "defaultPolicy", rule: string, } | { "kind": "approvalLevel", level: ApprovalLevelDto, } | { "kind": "projectRule", action: string, resource: string, } | { "kind": "userRule", action: string, resource: string, } | { "kind": "tierCeiling", tier: ToolTierDto, } | { "kind": "advisor", rationale: string, };
 export type ApprovalRuleDto = { action: string, resource: string, effect: ApprovalRuleEffectDto, };
 export type ApprovalRuleEffectDto = "allow" | "ask" | "deny";
@@ -378,6 +410,19 @@ export type SetGrantScopeArgsDto = { grantKey: string, scope: GrantScopeDto, con
 export type SettingProviderChangedActionDto = "provider-saved" | "provider-deleted";
 export type SettingProviderChangedPayloadDto = { action: SettingProviderChangedActionDto, id: string | null, };
 export type ShortcutWarningPayloadDto = { id: string, binding: string, error: string, };
+export type ShellPreviewDto = { statements: number, chains: number, 
+/**
+ * `readOnly` / `network` / `destructive` / `unknown`。
+ */
+class: string, redirects: Array<string>, payload: string | null, 
+/**
+ * `inside` / `outside` / `unknown`；`null` = 无写目标或无法抽取。
+ */
+targetsScope: string | null, 
+/**
+ * `certain` / `inferred` / `unknown`。
+ */
+confidence: string, };
 export type SiblingInfoDto = { id: string, siblingIndex: number, contentPreview: string, };
 export type StorageAvailabilityDto = "available" | "missing" | "locked" | "unreadable" | "unavailable" | "notImplemented" | "noReportYet" | "staleReport";
 export type StorageBreakdownDto = { 

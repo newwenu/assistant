@@ -23,16 +23,6 @@ impl CommandClass {
             Self::Unknown => "unknown",
         }
     }
-
-    /// 审批卡摘要用的中文标签（I56 §5.3）。
-    pub const fn label_zh(self) -> &'static str {
-        match self {
-            Self::ReadOnly => "只读",
-            Self::Network => "联网",
-            Self::Destructive => "破坏性",
-            Self::Unknown => "无法判定",
-        }
-    }
 }
 
 /// 只读程序清单：命中 argv[0] 即归只读。

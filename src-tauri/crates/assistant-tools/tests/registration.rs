@@ -15,7 +15,7 @@ fn receipts() -> Arc<dyn ReadReceiptStore> {
 /// 只读批次形态：`fs_link` + 只读组（P5-R1）。
 fn readonly_registry() -> ToolRegistry {
     let registry = registry();
-    os::register_os_tools(&registry);
+    os::register_bridge_tools(&registry);
     os::register_readonly_tools(&registry, receipts());
     registry
 }
@@ -32,6 +32,51 @@ fn production_registry() -> ToolRegistry {
     let registry = write_registry();
     os::register_dangerous_tools(&registry, receipts());
     registry
+}
+
+/// B18b：`TOOLBOX_ONLY` 工具不得被模型调用名解析（I72 §2.5）。
+///
+/// 列表过滤是 fail-open 的，若执行期按名宽松解析，模型回传 `fs_link` 就能在
+/// 工作区内建链接、绕过边界。`find_for_agent` 是执行期唯一的按名解析入口。
+#[test]
+fn toolbox_only_tools_are_not_resolvable_for_the_agent() {
+    let registry = production_registry();
+
+    assert!(
+        registry.find_for_agent("fs_link").is_none(),
+        "TOOLBOX_ONLY 工具不得被模型调用名解析"
+    );
+    assert!(
+        registry.find_for_toolbox("fs_link").is_some(),
+        "ToolBox 入口仍可按 id 调用"
+    );
+    assert!(
+        registry.find_for_agent("read").is_some(),
+        "agent 可见工具必须仍能解析"
+    );
+
+    let toolbox_only: Vec<String> = {
+        let mut ids = registry
+            .tool_ids()
+            .into_iter()
+            .filter(|id| {
+                registry
+                    .find(id)
+                    .map(|registered| {
+                        let audience = registered.tool.audience();
+                        audience.toolbox && !audience.agent
+                    })
+                    .unwrap_or(false)
+            })
+            .collect::<Vec<_>>();
+        ids.sort();
+        ids
+    };
+    assert_eq!(
+        toolbox_only,
+        vec!["fs_link"],
+        "TOOLBOX_ONLY 集合当前等于 {{\"fs_link\"}}"
+    );
 }
 
 #[test]

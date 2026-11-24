@@ -3,7 +3,7 @@
 use crate::ToolErrorKind;
 use crate::{
     ApprovalContext, ApprovalExtension, ApprovalExtensionSeverity, ApprovalPreview, ApprovalReason,
-    BehaviorHints, PermissionIntent, ToolTier,
+    BehaviorHints, PermissionIntent, ShellPreview, ToolTier,
 };
 use assistant_protocol::*;
 
@@ -154,6 +154,27 @@ impl From<ApprovalPreview> for ApprovalPreviewDto {
             summary: preview.summary,
             truncated: preview.truncated,
             estimated: preview.estimated,
+            entries: preview.entries,
+            bytes: preview.bytes,
+            target_kind: preview.target_kind,
+            exists: preview.exists,
+            symlink: preview.symlink,
+            verb_code: preview.verb_code,
+            shell: preview.shell.map(Into::into),
+        }
+    }
+}
+
+impl From<ShellPreview> for ShellPreviewDto {
+    fn from(shell: ShellPreview) -> Self {
+        Self {
+            statements: shell.statements,
+            chains: shell.chains,
+            class: shell.class,
+            redirects: shell.redirects,
+            payload: shell.payload,
+            targets_scope: shell.targets_scope,
+            confidence: shell.confidence,
         }
     }
 }
@@ -172,8 +193,7 @@ impl From<ApprovalExtension> for ApprovalExtensionDto {
     fn from(extension: ApprovalExtension) -> Self {
         Self {
             kind: extension.kind,
-            label: extension.label,
-            value: extension.value,
+            code: extension.code,
             severity: extension.severity.into(),
         }
     }

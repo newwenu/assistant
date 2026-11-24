@@ -14,8 +14,8 @@ use assistant_tools::storage::{
 };
 use assistant_tools::{
     ApprovalDecision, AuditOutcome, PermissionEffect, PermissionIntent, PermissionRule,
-    ResolvedPermissionPolicy, Tool, ToolErrorKind, ToolRegistry, ToolResult, ToolTier,
-    ToolUseContext, ValidationResult,
+    ResolvedPermissionPolicy, Tool, ToolAudience, ToolErrorKind, ToolRegistry, ToolResult,
+    ToolTier, ToolUseContext, ValidationResult,
 };
 use async_trait::async_trait;
 use serde_json::{json, Value};
@@ -114,6 +114,11 @@ impl Tool for ProbeTool {
 
     fn tier(&self) -> ToolTier {
         ToolTier::Os
+    }
+
+    /// 模型可见工具：Pipeline 的按名解析走 `find_for_agent`，受众缺省是 fail-closed。
+    fn audience(&self) -> ToolAudience {
+        ToolAudience::BOTH
     }
 
     fn validate_input(&self, _input: &Value, _context: &ToolUseContext) -> ValidationResult {
@@ -260,6 +265,50 @@ async fn unknown_tool_fails_at_find_stage() {
         .unwrap()
         .contains("unknown tool"));
     assert_eq!(h.executed.load(Ordering::SeqCst), 0);
+}
+
+/// B18c：模型回传 `TOOLBOX_ONLY` 工具名，必须在 `Find` 阶段失败且无执行副作用（I72 §2.5）。
+#[tokio::test]
+async fn toolbox_only_tool_fails_at_find_stage_without_side_effects() {
+    use assistant_tools::os;
+
+    let dir = tempfile::tempdir().unwrap();
+    let registry = Arc::new(ToolRegistry::new());
+    os::register_bridge_tools(&registry);
+
+    let gateway = Arc::new(ToolGateway::new(
+        Arc::new(InMemoryGrantStore::default()),
+        Arc::new(InMemoryAuditStore::default()),
+        Arc::new(ScriptedApprovalPrompter::new(vec![])),
+        Duration::from_secs(5),
+    ));
+    let storage = Arc::new(RecordingStorage::default());
+    let pipeline = ToolPipeline::new(registry, gateway, storage);
+    let sink = InMemoryEventSink::new();
+
+    let context = ToolUseContext {
+        workspace_root: Some(dir.path().display().to_string()),
+        ..Default::default()
+    };
+
+    let outcomes = pipeline
+        .execute(&[call("c1", "fs_link")], &context, &allow_all(), &sink)
+        .await;
+
+    assert_eq!(outcomes.len(), 1);
+    assert_eq!(outcomes[0].stage, PipelineStage::Find);
+    assert!(!outcomes[0].result.ok);
+    assert!(outcomes[0]
+        .result
+        .error
+        .as_deref()
+        .unwrap_or_default()
+        .contains("unknown tool"));
+    assert_eq!(
+        std::fs::read_dir(dir.path()).unwrap().count(),
+        0,
+        "the workspace must stay untouched: no link is created"
+    );
 }
 
 #[tokio::test]
@@ -777,7 +826,7 @@ async fn production_os_tools_round_trip_through_the_pipeline() {
 
     let registry = Arc::new(ToolRegistry::new());
     let receipts: Arc<dyn ReadReceiptStore> = Arc::new(InMemoryReadReceiptStore::new());
-    os::register_os_tools(&registry);
+    os::register_bridge_tools(&registry);
     os::register_readonly_tools(&registry, receipts.clone());
     os::register_write_tools(&registry, receipts);
 
@@ -896,6 +945,10 @@ impl Tool for IntArgTool {
 
     fn tier(&self) -> ToolTier {
         ToolTier::Os
+    }
+
+    fn audience(&self) -> ToolAudience {
+        ToolAudience::BOTH
     }
 
     fn validate_input(&self, input: &Value, _context: &ToolUseContext) -> ValidationResult {

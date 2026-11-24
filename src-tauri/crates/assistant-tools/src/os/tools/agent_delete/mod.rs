@@ -90,10 +90,26 @@ impl Tool for AgentDeleteTool {
             Ok(request) => request,
             Err(error) => return ValidationResult::invalid(error),
         };
-        match resolve_target(&request, context) {
-            Ok(_) => ValidationResult::ok(),
-            Err(error) => ValidationResult::invalid(error),
+        let target = match resolve_target(&request, context) {
+            Ok(target) => target,
+            Err(error) => return ValidationResult::invalid(error),
+        };
+        // 审批阶段就拒绝「非空目录 + recursive=false」，不再让用户先批准后失败（I72 §10.2）。
+        // `trash.rs` / `exec.rs` 的同名检查留作 TOCTOU 兜底：校验与执行之间目录可能变空/变满。
+        if !request.recursive {
+            if let Ok(metadata) = std::fs::symlink_metadata(&target) {
+                // 只认真实目录：链接按链接删除，绝不进入其目标。
+                if metadata.is_dir() {
+                    if let Err(error) = crate::os::fs_util::ensure_empty_directory(
+                        &target,
+                        "pass recursive = true to delete it",
+                    ) {
+                        return ValidationResult::invalid(error);
+                    }
+                }
+            }
         }
+        ValidationResult::ok()
     }
 
     fn permission_intents(
@@ -117,12 +133,10 @@ impl Tool for AgentDeleteTool {
         context: &ToolUseContext,
     ) -> Option<ApprovalPreview> {
         let request = DeleteRequest::parse(input).ok()?;
-        let recursive = request.recursive;
-        let permanent = request.permanent;
         let context = context.clone();
         tokio::task::spawn_blocking(move || {
             let target = resolve_target(&request, &context).ok()?;
-            describe_preview(&target, recursive, permanent)
+            describe_preview(&target)
         })
         .await
         .ok()?

@@ -5,7 +5,8 @@ use std::path::{Path, PathBuf};
 use crate::context::ToolUseContext;
 use crate::os::path;
 use crate::r#trait::{
-    BehaviorHints, PermissionIntent, Tool, ToolAudience, ToolTier, ValidationResult,
+    ApprovalPreview, BehaviorHints, PermissionIntent, Tool, ToolAudience, ToolTier,
+    ValidationResult,
 };
 use crate::result::ToolResult;
 
@@ -94,6 +95,37 @@ impl Tool for AgentMkdirTool {
             "edit",
             resolved.display().to_string(),
         )])
+    }
+
+    async fn preview_for_approval(
+        &self,
+        input: &Value,
+        context: &ToolUseContext,
+    ) -> Option<ApprovalPreview> {
+        let request = MkdirRequest::parse(input).ok()?;
+        let context = context.clone();
+        tokio::task::spawn_blocking(move || {
+            let resolved = path::resolve(&request.path, &context).ok()?;
+            let (exists, symlink) = match std::fs::symlink_metadata(&resolved) {
+                Ok(metadata) => (Some(true), Some(metadata.file_type().is_symlink())),
+                Err(_) => (Some(false), Some(false)),
+            };
+            Some(ApprovalPreview {
+                // 无判别参数可证，动词由后端直给（I72 §5.2 / §5.6.8 G2）。
+                verb_code: Some(TOOL_ID.to_string()),
+                target_kind: Some("directory".to_string()),
+                exists,
+                symlink,
+                summary: String::new(),
+                truncated: false,
+                estimated: false,
+                entries: None,
+                bytes: None,
+                shell: None,
+            })
+        })
+        .await
+        .ok()?
     }
 
     async fn execute(&self, input: &Value, context: &ToolUseContext) -> Result<ToolResult, String> {

@@ -273,18 +273,50 @@ pub enum ApprovalReasonDto {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ApprovalPreviewDto {
+    /// 诊断 / 降级原文；结构化字段齐备时为空串，前端不渲染。
     pub summary: String,
     pub truncated: bool,
     pub estimated: bool,
+    /// 条目数；`null` = 未知，前端不得渲染成 `0`。
+    pub entries: Option<u64>,
+    /// 字节数；`null` = 未知。
+    pub bytes: Option<u64>,
+    /// `file` / `directory` / `link`；`null` = 未判定。
+    pub target_kind: Option<String>,
+    /// 目标是否已存在；`null` = 预演降级。
+    pub exists: Option<bool>,
+    /// 目标是否为链接。
+    pub symlink: Option<bool>,
+    /// 动词码（`mkdir` 等无判别参数的工具由后端直给）。
+    pub verb_code: Option<String>,
+    /// `shell` 命令的结构化语义；非 `shell` 工具为 `null`。
+    pub shell: Option<ShellPreviewDto>,
 }
 
-/// 开放检测结论：`kind` 开放、`severity` 封闭（仅用于着色）。
+/// `shell` 命令的结构化语义（I72 §6.7）：只含结构事实，不含程序语义推断。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ShellPreviewDto {
+    pub statements: u32,
+    pub chains: u32,
+    /// `readOnly` / `network` / `destructive` / `unknown`。
+    pub class: String,
+    pub redirects: Vec<String>,
+    pub payload: Option<String>,
+    /// `inside` / `outside` / `unknown`；`null` = 无写目标或无法抽取。
+    pub targets_scope: Option<String>,
+    /// `certain` / `inferred` / `unknown`。
+    pub confidence: String,
+}
+
+/// 开放检测结论：`kind` + `code` 开放、`severity` 封闭（仅用于着色）。
+///
+/// 不含 `label` / `value`：文案由前端按 `kind.code` 复合键本地化（I72 §3.1）。
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ApprovalExtensionDto {
     pub kind: String,
-    pub label: String,
-    pub value: String,
+    pub code: String,
     pub severity: ApprovalExtensionSeverityDto,
 }
 

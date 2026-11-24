@@ -26,6 +26,23 @@ impl ShellFlavor {
             Self::Sh => "sh",
         }
     }
+
+    /// 本机方言：与 [`program_candidates`] 的平台分派同源，审批预览用它解析变量语法。
+    pub const fn current() -> Self {
+        if cfg!(windows) {
+            Self::Cmd
+        } else {
+            Self::Sh
+        }
+    }
+
+    /// 该方言的变量展开标记：`cmd` 用 `%X%`、`sh` 用 `$X`。
+    pub const fn variable_marker(self) -> char {
+        match self {
+            Self::Cmd => '%',
+            Self::Sh => '$',
+        }
+    }
 }
 
 /// 一次 `execute` 的执行输入：沙箱计划 + 方言 + 临时目录。

@@ -27,8 +27,10 @@ use crate::sandbox::{SandboxEnforcement, SandboxProbe};
 use crate::storage::{ReadReceiptStore, ToolResultStorage};
 
 /// `TOOLBOX_ONLY` 桥接工具：只服务工具箱入口，不进 Agent 白名单。
-/// 新工具不得混进本函数（见 I38c §7 注册门禁）。
-pub fn register_os_tools(registry: &ToolRegistry) {
+///
+/// 名字即受众声明：本组工具**不可**被模型调用（`find_for_agent` 一律拒绝），
+/// 只能经 `os_tool_exec` 按 id 调用。新工具不得混进本函数（I38c §7 注册门禁 / I72 §2.5）。
+pub fn register_bridge_tools(registry: &ToolRegistry) {
     registry.register(Arc::new(fs_link::FsLinkTool::new()) as Arc<dyn Tool>);
 }
 

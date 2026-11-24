@@ -176,7 +176,7 @@ impl ToolPipeline {
         for (index, call) in tool_calls.iter().enumerate() {
             let safe = self
                 .registry
-                .find_by_name(&call.tool_name)
+                .find_for_agent(&call.tool_name)
                 .map(|registered| registered.tool.is_concurrency_safe(Some(&call.arguments)))
                 .unwrap_or(false);
 
@@ -277,7 +277,7 @@ impl ToolPipeline {
             .iter()
             .map(|outcome| {
                 self.registry
-                    .find_by_name(&outcome.tool_name)
+                    .find_for_agent(&outcome.tool_name)
                     .and_then(|registered| registered.tool.inline_output_limit())
             })
             .collect();
@@ -328,7 +328,7 @@ impl ToolPipeline {
             total,
         };
         sink.emit(entered(PipelineStage::Find)).await;
-        let registered = match self.registry.find_by_name(&call.tool_name) {
+        let registered = match self.registry.find_for_agent(&call.tool_name) {
             Some(registered) => registered,
             None => {
                 return ToolOutcome::new(

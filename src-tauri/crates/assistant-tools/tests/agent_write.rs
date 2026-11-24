@@ -414,8 +414,11 @@ async fn preview_reports_the_existing_file_size() {
         .await
         .expect("overwrite preview");
 
-    assert!(preview.summary.contains("覆盖 1 个现有文件"));
-    assert!(preview.summary.contains("当前 3 行"));
+    assert_eq!(preview.summary, "", "结构化齐备时 summary 置空（I72 §5.3）");
+    assert_eq!(preview.target_kind.as_deref(), Some("file"));
+    assert_eq!(preview.exists, Some(true));
+    assert_eq!(preview.entries, Some(3), "现有文件当前行数");
+    assert_eq!(preview.bytes, Some(14), "现有文件当前字节数");
     assert!(!preview.truncated);
     assert!(!preview.estimated);
 }
@@ -430,8 +433,11 @@ async fn preview_reports_a_new_file() {
         .await
         .expect("create preview");
 
-    assert!(preview.summary.contains("新建文件"));
-    assert!(preview.summary.contains("2 行"));
+    assert_eq!(preview.summary, "", "结构化齐备时 summary 置空（I72 §5.3）");
+    assert_eq!(preview.target_kind.as_deref(), Some("file"));
+    assert_eq!(preview.exists, Some(false), "目标不存在 → 新建");
+    assert_eq!(preview.entries, Some(2), "待写入内容行数");
+    assert_eq!(preview.bytes, Some(4), "待写入内容字节数");
 }
 
 #[tokio::test]

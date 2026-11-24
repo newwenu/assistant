@@ -26,7 +26,7 @@ fn receipts() -> Arc<dyn ReadReceiptStore> {
 /// `fs_link`（TOOLBOX_ONLY）+ 只读组：目录应只看见只读组那五个。
 fn readonly_registry() -> Arc<ToolRegistry> {
     let registry = Arc::new(ToolRegistry::new());
-    os::register_os_tools(&registry);
+    os::register_bridge_tools(&registry);
     os::register_readonly_tools(&registry, receipts());
     registry
 }

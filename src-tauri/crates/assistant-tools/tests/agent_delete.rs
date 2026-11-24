@@ -171,6 +171,34 @@ fn validate_input_rejects_bad_arguments() {
 }
 
 #[test]
+fn validate_input_rejects_a_non_empty_directory_without_recursive() {
+    let dir = tempfile::tempdir().unwrap();
+    let ctx = context(dir.path(), None);
+
+    std::fs::create_dir(dir.path().join("empty")).unwrap();
+    std::fs::create_dir(dir.path().join("tree")).unwrap();
+    std::fs::write(dir.path().join("tree/a.txt"), "alpha\n").unwrap();
+
+    // D21：审批前就拒绝，不再出现「先批准后失败」（I72 §10.2）。
+    let result = tool(store()).validate_input(&json!({ "path": "tree" }), &ctx);
+    assert!(!result.ok);
+    let message = result.message.unwrap_or_default();
+    assert!(
+        message.contains("recursive = true"),
+        "unexpected message: {message}"
+    );
+
+    assert_eq!(
+        tool(store()).validate_input(&json!({ "path": "tree", "recursive": true }), &ctx),
+        ValidationResult::ok()
+    );
+    assert_eq!(
+        tool(store()).validate_input(&json!({ "path": "empty" }), &ctx),
+        ValidationResult::ok()
+    );
+}
+
+#[test]
 fn the_output_namespace_stays_read_only_for_delete() {
     let workspace = tempfile::tempdir().unwrap();
     let output = tempfile::tempdir().unwrap();
@@ -589,29 +617,31 @@ async fn the_preview_reports_the_scale_and_the_destination() {
         .preview_for_approval(&json!({ "path": "a.txt" }), &ctx)
         .await
         .unwrap();
-    assert!(file.summary.contains("move the file at"));
-    assert!(file.summary.contains("system recycle bin"));
-    assert!(file.summary.contains("6 B"));
+    assert_eq!(file.summary, "", "结构化齐备时 summary 置空（I72 §5.3）");
+    assert_eq!(file.target_kind.as_deref(), Some("file"));
+    assert_eq!(file.exists, Some(true));
+    assert_eq!(file.symlink, Some(false));
+    assert_eq!(file.entries, Some(1));
+    assert_eq!(file.bytes, Some(6));
     assert!(!file.truncated);
-    assert!(file.estimated);
+    assert!(!file.estimated, "量级与 execute 同源，不是估算");
 
     let purged_file = tool(store())
         .preview_for_approval(&json!({ "path": "a.txt", "permanent": true }), &ctx)
         .await
         .unwrap();
-    assert!(purged_file
-        .summary
-        .contains("permanently delete the file at"));
-    assert!(!purged_file.summary.contains("recycle bin"));
+    assert_eq!(purged_file.summary, "");
+    assert_eq!(purged_file.target_kind.as_deref(), Some("file"));
 
     let tree = tool(store())
         .preview_for_approval(&json!({ "path": "tree", "recursive": true }), &ctx)
         .await
         .unwrap();
-    assert!(tree.summary.contains("move the directory at"));
-    assert!(tree.summary.contains("1 entries"));
-    assert!(tree.summary.contains("5 B"));
-    assert!(tree.summary.contains("system recycle bin"));
+    assert_eq!(tree.summary, "");
+    assert_eq!(tree.target_kind.as_deref(), Some("directory"));
+    assert_eq!(tree.entries, Some(1));
+    assert_eq!(tree.bytes, Some(5));
+    assert_eq!(tree.symlink, Some(false));
 
     let purged_tree = tool(store())
         .preview_for_approval(
@@ -620,10 +650,8 @@ async fn the_preview_reports_the_scale_and_the_destination() {
         )
         .await
         .unwrap();
-    assert!(purged_tree
-        .summary
-        .contains("permanently delete the directory at"));
-    assert!(!purged_tree.summary.contains("recycle bin"));
+    assert_eq!(purged_tree.summary, "");
+    assert_eq!(purged_tree.target_kind.as_deref(), Some("directory"));
 
     assert!(
         tool(store())

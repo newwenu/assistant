@@ -243,6 +243,14 @@ impl Tool for SuperReadTool {
                 ),
                 truncated: false,
                 estimated: false,
+                // 规模已由 `summary` 表达，不再重复产出结构化量级（I72 §5.3）。
+                entries: None,
+                bytes: None,
+                target_kind: None,
+                exists: None,
+                symlink: None,
+                verb_code: None,
+                shell: None,
             })
         })
         .await

@@ -129,9 +129,64 @@ impl PermissionIntent {
 /// 量纲由各工具自行表达，因此不设固定 `size` 字段。内部类型，不参与 wire。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ApprovalPreview {
+    /// 诊断 / 降级原文。结构化字段齐备时置空串（I72 §5.3）。
     pub summary: String,
     pub truncated: bool,
     pub estimated: bool,
+    /// 条目数（目录子树或待处理文件数）；`None` = 未知。
+    pub entries: Option<u64>,
+    /// 字节数；`None` = 未知。
+    pub bytes: Option<u64>,
+    /// 目标类型码：`file` / `directory` / `link`；`None` = 未判定。
+    pub target_kind: Option<String>,
+    /// 目标是否已存在；`None` = 预演降级，不得据此断言。
+    pub exists: Option<bool>,
+    /// 目标是否为链接（删除链接不碰其目标）。
+    pub symlink: Option<bool>,
+    /// 动词码（`mkdir` 等无判别参数的工具由后端直给，I72 §5.2）。
+    pub verb_code: Option<String>,
+    /// `shell` 命令的结构化语义；非 `shell` 工具为 `None`。
+    pub shell: Option<ShellPreview>,
+}
+
+impl ApprovalPreview {
+    /// 只有诊断原文的最小形态：结构化字段一律未知。
+    pub fn diagnostic(summary: impl Into<String>, truncated: bool, estimated: bool) -> Self {
+        Self {
+            summary: summary.into(),
+            truncated,
+            estimated,
+            entries: None,
+            bytes: None,
+            target_kind: None,
+            exists: None,
+            symlink: None,
+            verb_code: None,
+            shell: None,
+        }
+    }
+}
+
+/// `shell` 命令的结构化语义（I72 §6.7）。
+///
+/// 只承载**与程序语义无关的结构事实**：即使解析失败、类别仍是 `unknown`，
+/// 语句数 / 串联数 / 重定向目标依然可证。仅用于展示与审批输入，绝不参与放行。
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ShellPreview {
+    /// 语句数（`;` / `&&` / `||` / `&` / 换行分隔后的条数），至少 1。
+    pub statements: u32,
+    /// 串联数（`statements - 1`），用于「N 条串联」措辞。
+    pub chains: u32,
+    /// 类别码，与 `CommandClass::as_str` 同值：`readOnly` / `network` / `destructive` / `unknown`。
+    pub class: String,
+    /// 重定向写入目标的末段（不含绝对路径）。
+    pub redirects: Vec<String>,
+    /// 内嵌载荷原文（`bash -c` / `cmd /c` 等，深度 1）。
+    pub payload: Option<String>,
+    /// 写目标范围：`inside` / `outside` / `unknown`；无写目标或无法抽取时为 `None`。
+    pub targets_scope: Option<String>,
+    /// 置信档：`certain` / `inferred` / `unknown`。
+    pub confidence: String,
 }
 
 /// 工具执行结果的错误通道分两层：

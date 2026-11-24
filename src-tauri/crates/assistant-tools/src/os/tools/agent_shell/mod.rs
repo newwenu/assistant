@@ -1,12 +1,13 @@
 //! `shell` 工具：唯一命令执行入口（I56 §1）。
 //!
 //! 模块形态固定（I56 §12.1）：`schema` 输入契约、`classify` 命令分类、
-//! `spawn` 执行计划推导、`run` 执行编排、`deny` 拒绝判定。
+//! `parse` 结构事实、`spawn` 执行计划推导、`run` 执行编排、`deny` 拒绝判定。
 //!
 //! 本文件只做协议适配：身份声明与 `Tool` trait 转发，不写任何 IO 细节。
 
 pub mod classify;
 pub mod deny;
+pub mod parse;
 pub mod run;
 pub mod schema;
 pub mod spawn;
@@ -25,7 +26,6 @@ use crate::result::ToolResult;
 use crate::sandbox::{SandboxEnforcement, SandboxProbe};
 use crate::storage::ToolResultStorage;
 
-use classify::CommandClass;
 use schema::ShellInput;
 
 /// 内部标识与模型可见调用名同源：白名单、审计、报错前缀都用这一个串。
@@ -161,25 +161,26 @@ impl Tool for ShellTool {
         let parsed = ShellInput::parse(input, context).ok()?;
         let class = classify::classify(&parsed.command);
         Some(ApprovalPreview {
-            summary: summary_for(class, self.probe.enforcement),
+            // 结构化事实齐备时 `summary` 置空串，卡片不渲染（I72 §5.3）。
+            summary: String::new(),
             // 命令的实际影响在执行前不可知（TOCTOU），禁止声称精确量。
             truncated: false,
             estimated: true,
+            entries: None,
+            bytes: None,
+            target_kind: None,
+            exists: None,
+            symlink: None,
+            verb_code: None,
+            shell: Some(parse::preview(
+                &parsed,
+                spawn::ShellFlavor::current(),
+                class,
+            )),
         })
     }
 
     async fn execute(&self, input: &Value, context: &ToolUseContext) -> Result<ToolResult, String> {
         Ok(run::execute(input, context, self.probe, self.storage.clone()).await)
     }
-}
-
-/// 审批摘要：`执行 1 条命令 · <类别> · 隔离：<强度>`。
-///
-/// 类别来自纯函数分类器，只用于展示；强度来自注册期探测结论。
-fn summary_for(class: CommandClass, enforcement: SandboxEnforcement) -> String {
-    format!(
-        "执行 1 条命令 · {} · 隔离：{}",
-        class.label_zh(),
-        enforcement.label_zh()
-    )
 }

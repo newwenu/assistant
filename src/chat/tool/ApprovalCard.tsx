@@ -212,8 +212,10 @@ export const ApprovalCard: React.FC<ApprovalCardProps> = ({
                 className={`${css.extension} ${severityClass(extension)}`}
                 key={`${extension.kind}-${index}`}
               >
-                <span className={css.extensionLabel}>{extension.label}</span>
-                {extension.value}
+                <span className={css.extensionLabel}>
+                  {`${extension.kind}.${extension.code}`}
+                </span>
+                {extension.severity}
               </span>
             ))}
           </span>

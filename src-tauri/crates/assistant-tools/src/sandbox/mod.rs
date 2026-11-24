@@ -73,17 +73,6 @@ impl SandboxEnforcement {
             Self::None => "none",
         }
     }
-
-    /// 面向用户的中文档位名（I56 §6.5）。审批摘要与审批卡扩展共用，
-    /// 两处各自硬编码会漂成「完全隔离」/「完全」两种措辞。
-    pub const fn label_zh(self) -> &'static str {
-        match self {
-            Self::Full => "完全",
-            Self::Partial => "部分",
-            // 注册期已拒绝 `None`，这里兜底不给「完全」，避免把无边界读成强隔离。
-            Self::None => "无",
-        }
-    }
 }
 
 /// 隔离维度。`missing` 里出现谁，就表示谁没有被系统强制。

@@ -14,7 +14,7 @@ fn receipts() -> Arc<dyn ReadReceiptStore> {
 /// 全量注册（含危险组），由 `max_tier` / 名单决定最终可见集。
 fn full_registry() -> ToolRegistry {
     let registry = ToolRegistry::new();
-    os::register_os_tools(&registry);
+    os::register_bridge_tools(&registry);
     os::register_readonly_tools(&registry, receipts());
     os::register_write_tools(&registry, receipts());
     os::register_dangerous_tools(&registry, receipts());

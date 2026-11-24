@@ -1299,6 +1299,13 @@ async fn gateway_ask_path_carries_l0_l1_l2_context() {
             summary: "删除 128 个条目（3.4 MB）".to_string(),
             truncated: true,
             estimated: false,
+            entries: Some(128),
+            bytes: Some(3_400_000),
+            target_kind: Some("directory".to_string()),
+            exists: Some(true),
+            symlink: Some(false),
+            verb_code: None,
+            shell: None,
         }),
     );
 
@@ -1383,7 +1390,7 @@ async fn workspace_extension_agrees_with_the_execution_boundary() {
         ensure_within_root(&inside, root.path()).is_ok(),
         "执行期边界必须放行区内目标"
     );
-    assert_eq!(inside_extension.value, "inside the workspace root");
+    assert_eq!(inside_extension.code, "inside");
     assert_eq!(inside_extension.severity, ApprovalExtensionSeverity::Info);
 
     let outside_extension = seen[1]
@@ -1396,72 +1403,82 @@ async fn workspace_extension_agrees_with_the_execution_boundary() {
         ensure_within_root(&outside, root.path()).is_err(),
         "执行期边界必须拒绝区外目标"
     );
-    assert_eq!(outside_extension.value, "outside the workspace root");
+    assert_eq!(outside_extension.code, "outside");
     assert_eq!(
         outside_extension.severity,
         ApprovalExtensionSeverity::Caution
     );
 }
 
+/// G1：`shell` / MCP 的资源不是路径，不得产出 `workspace` 结论。
+///
+/// 旧实现对命令原文做路径解析，必然失败并恒判「工作区外」——那是误判而非结论。
 #[tokio::test]
-async fn output_scope_extension_marks_the_session_output_namespace() {
-    let output = tempdir().unwrap();
-    std::fs::write(output.path().join("run.log"), b"log").unwrap();
-
+async fn workspace_extension_is_absent_for_non_path_actions() {
+    let root = tempdir().unwrap();
     let seen = Arc::new(Mutex::new(Vec::new()));
     let prompter = Arc::new(CapturingPrompter { seen: seen.clone() });
     let (gateway, _, _) = gateway_with(prompter);
-
-    // `readToolOutput` 恒 `Ask`（不受审批级别影响），因此一定走到卡片构造。
     let context = ToolUseContext {
-        workspace_root: Some(output.path().display().to_string()),
-        tool_output_root: Some(output.path().to_path_buf()),
+        workspace_root: Some(root.path().display().to_string()),
         ..Default::default()
     };
-    let tool = PreviewingTool::new(
-        vec![PermissionIntent::new(
-            "readToolOutput",
-            output.path().display().to_string(),
-        )],
+
+    let shell = PreviewingTool::new(vec![PermissionIntent::new("execute", "rm -rf build")], None);
+    let mcp = PreviewingTool::new(
+        vec![PermissionIntent::new("mcp", "mcp:filesystem:deadbeef")],
         None,
     );
-    let decision = gateway
-        .evaluate(
-            &tool,
-            &Value::Null,
-            &context,
-            &ResolvedPermissionPolicy::default_global(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(decision, GatewayDecision::Allowed, "用户批准后网关放行");
+
+    for tool in [&shell as &dyn Tool, &mcp as &dyn Tool] {
+        gateway
+            .evaluate(
+                tool,
+                &Value::Null,
+                &context,
+                &ResolvedPermissionPolicy::default_global(),
+            )
+            .await
+            .unwrap();
+    }
 
     let seen = seen.lock().unwrap();
-    let extension = seen[0]
-        .context
-        .extensions
-        .iter()
-        .find(|extension| extension.kind == "output.scope")
-        .expect("output namespace must carry a read-scope conclusion");
-    assert_eq!(
-        extension.value,
-        "this session's tool output directory (read-only)"
+    assert!(
+        seen.iter().all(|request| request
+            .context
+            .extensions
+            .iter()
+            .all(|extension| extension.kind != "workspace")),
+        "execute / mcp resources are not paths, so no workspace conclusion"
     );
-    assert_eq!(extension.severity, ApprovalExtensionSeverity::Info);
 }
 
+/// A14：`shell` 一类的沙箱工具在 `Ask` 时卡片只带一条 `sandbox.enforcement` 扩展。
+///
+/// 断言的是「卡片说了什么」，不是决策：用户据此判断这条命令会动到哪。
+/// `sandbox.root` 产出点已整体删除（I72 §3.1）：卡片不暴露本机目录结构。
 #[tokio::test]
-async fn output_scope_extension_is_absent_without_an_output_root() {
+async fn sandbox_extensions_describe_enforcement_only() {
     let seen = Arc::new(Mutex::new(Vec::new()));
     let prompter = Arc::new(CapturingPrompter { seen: seen.clone() });
     let (gateway, _, _) = gateway_with(prompter);
     let tool = PreviewingTool::new(
-        vec![PermissionIntent::new(
-            "readToolOutput",
-            ws_path("tmp/run.log"),
-        )],
-        None,
-    );
+        vec![PermissionIntent::new("execute", "rm -rf build")],
+        Some(ApprovalPreview {
+            summary: String::new(),
+            truncated: false,
+            estimated: true,
+            entries: None,
+            bytes: None,
+            target_kind: None,
+            exists: None,
+            symlink: None,
+            verb_code: None,
+            shell: None,
+        }),
+    )
+    .with_sandbox(SandboxEnforcement::Full);
+
     gateway
         .evaluate(
             &tool,
@@ -1473,96 +1490,26 @@ async fn output_scope_extension_is_absent_without_an_output_root() {
         .unwrap();
 
     let seen = seen.lock().unwrap();
-    assert!(
-        seen[0]
-            .context
-            .extensions
-            .iter()
-            .all(|extension| extension.kind != "output.scope"),
-        "no output root means no read-scope conclusion"
-    );
-}
-
-/// A14：`shell` 一类的沙箱工具在 `Ask` 时卡片带两条扩展，且只写末段目录名。
-///
-/// 断言的是「卡片说了什么」，不是决策：用户据此判断这条命令会动到哪。
-#[tokio::test]
-async fn sandbox_extensions_describe_enforcement_and_writable_root() {
-    let root = tempdir().unwrap();
-    let canonical = canonicalize_lenient(root.path()).expect("canonical workspace");
-    let base = canonical
-        .file_name()
-        .expect("tempdir has a last segment")
-        .to_string_lossy()
-        .into_owned();
-
-    let seen = Arc::new(Mutex::new(Vec::new()));
-    let prompter = Arc::new(CapturingPrompter { seen: seen.clone() });
-    let (gateway, _, _) = gateway_with(prompter);
-    let tool = PreviewingTool::new(
-        vec![PermissionIntent::new("execute", "rm -rf build")],
-        Some(ApprovalPreview {
-            summary: "执行 1 条命令 · 破坏性 · 隔离：完全".to_string(),
-            truncated: false,
-            estimated: true,
-        }),
-    )
-    .with_sandbox(SandboxEnforcement::Full);
-    let context = ToolUseContext {
-        workspace_root: Some(canonical.display().to_string()),
-        ..Default::default()
-    };
-
-    gateway
-        .evaluate(
-            &tool,
-            &Value::Null,
-            &context,
-            &ResolvedPermissionPolicy::default_global(),
-        )
-        .await
-        .unwrap();
-
-    let seen = seen.lock().unwrap();
     let extensions = &seen[0].context.extensions;
     let enforcement = extensions
         .iter()
         .find(|extension| extension.kind == "sandbox.enforcement")
         .expect("shell card must state the isolation strength");
-    assert_eq!(enforcement.label, "隔离强度");
-    assert_eq!(enforcement.value, "完全隔离");
+    assert_eq!(enforcement.code, "full");
     assert_eq!(enforcement.severity, ApprovalExtensionSeverity::Info);
-
-    let writable = extensions
-        .iter()
-        .find(|extension| extension.kind == "sandbox.root")
-        .expect("shell card must state the writable root");
-    assert_eq!(writable.label, "可写根");
-    assert_eq!(writable.value, base, "卡片只写末段目录名，不带绝对路径");
     assert!(
-        !writable.value.contains(&canonical.display().to_string()),
-        "absolute path must never reach the card"
-    );
-    assert_eq!(writable.severity, ApprovalExtensionSeverity::Info);
-
-    let summary = seen[0]
-        .context
-        .preview
-        .as_ref()
-        .expect("L2 preview must be carried")
-        .summary
-        .clone();
-    assert!(
-        summary.contains("破坏性"),
-        "类别由 summary 携带，不另立扩展"
+        extensions
+            .iter()
+            .all(|extension| extension.kind != "sandbox.root"),
+        "writable root is no longer produced: the card must not leak local paths"
     );
     assert_eq!(
         extensions
             .iter()
             .filter(|extension| extension.kind.starts_with("sandbox."))
             .count(),
-        2,
-        "exactly two sandbox extensions: no third entry for the command class"
+        1,
+        "exactly one sandbox extension: no third entry for the command class"
     );
 }
 
@@ -1601,7 +1548,7 @@ async fn sandbox_extensions_are_absent_for_non_sandbox_tools_and_caution_when_pa
         .iter()
         .find(|extension| extension.kind == "sandbox.enforcement")
         .expect("partial isolation must still be stated");
-    assert_eq!(partial_enforcement.value, "部分隔离");
+    assert_eq!(partial_enforcement.code, "partial");
     assert_eq!(
         partial_enforcement.severity,
         ApprovalExtensionSeverity::Caution,
@@ -1864,6 +1811,13 @@ async fn gateway_allow_path_never_pays_the_preview_cost() {
             summary: "不该被调用".to_string(),
             truncated: false,
             estimated: false,
+            entries: None,
+            bytes: None,
+            target_kind: None,
+            exists: None,
+            symlink: None,
+            verb_code: None,
+            shell: None,
         }),
     );
 

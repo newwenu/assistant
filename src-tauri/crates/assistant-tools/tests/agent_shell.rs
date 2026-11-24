@@ -1019,17 +1019,19 @@ async fn a38_shell_flavor_is_diagnostic_only() {
         .preview_for_approval(&input, &harness.ctx("call-a38-preview"))
         .await
         .expect("preview");
-    assert!(preview.estimated, "impact is unknown before execution");
-    assert!(!preview.truncated);
     assert!(
-        preview.summary.contains("隔离："),
-        "summary={}",
+        preview.summary.is_empty(),
+        "结构化字段齐备时 summary 置空（I72 §5.3）：{}",
         preview.summary
     );
+    let shell_preview = preview.shell.expect("shell card must carry structure");
+    assert_eq!(shell_preview.statements, 1);
+    assert_eq!(shell_preview.chains, 0);
+    assert_eq!(shell_preview.class, "readOnly");
+    assert_eq!(shell_preview.confidence, "certain");
     assert!(
-        !preview.summary.contains("cmd"),
-        "approval summary must not carry the shell: {}",
-        preview.summary
+        !shell.contains('/') && !shell.contains('\\'),
+        "approval structure must not carry a shell path: {shell}"
     );
 }
 

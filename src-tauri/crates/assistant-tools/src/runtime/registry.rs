@@ -71,10 +71,23 @@ impl ToolRegistry {
         removed
     }
 
-    /// 按模型可见名查找。模型回传的调用名走这条路径。
+    /// 按模型可见名查找，**不做受众过滤**。
+    ///
+    /// 用途收窄为「注册期存在性检查」与 [`Self::find_for_agent`] 的内部实现；
+    /// 执行期解析模型回传的调用名必须走 `find_for_agent`（I72 §2.5）。
     pub fn find_by_name(&self, name: &str) -> Option<RegisteredTool> {
         let id = self.names.get(name).map(|entry| entry.value().clone())?;
         self.find(&id)
+    }
+
+    /// 按模型可见名查找，且只放行 `audience().agent` 的工具。
+    ///
+    /// 这是模型调用名的**唯一解析入口**：列表接口的受众过滤是 fail-open 的
+    /// （按名查找没有受众判断），执行期若沿用宽松解析，`TOOLBOX_ONLY` 工具
+    /// （当前仅 `fs_link`）就能被模型回传的名字直接执行，绕过受众门禁（I72 §2.5）。
+    pub fn find_for_agent(&self, name: &str) -> Option<RegisteredTool> {
+        self.find_by_name(name)
+            .filter(|registered| registered.tool.audience().agent)
     }
 
     /// ToolBox 入口按内部 id 查找（`os_tool_exec` 的 `tool` 参数即 id）。

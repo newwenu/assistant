@@ -44,6 +44,14 @@ pub(super) fn build_preview(
         ),
         truncated: old_lines > MAX_DIFF_LINES || new_lines > MAX_DIFF_LINES,
         estimated: true,
+        // 行数规模由 `arguments` 直接合成，`preview` 只补文件系统事实（I72 §5.3）。
+        entries: None,
+        bytes: None,
+        target_kind: Some("file".to_string()),
+        exists: Some(true),
+        symlink: None,
+        verb_code: None,
+        shell: None,
     })
 }
 

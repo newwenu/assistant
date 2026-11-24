@@ -19,7 +19,7 @@ fn receipts() -> Arc<dyn ReadReceiptStore> {
 /// 全量注册：只读组 + 修改组，让 `read` / `edit` 与它们的伴随工具都在。
 fn full_registry() -> Arc<ToolRegistry> {
     let registry = Arc::new(ToolRegistry::new());
-    os::register_os_tools(&registry);
+    os::register_bridge_tools(&registry);
     os::register_readonly_tools(&registry, receipts());
     os::register_write_tools(&registry, receipts());
     os::register_dangerous_tools(&registry, receipts());

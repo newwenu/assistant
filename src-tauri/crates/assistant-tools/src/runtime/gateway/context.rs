@@ -7,9 +7,7 @@ use serde_json::Value;
 use super::approval_key::ApprovalKey;
 use super::stores::redact_resource;
 use crate::context::ToolUseContext;
-use crate::os::path::{
-    canonicalize_lenient, ensure_within_root, workspace_membership, WorkspaceMembership,
-};
+use crate::os::path::{workspace_membership, WorkspaceMembership};
 use crate::policy::{PermissionEffect, PermissionRule, ResolvedPermissionPolicy, RuleOrigin};
 use crate::r#trait::{ApprovalPreview, BehaviorHints, PermissionIntent, Tool, ToolTier};
 use crate::sandbox::SandboxEnforcement;
@@ -37,13 +35,12 @@ pub enum ApprovalReason {
 
 /// 后端检测结论的开放出口（I38d §3.2.1）。
 ///
-/// 用 `kind` + `label` + `value` 而非任意 JSON：前端即使不认识 `kind`，
-/// 也能按 `label` / `value` 原样渲染，不会退化成 `[object Object]`。
+/// `kind` + `code` 均为开放集合：前端即使不认识该组合，也能原样渲染 `kind.code`，
+/// 不会退化成 `[object Object]`；已知组合由前端按复合键字典本地化（I72 §3.1）。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ApprovalExtension {
     pub kind: String,
-    pub label: String,
-    pub value: String,
+    pub code: String,
     pub severity: ApprovalExtensionSeverity,
 }
 
@@ -179,8 +176,7 @@ pub(crate) async fn build_approval_context(
         preview,
         extensions: {
             let mut extensions = workspace_extensions(pending, context);
-            extensions.extend(output_extensions(pending, context));
-            extensions.extend(sandbox_extensions(tool, context));
+            extensions.extend(sandbox_extensions(tool));
             extensions
         },
     }
@@ -191,75 +187,20 @@ pub(crate) async fn build_approval_context(
 /// 判据取工具自报的强度而不是再探测一次：卡片必须与执行期同源，
 /// 否则会出现「卡片说完全隔离、执行按部分隔离放行」。
 /// `None` 档不产出任何条目——没有边界就没有可展示的结论，不能把「无隔离」写成一行 `Info`。
-fn sandbox_extensions(tool: &dyn Tool, context: &ToolUseContext) -> Vec<ApprovalExtension> {
+/// `full` 档为默认值，仍产出（前端按判据 B 静默丢弃）。
+fn sandbox_extensions(tool: &dyn Tool) -> Vec<ApprovalExtension> {
     let Some(enforcement) = tool.sandbox_enforcement() else {
         return Vec::new();
     };
-    let severity = match enforcement {
-        SandboxEnforcement::Full => ApprovalExtensionSeverity::Info,
-        SandboxEnforcement::Partial => ApprovalExtensionSeverity::Caution,
+    let (code, severity) = match enforcement {
+        SandboxEnforcement::Full => ("full", ApprovalExtensionSeverity::Info),
+        SandboxEnforcement::Partial => ("partial", ApprovalExtensionSeverity::Caution),
         SandboxEnforcement::None => return Vec::new(),
     };
-    let mut extensions = vec![ApprovalExtension {
-        kind: "sandbox.enforcement".to_string(),
-        label: "隔离强度".to_string(),
-        value: format!("{}隔离", enforcement.label_zh()),
-        severity,
-    }];
-    if let Some(name) = writable_root_name(context) {
-        extensions.push(ApprovalExtension {
-            kind: "sandbox.root".to_string(),
-            label: "可写根".to_string(),
-            value: name,
-            severity: ApprovalExtensionSeverity::Info,
-        });
-    }
-    extensions
-}
-
-/// 可写根在卡片上只留**末段目录名**：卡片会被截图与转发，绝对路径会把本机目录结构带出去。
-///
-/// 与 `output.scope` 的 `redact_resource` 同一理由。根无法解析出末段（如 `/`、`C:\`）时
-/// 不产出条目，而不是伪造一个 `?`。
-fn writable_root_name(context: &ToolUseContext) -> Option<String> {
-    let root = context.workspace_root.as_deref()?.trim();
-    if root.is_empty() {
-        return None;
-    }
-    let path = canonicalize_lenient(Path::new(root)).ok()?;
-    path.file_name()
-        .map(|name| name.to_string_lossy().into_owned())
-        .filter(|name| !name.is_empty())
-}
-
-/// 输出域检测方（I52 §5.11.4(5)）：本次待审批资源是否落在本会话工具输出目录内。
-///
-/// 与 [`workspace_extensions`] 完全同构：只凭 `pending.resource` 判定，零 IO。
-/// 任何需要 `stat` 的量级信息（文件大小、行窗口）留在 `preview_for_approval`，
-/// 不得把 IO 预算与超时降级扩散到扩展构造路径。
-fn output_extensions(
-    pending: &[PendingApproval],
-    context: &ToolUseContext,
-) -> Vec<ApprovalExtension> {
-    let Some(root) = context.tool_output_root.as_deref() else {
-        return Vec::new();
-    };
-    // 与执行期边界校验同源：`ensure_within_root` 内部对根做宽松规范化，
-    // 因此这里不新造第二套路径比较（否则审批卡片与实际判定会分叉）。
-    let inside = pending.iter().any(|item| {
-        canonicalize_lenient(Path::new(&item.resource))
-            .map(|path| ensure_within_root(&path, root).is_ok())
-            .unwrap_or(false)
-    });
-    if !inside {
-        return Vec::new();
-    }
-    // 文案与既有 `workspace` 扩展保持同一种语言（英文），同一张卡片不混排中英。
     vec![ApprovalExtension {
-        kind: "output.scope".to_string(),
-        label: "Output".to_string(),
-        value: "this session's tool output directory (read-only)".to_string(),
-        severity: ApprovalExtensionSeverity::Info,
+        kind: "sandbox.enforcement".to_string(),
+        code: code.to_string(),
+        severity,
     }]
 }
 
@@ -267,6 +208,9 @@ fn output_extensions(
 ///
 /// 结论与执行期边界同源（[`workspace_membership`] 内部复用 `ensure_within_root`），
 /// 因此不会出现「审批说在区内、执行说越界」。
+///
+/// 只对**路径型 action** 判定：`execute`（命令原文）与 `mcp`（`mcp:<server>:<hash>`）
+/// 不是路径，解析必然失败并恒判「工作区外」——那是误判而非结论（I72 §5.6.8 G1）。
 ///
 /// 未配置工作区时不产出条目：没有边界就没有结论，不得把「无法判定」伪装成「在区内」。
 /// 只统计本次待审批的资源（`Allow` 命中的资源不参与，它们不在用户决策范围内）。
@@ -282,6 +226,9 @@ fn workspace_extensions(
     let mut outside = 0usize;
     let mut seen: HashSet<&str> = HashSet::new();
     for item in pending {
+        if !is_path_action(&item.action) {
+            continue;
+        }
         if !seen.insert(item.resource.as_str()) {
             continue;
         }
@@ -296,26 +243,27 @@ fn workspace_extensions(
         return Vec::new();
     }
 
-    let (value, severity) = if outside == 0 {
-        ("inside the workspace root", ApprovalExtensionSeverity::Info)
+    let (code, severity) = if outside == 0 {
+        ("inside", ApprovalExtensionSeverity::Info)
     } else if inside == 0 {
-        (
-            "outside the workspace root",
-            ApprovalExtensionSeverity::Caution,
-        )
+        ("outside", ApprovalExtensionSeverity::Caution)
     } else {
-        (
-            "partly outside the workspace root",
-            ApprovalExtensionSeverity::Caution,
-        )
+        ("partial", ApprovalExtensionSeverity::Caution)
     };
 
     vec![ApprovalExtension {
         kind: "workspace".to_string(),
-        label: "Workspace".to_string(),
-        value: value.to_string(),
+        code: code.to_string(),
         severity,
     }]
+}
+
+/// 只有这些 action 的 `resource` 是路径；其余（`execute` / `mcp`）不是。
+fn is_path_action(action: &str) -> bool {
+    matches!(
+        action,
+        "read" | "readToolOutput" | "edit" | "delete" | "purge"
+    )
 }
 
 /// 把「命中哪条策略」翻译成卡片上的「为什么问我」。
@@ -434,5 +382,135 @@ mod tests {
                 resource: "*".to_string(),
             }
         );
+    }
+
+    fn context_with_root(root: &Path) -> ToolUseContext {
+        ToolUseContext {
+            workspace_root: Some(root.display().to_string()),
+            ..Default::default()
+        }
+    }
+
+    /// G1：`execute` / `mcp` 的 `resource` 不是路径，不得产出 `workspace` 结论。
+    #[test]
+    fn non_path_actions_do_not_produce_a_workspace_extension() {
+        let dir = tempfile::tempdir().unwrap();
+        let context = context_with_root(dir.path());
+
+        let extensions = workspace_extensions(
+            &[
+                pending("execute", "rm -rf build"),
+                pending("mcp", "mcp:server:abc123"),
+            ],
+            &context,
+        );
+        assert!(
+            extensions.is_empty(),
+            "command text and mcp ids are not paths (I72 §5.6.8 G1)"
+        );
+    }
+
+    /// 路径型 action 照常判定：`inside` / `outside` / `partial` 三档与严重度。
+    #[test]
+    fn path_actions_are_judged_against_the_workspace_boundary() {
+        let dir = tempfile::tempdir().unwrap();
+        let other = tempfile::tempdir().unwrap();
+        let context = context_with_root(dir.path());
+        let inside = dir.path().join("a.txt");
+        std::fs::write(&inside, b"x").unwrap();
+        let outside = other.path().join("b.txt");
+
+        let inside_only =
+            workspace_extensions(&[pending("read", &inside.display().to_string())], &context);
+        assert_eq!(inside_only.len(), 1);
+        assert_eq!(inside_only[0].kind, "workspace");
+        assert_eq!(inside_only[0].code, "inside");
+        assert_eq!(inside_only[0].severity, ApprovalExtensionSeverity::Info);
+
+        let mixed = workspace_extensions(
+            &[
+                pending("edit", &inside.display().to_string()),
+                pending("purge", &outside.display().to_string()),
+            ],
+            &context,
+        );
+        assert_eq!(mixed.len(), 1);
+        assert_eq!(mixed[0].code, "partial");
+        assert_eq!(mixed[0].severity, ApprovalExtensionSeverity::Caution);
+    }
+
+    /// 未配置工作区：没有边界就没有结论，不得把「无法判定」伪装成「在区内」。
+    #[test]
+    fn workspace_extension_needs_a_configured_root() {
+        let dir = tempfile::tempdir().unwrap();
+        let context = ToolUseContext::default();
+
+        let extensions = workspace_extensions(
+            &[pending(
+                "edit",
+                &dir.path().join("a.txt").display().to_string(),
+            )],
+            &context,
+        );
+        assert!(extensions.is_empty());
+    }
+
+    struct SandboxStub(SandboxEnforcement);
+
+    #[async_trait::async_trait]
+    impl Tool for SandboxStub {
+        fn id(&self) -> &str {
+            "sandbox_stub"
+        }
+
+        async fn description(&self) -> Result<String, String> {
+            Ok("sandbox stub".to_string())
+        }
+
+        fn input_schema(&self) -> Value {
+            serde_json::json!({ "type": "object" })
+        }
+
+        fn tier(&self) -> ToolTier {
+            ToolTier::Os
+        }
+
+        fn sandbox_enforcement(&self) -> Option<SandboxEnforcement> {
+            Some(self.0)
+        }
+
+        async fn execute(
+            &self,
+            _input: &Value,
+            _context: &ToolUseContext,
+        ) -> Result<crate::result::ToolResult, String> {
+            Ok(crate::result::ToolResult::ok(serde_json::json!({})))
+        }
+    }
+
+    /// 扩展条目只有两个产出点：`workspace` 与 `sandbox.enforcement`；
+    /// `sandbox.root` / `output.scope` 已无产出点（I72 §3.1）。
+    #[test]
+    fn only_workspace_and_sandbox_enforcement_are_produced() {
+        let dir = tempfile::tempdir().unwrap();
+        let context = context_with_root(dir.path());
+        let inside = dir.path().join("a.txt");
+        std::fs::write(&inside, b"x").unwrap();
+
+        let workspace =
+            workspace_extensions(&[pending("edit", &inside.display().to_string())], &context);
+        let sandbox = sandbox_extensions(&SandboxStub(SandboxEnforcement::Partial));
+
+        let kinds: Vec<&str> = workspace
+            .iter()
+            .chain(sandbox.iter())
+            .map(|extension| extension.kind.as_str())
+            .collect();
+        assert_eq!(kinds, vec!["workspace", "sandbox.enforcement"]);
+        assert_eq!(sandbox[0].code, "partial");
+        assert_eq!(sandbox[0].severity, ApprovalExtensionSeverity::Caution);
+
+        // 强度 `None` 不产出任何条目：没有边界就没有可展示的结论。
+        assert!(sandbox_extensions(&SandboxStub(SandboxEnforcement::None)).is_empty());
     }
 }

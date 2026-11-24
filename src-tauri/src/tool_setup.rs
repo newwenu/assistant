@@ -241,7 +241,7 @@ pub fn init(handle: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>>
     }
 
     let registry = Arc::new(ToolRegistry::new());
-    os::register_os_tools(&registry);
+    os::register_bridge_tools(&registry);
 
     let receipts: Arc<dyn ReadReceiptStore> = Arc::new(InMemoryReadReceiptStore::new());
     os::register_readonly_tools(&registry, receipts.clone());
@@ -505,7 +505,7 @@ mod tests {
     #[test]
     fn registry_has_no_shell_when_probe_reports_none() {
         let registry = Arc::new(ToolRegistry::new());
-        os::register_os_tools(&registry);
+        os::register_bridge_tools(&registry);
 
         let probe = SandboxProbe::unavailable(
             assistant_tools::SandboxKind::WindowsRestrictedToken,

@@ -94,6 +94,37 @@ fn validate_input_rejects_paths_outside_the_workspace() {
 }
 
 #[tokio::test]
+async fn preview_reports_the_verb_and_the_target_state() {
+    let dir = tempfile::tempdir().unwrap();
+    let ctx = context(dir.path(), None);
+    std::fs::create_dir(dir.path().join("existing")).unwrap();
+
+    let fresh = tool()
+        .preview_for_approval(&json!({ "path": "fresh" }), &ctx)
+        .await
+        .expect("preview for a missing directory");
+    assert_eq!(fresh.summary, "", "结构化齐备时 summary 置空（I72 §5.3）");
+    assert_eq!(
+        fresh.verb_code.as_deref(),
+        Some("mkdir"),
+        "mkdir 无判别参数，动词由后端直给（I72 §5.6.8 G2）"
+    );
+    assert_eq!(fresh.target_kind.as_deref(), Some("directory"));
+    assert_eq!(fresh.exists, Some(false));
+    assert_eq!(fresh.symlink, Some(false));
+    assert_eq!(fresh.entries, None, "目录无规模段");
+    assert_eq!(fresh.bytes, None);
+    assert!(fresh.shell.is_none());
+
+    let existing = tool()
+        .preview_for_approval(&json!({ "path": "existing" }), &ctx)
+        .await
+        .expect("preview for an existing directory");
+    assert_eq!(existing.exists, Some(true));
+    assert_eq!(existing.verb_code.as_deref(), Some("mkdir"));
+}
+
+#[tokio::test]
 async fn creates_a_single_directory() {
     let dir = tempfile::tempdir().unwrap();
     let ctx = context(dir.path(), None);
