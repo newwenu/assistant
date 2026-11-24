@@ -3,7 +3,7 @@
 | 项 | 值 |
 |---|---|
 | 状态 | 定稿（可实施） |
-| 日期 | 2026-11-22 |
+| 日期 | 2026-11-23 |
 | 阶段 | P18（编排轴 L2；见 [I38 §2](./I38-agent-roadmap.md) / §3） |
 | 覆盖波次 | **P18-R0 – P18-R4** 的语义与结构约束（R4 的对外契约与 R5 的前端接缝见 [I69b](./I69b-agent-orchestration-contract-spec.md)） |
 | 波次与交付顺序 | [I69](./I69-agent-orchestration-roadmap.md)（**唯一来源**：交付物、前置、退出条件、回退点；本规格不列交付物、不排波次） |
@@ -12,12 +12,13 @@
 | 关联 | I55（已归档，观测面）· I38f（`spawn_agent`，暂缓）· [I52](./I52-shell-sandbox-spec.md)（沙箱不替代审批）· I66 / I68（已归档，画布 W1 / W2） |
 | 影响范围 | 后端：新建 `src-tauri/crates/assistant-orchestrator/`；`assistant-storage/src/orchestration.rs`；`src-tauri/src/cmd/agent/mod.rs`（`start_turn` 回传 turn 标识、sink 组合 tap）。前端与 wire 见 [I69b](./I69b-agent-orchestration-contract-spec.md) |
 | 契约影响 | **wire 冻结前零变更**（无 DTO、无命令、无事件）；冻结清单见 [I69b §2](./I69b-agent-orchestration-contract-spec.md) |
+| 下游承接清单 | 见 §16.1（**逐条 ID，不用区间**）；上游新增或修改冻结项时，同批次同步本行所指两表与下游附录 |
 
-> **本文管理**：定位与边界（§0–§1）、术语纪律（§2）、不变量（§3）、决议（§4）、结构与依赖（§5）、模板 schema 与校验（§6）、控制端口（§7）、台账与持久化（§8）、调度语义（§9）、失败矩阵（§10）、缺口落点（§11）、阶段关系（§12）、验收 A1–A24 / A26（§13）、拒绝方案（§14）、未决问题（§15）。
-> **本文不管理**：波次顺序、交付物、退出条件、回退点（[I69](./I69-agent-orchestration-roadmap.md)）；事件、wire 契约与前端接缝（[I69b](./I69b-agent-orchestration-contract-spec.md)）；画布编辑器与运行态叠加的形态（画布侧规格）。
+> **本文管理**：定位与边界（§0–§1）、术语纪律（§2）、不变量（§3）、决议（§4）、结构与依赖（§5）、模板 schema 与校验（§6）、控制端口（§7）、台账与持久化（§8）、调度语义（§9）、失败矩阵（§10）、缺口落点（§11）、阶段关系（§12）、验收 A1–A24 / A26 / A28–A32（§13）、拒绝方案（§14）、未决问题（§15）、下游承接清单与冻结常量（§16）。
+> **本文不管理**：波次顺序、交付物、退出条件、回退点（[I69](./I69-agent-orchestration-roadmap.md)）；事件、wire 契约与前端接缝（[I69b](./I69b-agent-orchestration-contract-spec.md)）；画布编辑器与运行态叠加的形态（[I69c](./I69c-agent-orchestration-canvas-spec.md)）。
 > **两卷关系**：I69a 是语义与结构的主体，I69b 只定义「怎么暴露、前端怎么读」，**单向依赖 I69a**，不改本文任何约束。
 
-> 本文中的「必须 / 禁止」为可验收约束；「应当」为默认做法，偏离须在代码注释写明理由。判据编号 **A1–A27 跨两卷统一定义、不重编**：A1–A24、A26 在本文 §13，A25 / A27 在 [I69b §4](./I69b-agent-orchestration-contract-spec.md)。「哪一波交付、按什么顺序、何时算过关」由 [I69](./I69-agent-orchestration-roadmap.md) 定义。
+> 本文中的「必须 / 禁止」为可验收约束；「应当」为默认做法，偏离须在代码注释写明理由。判据编号 **A1–A32 跨两卷统一定义、不重编**：A1–A24、A26、A28–A32 在本文 §13，A25 / A27 在 [I69b §4](./I69b-agent-orchestration-contract-spec.md)。「哪一波交付、按什么顺序、何时算过关」由 [I69](./I69-agent-orchestration-roadmap.md) 定义。
 
 ---
 
@@ -61,7 +62,7 @@
 | 9 | 队列（pending / running / history） | 分析 §12.3 第 3 项；`TurnTasks` 是互斥表 |
 | 10 | 运行时注入节点（运行时生长子图） | INV7；静态模板 + 版本化，运行时增删节点会让校验无法静态化 |
 | 11 | 节点级续跑 | D15 |
-| 12 | 画布基础设施改造（补边 / 视口 / 预设 / 布局算法） | W1 / W2 已交付（I66 / I68，已归档）：视口、几何（`anchorOf`）、布局（`layoutPreset`）、卡片、边（`CanvasEdge`）、预设与放置栏均已落地（`src/features/canvas/`）。**未交付**：节点选择原语（`selectedNodeId` 级状态）与出口锚点 `exitAnchorOf`——二者属画布侧待建，P18 不实现，需要时由画布侧规格补；P18 只在其上叠加，不改设施 |
+| 12 | 画布基础设施改造（补边 / 视口 / 预设 / 布局算法） | W1 / W2 已交付（I66 / I68，已归档）：视口、几何（`anchorOf`）、布局（`layoutPreset`）、卡片、边（`CanvasEdge`）、预设与放置栏均已落地（`src/features/canvas/`）。**未交付**：节点选择原语（`selectedNodeId` 级状态）与出口锚点 `exitAnchorOf`——二者属画布侧待建，P18 不实现，见 [I69c](./I69c-agent-orchestration-canvas-spec.md)；P18 只在其上叠加，不改设施 |
 | 13 | 后台任务（应用关闭后继续跑） | P9 / I52-Ext |
 | 14 | 原始事件落库 | D5；事件是广播，不入台账 |
 | 15 | 运行时节点类型注册表（`NODE_CLASS_MAPPINGS` 类） | 节点类别是编译期闭集枚举（§6.1），不做运行时注册；分析 §12.2 #2 的缺口以闭集收口 |
@@ -159,6 +160,10 @@
 | **D16** | 与 L3 / Router 的关系（Q6） | 本阶段不涉及；run 不承担跨会话路由 | 跨会话路由需要「哪个会话接哪一步」的策略，属 P8.3 | 低 |
 | **D17** | 工具调用是否成节点 | **否**。工具调用在 turn 内，无独立生命周期；做成节点会产生第二条执行路径 | 与 O5 直接冲突；且工具节点无法表达「5 阶段」中的审批与落盘 | 中：后加需先解决执行路径归属 |
 | **D18** | `group` 的形态 | `group` **不是节点类别**，而是模板级分组（`groups` + `node.group_id`）；不参与调度、不产生 node_run | 把容器做成节点会让就绪集合、台账、取消树三处都要处理「无执行节点」的空转 | 低 |
+| **D19** | 环的报法与检测顺序 | **自环算环**（按该边单独报）；长环**逐回边报**，每条带 `edge_id`，使整环可高亮；**悬空边检查先于环检测**，环检测跳过未知端点 | 只报一条「存在环」无法定位；不先查悬空边会把同一缺陷报成两类错误；参照 Dify 的 Kahn 剥环 + 逐回边定位 | 低：只影响 `ValidateError` 的产出数量 |
+| **D20** | 分组成员的校验 | `groups` 引用的节点必须存在；**空分组、分组 `id` 或 `title` 重复、同一节点属多个分组** 一律在保存期拒 | 分组只进编辑器呈现，若允许悬空成员，画布会画出指向不存在节点的框，且错误无法归因 | 低 |
+| **D21** | `hitl` 源的边条件 | `hitl` 源节点**不允许 `always`**，只能用 `onSuccess` / `onFailure`；`turn` 源节点三种全允许 | `always` 会让被 reject 的 gate 仍顺流推进，等于让 gate 失去阻断义（D9）；参照 Dify 分支节点不给默认出口 | 中：进校验后放宽需改规则与用例 |
+| **D22** | 模板 schema 跨版本加载 | `version` 与当前 schema 版本**不等即拒绝加载**并给出明确错误；**不降级、不迁移**；迁移策略留给引入 v2 的那个波次 | 静默降级会让「按 v1 解析 v2 字段」产生错误语义而不自知；现在就做迁移等于为零个历史模板维护迁移器 | 中：v2 引入时需补迁移或补拒绝提示 |
 
 ---
 
@@ -269,6 +274,7 @@ pub struct WorkflowLayout { pub positions: HashMap<String, Position> }   // 只�
 | 5 | **双模板分离**：`WorkflowTemplate` 不得与 turn 模板（12 节点常量）共用类型名或互相引用 | INV6 |
 | 6 | **静态图**：模板只能在保存期整体替换，运行时无增删节点 API | INV7 |
 | 7 | `version` 只表示 schema 版本；用户可见版本号不在 v1 引入 | OQ8 |
+| 8 | **版本相等才加载**：`version` 与当前 schema 版本不等 → 拒绝加载并报明确错误，不降级、不迁移 | D22 |
 
 ### 6.3 保存期校验
 
@@ -277,28 +283,45 @@ pub struct WorkflowLayout { pub positions: HashMap<String, Position> }   // 只�
 ```rust
 pub struct ValidateError {
     pub kind: ValidateErrorKind,
-    pub node_id: Option<String>,     // 定位到节点时必填
-    pub edge_id: Option<String>,     // 定位到边时必填
+    pub node_id: Option<String>,     // 定位到节点时填
+    pub edge_id: Option<String>,     // 定位到边时填
+    pub group_id: Option<String>,    // 定位到分组时填
+    pub message: String,             // 人类可读，仅供展示，不作判据
 }
 ```
 
-| # | 非法类 | 判据 | 定位字段 |
+| 序 | 非法类 | 判据 | 定位字段 |
 |---|---|---|---|
-| 1 | **环** | 由 `edges` 构成的有向图存在回路 → 拒；图保持 DAG | 回路上任一边 `edge_id` |
+| 1 | **重复 id** | 节点 `id` 或边 `id` 在同类内重复 → 拒 | 重复的 `node_id` / `edge_id` |
 | 2 | **悬空边** | `from` 或 `to` 不指向任何已存在的 `node_id` → 拒 | `edge_id` |
-| 3 | **重复 id** | 节点 `id` 或边 `id` 在同类内重复 → 拒 | 重复的 `node_id` / `edge_id` |
+| 3 | **环（含自环）** | 由 `edges` 构成的有向图存在回路 → 拒；图保持 DAG。自环按该边单独报，长环**逐回边报**，每条各带 `edge_id` | 回路的每条回边 `edge_id` |
 | 4 | **缺必填参数** | `turn` 节点 `params.content` 缺失或为空 → 拒 | `node_id` |
 | 5 | **未知类别** | `kind` 不在闭集 `turn` / `hitl` → 拒，**不得降级为默认态** | `node_id` |
-| 6 | **条件与类别不匹配** | 边的 `condition` 与源节点类别不相容 → 拒 | `edge_id` |
+| 6 | **条件与类别不匹配** | 边的 `condition` 与源节点类别不相容（相容表见下）→ 拒 | `edge_id` |
+| 7 | **分组引用不存在节点** | `groups[].node_ids` 含不存在的 `node_id` → 拒 | `node_id`（悬空的那个） |
+| 8 | **空分组** | `groups[].node_ids` 为空 → 拒 | `group_id` |
+| 9 | **分组 id / title 重复** | 两个分组的 `id` 或 `title` 相同 → 拒 | `group_id`（两个分组各报一条） |
+| 10 | **节点属多个分组** | 同一 `node_id` 出现在两个分组的 `node_ids` → 拒 | `node_id` |
+
+**检测顺序**（D19 / D20）：`1 → 2 → 3` 是结构层，必须先于其余项 —— id 重复会让「节点是否存在」有歧义，悬空边会让环检测读到不存在的端点（环检测**跳过**未知端点，避免同一缺陷报成两类）。第 4–6 项按节点 / 边逐条查，第 7–10 项最后查分组。`node_id` / `edge_id` / `group_id` **至少一个非空**，保证编辑器总有可高亮的位置。
+
+**第 6 类的相容表**（D21）：
+
+| 源节点类别 | `always` | `onSuccess` | `onFailure` |
+|---|---|---|---|
+| `turn` | 允许 | 允许 | 允许 |
+| `hitl` | **拒** | 允许 | 允许 |
+
+> `hitl` 不给 `always`：`always` 表示「任意终态继续」，会让被 reject 的 gate 顺流推进，等于取消 gate 的阻断义（D9）。gate 必须由 `onSuccess` / `onFailure` 显式表达结果走向。
 
 | 约束 | 说明 |
 |---|---|
 | 全部在保存期拒绝 | 非法图不产生 run，不进入运行期（F8 / INV7） |
-| 错误必须定位 | 每个错误至少带 `node_id` 或 `edge_id` 之一，供编辑器高亮 |
+| 错误必须定位 | 每个错误至少带 `node_id` / `edge_id` / `group_id` 之一，供编辑器高亮 |
+| 错误可累积 | 一次保存返回**全部**命中项（`Vec<ValidateError>`），不首错即停，便于编辑器一次标全 |
+| 类别闭集 | `ValidateErrorKind` 为 10 值闭集，与上表十类一一对应，不增不减；新增非法类必须改本表 |
 | 坐标零影响 | 只改 `layout` 不得改变任何校验结果，也不得触发 `version` 变化（INV13） |
 | 校验不看会话与运行态 | 校验输入只有模板本身，不读台账、不读 `TurnTasks` |
-
-> **待裁定边界**：第 6 类的具体相容表、自环是否算环、`groups` 引用不存在节点是否非法，均在 R1 内一次性裁定并回写本表（对应 [I69 §7.1](./I69-agent-orchestration-roadmap.md) 风险 1：R1 与 R2 之间是唯一的免费窗口）。
 
 ### 6.4 模块落点
 
@@ -314,8 +337,8 @@ pub struct ValidateError {
 |---|---|
 | 本文产出 | 只有 crate 内模型与校验，**无 DTO、无命令、无事件**（INV12：冻结前零契约 diff） |
 | wire 形态 | 模板 DTO 在 R4 一次性出齐，见 [I69b §2.1](./I69b-agent-orchestration-contract-spec.md) |
-| 版本与快照 | 模板 `version` 的语义、run 对模板内容的引用方式属台账结构，见 §8.1 |
-| 下游承诺 | 模板 schema 是画布模板编辑器（W3，范围外）的输入契约；schema 变更只在本波内发生，之后走新波次（[I69 §2](./I69-agent-orchestration-roadmap.md) C8） |
+| 版本与快照 | 模板 `version` 的语义、run 对模板内容的引用方式属台账结构，见 §8.1；版本不等即拒绝加载（§6.2 第 8 条 / D22），发起 run 时同样适用 |
+| 下游承诺 | 模板 schema 是画布模板编辑器（W3，[I69c](./I69c-agent-orchestration-canvas-spec.md)）的输入契约；schema 变更只在本波内发生，之后走新波次（[I69 §2](./I69-agent-orchestration-roadmap.md) C8） |
 
 ---
 
@@ -363,6 +386,8 @@ pub enum LaunchError {
 
 **约束**：`LaunchTurnSpec` 只带纯数据（字符串与 tap），**不带任何 `assistant-protocol` DTO**。宿主负责把它映射成 `SendChatMessageArgsDto` 并解析缺省 provider / model。这样编排 crate 与 wire 解耦（INV12 的前提）。
 
+**时钟实现约束**：`now_ms` 必须是**单调**毫秒（以 `Instant` 为基准），**不得**复用 `src-tauri/src/adapters/system_time_source.rs` 的 `now_millis`——该实现取 `chrono::Utc::now()`，是系统时间而非单调时钟；系统时钟被回拨或经 NTP 校正时，run 墙钟预算会倒退或瞬间超限，与 §8.4「禁止用时间戳判定活跃」同一条纪律。宿主侧须另建单调基准（进程启动 `Instant` + 已过毫秒），`now_ms` 是台账时间列与 run 事件 `at` 的唯一时间来源。
+
 ### 7.2 `TurnTap`（宿主 → 编排层，只读）
 
 ```rust
@@ -398,6 +423,7 @@ resolve_workflow_gate(run_id, node_id, decision: { proceed: bool, note: Option<S
 | 3 | 编排层持有 `ToolRegistry` 或读工具清单做可用性判断 | INV2；可用集仍由 `resolve_available_tools` 在发送时算 |
 | 4 | 编排层读 `messages` 表反推 turn 是否完成 | INV8；终态只来自 tap |
 | 5 | 编排层按时间戳判定 turn 是否还活着 | INV8；活跃判定只来自 `TurnTasks`（经宿主） |
+| 6 | 用系统时间（`chrono::Utc::now()`）充当 `now_ms` 或写台账时间列 | §7.1 时钟实现约束；混入系统时间会让 run 墙钟预算随系统时钟回拨而倒退 |
 
 ---
 
@@ -451,6 +477,8 @@ CREATE INDEX IF NOT EXISTS idx_runs_origin ON workflow_runs(origin_conversation_
 ```
 
 **`conversation_id` 的来源**：模板不绑会话（D12）；发起时由 `WorkflowRunStartInputDto.nodeConversations` 解析每个节点（缺省 = `originConversationId`），解析结果写入 `workflow_node_runs.conversation_id` 作为 run 内快照。模板后续被编辑不影响已发起 run。
+
+**时间列的语义**：三张表的时间列（`created_at` / `updated_at` / `started_at` / `finished_at`）一律由宿主 `now_ms()` 写入（单调毫秒，§7.1 时钟实现约束、§9.6 时间口径一致），**不是 Unix 时间戳**；写入方不得改用 `chrono::Utc::now()`，读取侧不得把这些值当墙钟时间展示或与系统时间相减。
 
 **`attempt` 的含义**：v1 无重试（D15），`attempt` 恒为 `1`；保留该列是为了让「未来若引入重试」不必改表结构，读取侧不得据 `attempt > 1` 推断任何行为。
 
@@ -587,11 +615,13 @@ CREATE INDEX IF NOT EXISTS idx_runs_origin ON workflow_runs(origin_conversation_
 
 | 值 | 成立条件 | 依据 |
 |---|---|---|
-| `always` | 源节点为任意终态 | 无条件流转 |
+| `always` | 源节点为任意终态（仅 `turn` 源可用，`hitl` 源在保存期即拒） | 无条件流转 |
 | `onSuccess` | 源节点 `finished`（turn `completed`） | — |
 | `onFailure` | 源节点 `failed`（turn `failed` / `interrupted`，或发起被拒） | — |
 
 `cancelled` 与 `skipped` 的源节点**不激活任何下游**（除 `always` 外均不成立），保证取消不会顺流推进。
+
+`hitl` 源节点不允许 `always`（保存期即拒，见 §6.3 相容表 / D21）：gate 的结果走向必须由 `onSuccess` / `onFailure` 显式表达。
 
 **取消树**
 
@@ -631,6 +661,8 @@ CREATE INDEX IF NOT EXISTS idx_runs_origin ON workflow_runs(origin_conversation_
 
 **预算配置来源**：四项均由 `WorkflowRunStartInputDto.budgets` 传入（[I69b §2.2](./I69b-agent-orchestration-contract-spec.md)），**不读全局配置、不设隐式默认值**（`maxParallel` 除外，缺省 4）。`null` 一律解释为「未配置」。
 
+**时间口径一致**：`started_at` / `updated_at` / `finished_at` 与事件 `at` **同源于 `now_ms()`**（单调毫秒，§7.1 时钟实现约束），不得混入 `chrono::Utc::now()`；否则 `now_ms() - started_at` 会变成两个不同基准相减。这些列是**进程内相对时间**，不作墙钟显示；跨进程的旧行时间值不参与任何预算计算（run 生命周期止于进程，§8.4 的 `orphaned` 收口，D15）。
+
 token 不做实时闸门的原因：实时闸门需要内核回传 turn 级用量，属内核契约变更（OQ7）；本阶段只做读侧归因。
 
 ---
@@ -667,7 +699,7 @@ token 不做实时闸门的原因：实时闸门需要内核回传 turn 级用�
 | G4 run 级事件归属键 | §8.1 / [I69b §1.1](./I69b-agent-orchestration-contract-spec.md) | 台账主键 + 事件键 |
 | G5 并行调度与冲突域 | §9.2 / §9.3 | — |
 | G6 模板 → turn 请求编译层 | §6.1 / §7.1 | `TurnNodeParams` → `LaunchTurnSpec`；宿主补缺省值 |
-| G7 画布依赖与图数据模型 | §6.1（后端一半） | 图数据模型由 §6 定义；画布为自研设施（`src/features/canvas/`，无第三方图库），W1 / W2 已交付（I66 / I68，已归档）；模板编辑器属画布侧规格 |
+| G7 画布依赖与图数据模型 | §6.1（后端一半） | 图数据模型由 §6 定义；画布为自研设施（`src/features/canvas/`，无第三方图库），W1 / W2 已交付（I66 / I68，已归档）；模板编辑器见 [I69c](./I69c-agent-orchestration-canvas-spec.md) |
 | G8 图级授权单元 | 不做（D7） | 保持调用级审批 |
 | G9 run 级预算与归因 | §9.6 | — |
 | G10 多 run 并行的事件路由 | [I69b §1.1](./I69b-agent-orchestration-contract-spec.md) / [I69b §1.2](./I69b-agent-orchestration-contract-spec.md) | 后端按 `(runId, nodeId)` 键控；前端按同一键做投影 |
@@ -689,12 +721,12 @@ token 不做实时闸门的原因：实时闸门需要内核回传 turn 级用�
 | P9（后台任务） | run 生命周期止于应用进程；跨重启续跑不在本阶段（D15） |
 | 画布 W1 / W2 | 可并行；W1 / W2 不读模板与台账 |
 | 前端编排页占位 | **已存在**（`src/features/orchestration/`，路由 `/agent-orchestration`）：画布宿主 + 放置栏 + 预设标识，数据全为前端示例，不读模板与台账；编排已从观测页移除，观测页只做只读观测。R5 在此收敛为接缝，占位不接后端 |
-| 画布 W3（模板编辑器） | 读取模板 schema 与模板命令；形态属画布侧规格 |
+| 画布 W3（模板编辑器） | 读取模板 schema 与模板命令；形态与验收见 [I69c](./I69c-agent-orchestration-canvas-spec.md) |
 | 画布 W4（运行态叠加） | 读取 run 台账与 `workflow-run-event`；只读叠加，前端卸载不影响 run（[I69b §3.2](./I69b-agent-orchestration-contract-spec.md) K12） |
 
 ---
 
-## 13 验收（A1–A24、A26）
+## 13 验收（A1–A24、A26、A28–A32）
 
 | # | 判据 | 检查方式 |
 |---|---|---|
@@ -704,7 +736,7 @@ token 不做实时闸门的原因：实时闸门需要内核回传 turn 级用�
 | **A4** | 宿主返回 `SessionBusy` 时节点 `failed(busy)`、run 不挂死 | 单测（F1） |
 | **A5** | tap 内 panic 时 turn 仍正常终态 | 单测（F6 / INV4） |
 | **A6** | 零 wire diff（`git diff --stat src/types src/vault/core/contract` 为空） | 命令（INV12） |
-| **A7** | 六类非法模板（环 / 悬空边 / 重复 id / 缺必填参数 / 未知类别 / 条件与类别不匹配）各被拒并定位到 `node_id` / `edge_id` | 校验单测（F8） |
+| **A7** | §6.3 十类非法模板（重复 id / 悬空边 / 环 / 缺必填参数 / 未知类别 / 条件与类别不匹配 / 分组引用不存在节点 / 空分组 / 分组 id 或 title 重复 / 节点属多个分组）各被拒，并定位到 `node_id` / `edge_id` / `group_id` | 校验单测（F8） |
 | **A8** | 合法模板通过校验并编译出正确的 `LaunchTurnSpec` 序列 | 单测 |
 | **A9** | 环在保存期被拒，不进入运行期 | 校验单测（INV7） |
 | **A10** | 只改 `layout` 不改变任何校验结果、不改变 `spec_json` | 单测（INV13） |
@@ -723,6 +755,11 @@ token 不做实时闸门的原因：实时闸门需要内核回传 turn 级用�
 | **A23** | run 墙钟超限 → `failed(timeout)` 且在跑节点被取消 | 单测（§9.6） |
 | **A24** | 节点数超限 → 后续节点不发起，run `failed(node_limit)` | 单测（§9.6） |
 | **A26** | 丢事件后 `reconcile` 把台账拉回事实；不发起新 turn、不回退状态 | 集成测试（§8.7） |
+| **A28** | 同时 `running` 节点数不超过 `maxParallel`；超出的就绪节点排队而非并发，且不丢节点、不标失败 | 集成测试（§9.2 / §9.6） |
+| **A29** | 重启后模板行可读，`spec` 与 `layout` 仍分列、`version` 不变，内容与保存时一致 | 集成测试（§8.1 / INV13） |
+| **A30** | 自环按该边单独报一条错误；长环逐回边各报一条且每条带 `edge_id`；悬空边先于环检测，同一缺陷不被报成两类 | 校验单测（D19） |
+| **A31** | `hitl` 源的 `always` 边被拒；`hitl` 的 `onSuccess` / `onFailure` 通过；`turn` 源三种条件全通过 | 校验单测（D21） |
+| **A32** | 模板 `version` 与当前 schema 版本不等 → 读取与发起两处均拒绝并报明确错误，不降级、不迁移 | 集成测试（D22） |
 
 > A25（多 run 事件不串台）与 A27（前端接缝）在 [I69b §4](./I69b-agent-orchestration-contract-spec.md)。
 
@@ -759,3 +796,50 @@ token 不做实时闸门的原因：实时闸门需要内核回传 turn 级用�
 | OQ6 | HITL 是否支持「多选项 + 表单」 | v1 只有 `proceed` + `note` | W3 编辑器定案时 |
 | OQ7 | run 预算的 token 实时闸门 | 只归因不闸门（D8） | 内核回传 turn 级用量时 |
 | OQ8 | 模板版本与用户可见版本号的关系 | `version` 只表示 schema 版本；用户版本号暂不引入 | W3 需要「历史版本」时 |
+| OQ9 | 模板 schema 跨版本加载（v1 模板遇 v2 代码，或反向） | **已定案（D22）**：版本不等即拒绝加载并报明确错误，不降级、不迁移；迁移策略留给引入 v2 的波次 | 已关闭（R1 冻结前完成） |
+
+> **关闭权**：OQ 只由本表关闭。下游卷（[I69b](./I69b-agent-orchestration-contract-spec.md) / [I69c](./I69c-agent-orchestration-canvas-spec.md)）可在自己的波次内**触发**裁定（如 OQ6 的多选项形态、OQ8 的历史版本），但必须回提本表，由本表同批次更新「当前处置 / 何时裁定」两列，下游不得自行关闭或另立编号。裁定后若改变约束，走 §4 决议新增，不就地改写本表既有行。
+
+---
+
+## 16 承接清单与冻结常量（附录）
+
+> **用途**：本附录只解决一件事——**上游成果如何不丢地传到下游**。§16.1 规定下游必须逐条承接什么，§16.2 把散落在各卷的数字与闭集收敛成可核对的常量 ID。两表都不新增语义，值一律以正文为准。
+
+### 16.1 下游承接清单
+
+**维护纪律**：本表由上游维护。**上游新增或修改任何冻结项时，同一批次更新本表与对应下游卷的「上游承接清单」附录**，不得留到下一波。下游只引用 ID，不复述内容。
+
+| 承接方 | 必须逐条承接的 ID | 落点 | 核对方式 |
+|---|---|---|---|
+| [I69b](./I69b-agent-orchestration-contract-spec.md) | `INV1` / `INV3` / `INV4` / `INV5` / `INV6` / `INV7` / `INV8` / `INV9` / `INV10` / `INV11` / `INV12` / `INV13` | §1.1 事件、§2 wire、K1–K12（§3.2） | 契约 diff + K 单测 |
+| [I69b](./I69b-agent-orchestration-contract-spec.md) | `D5` / `D6` / `D8` / `D9` / `D12` / `D13` / `D14` / `D18` / `D22` | §2.1–§2.4 | 同上 |
+| [I69b](./I69b-agent-orchestration-contract-spec.md) | `CONST-NODE-KIND-2` / `CONST-EDGE-COND-3` / `CONST-INVALID-GRAPH-10` / `CONST-RUN-STATE-7` / `CONST-NODERUN-STATE-7` / `CONST-CMD-10` / `CONST-EVENT-1` / `CONST-BUDGET-4` | §2 wire 与 §2.4 错误闭集 | 常量表逐项核对 |
+| [I69c](./I69c-agent-orchestration-canvas-spec.md) | `INV5` / `INV7` / `INV13` | UI2 / UI4 / UI5 / UI6 | §6 判据 |
+| [I69c](./I69c-agent-orchestration-canvas-spec.md) | `D3` / `D4` / `D9` / `D11` / `D13` / `D18` / `D20` / `D21` | UI2–UI9 | 同上 |
+| [I69c](./I69c-agent-orchestration-canvas-spec.md) | `CONST-NODE-KIND-2` / `CONST-EDGE-COND-3` / `CONST-EDGE-COND-HITL-2` / `CONST-INVALID-GRAPH-10` / `CONST-NODERUN-STATE-7` / `CONST-KEY-2` / `CONST-CMD-10` | §2 / §4 / §6 | 同上 |
+
+> **不承接即失效**：表中任一 ID 在下游卷找不到落点，视为**上游成果丢失**，该卷不得标记为可实施。
+
+### 16.2 冻结常量表
+
+> 下游引用一律写常量 ID，**禁止在正文再写阿拉伯数字或复述闭集元素**。值以「定义处」为准；本表与正文不符时改本表。
+
+| 常量 ID | 值 | 定义处 | 引用者 |
+|---|---|---|---|
+| `CONST-INV-13` | 不变量 13 条（`INV1`–`INV13`） | §3 | I69b 头部 / I69c §0 |
+| `CONST-DEC-22` | 决议 22 条（`D1`–`D22`） | §4 | I69b §2 / I69c §3–§4 |
+| `CONST-NODE-KIND-2` | 节点类别闭集 2 值：`turn` / `hitl`（`group` 不是类别，见 `D18`） | §6.1 | I69b §2.2 / I69c UI2 |
+| `CONST-EDGE-COND-3` | 边条件闭集 3 值：`always` / `onSuccess` / `onFailure` | §6.1、§9.4 | I69b §2.2 / I69c UI4 |
+| `CONST-EDGE-COND-HITL-2` | `hitl` 源可用边条件 2 值：`onSuccess` / `onFailure`（无 `always`） | `D21`、§6.3 | I69c UI5 / A31 |
+| `CONST-INVALID-GRAPH-10` | 保存期非法图 10 类：重复 id / 悬空边 / 环（含自环）/ 必填参数缺失 / 未知类别 / 条件与类别不匹配 / 分组引用不存在节点 / 空分组 / 分组 id 或 title 重复 / 节点属多个分组 | §6.3 | I69 §4.2 / I69b §2.4 / I69c UI5 / A7 / A9 / A11 |
+| `CONST-RUN-STATE-7` | run 状态闭集 7 值：`pending` / `running` / `waiting` / `finished` / `failed` / `cancelled` / `orphaned` | §8.2 | I69b §2 |
+| `CONST-NODERUN-STATE-7` | L2 节点状态闭集 7 值：`pending` / `running` / `waiting` / `finished` / `failed` / `skipped` / `cancelled`（`skipped` = 调度阻断） | §8.2 | I69b K5–K6 / I69c §4 |
+| `CONST-KEY-2` | 并发键与事件路由键同粒度 `(run_id, node_id)` | §8.3、`D6` | I69b §1.1 / I69c §4 |
+| `CONST-CMD-10` | 命令 10 条：`list_workflow_templates` / `get_workflow_template` / `save_workflow_template` / `start_workflow_run` / `cancel_workflow_run` / `get_workflow_run` / `list_workflow_runs` / `list_workflow_node_runs` / `resolve_workflow_gate` / `reconcile_workflow_run` | [I69b §2.1](./I69b-agent-orchestration-contract-spec.md) | I69 §4.5 / I69c 头部 |
+| `CONST-EVENT-1` | run 事件 1 个：`workflow-run-event` | [I69b §1.1](./I69b-agent-orchestration-contract-spec.md) | I69b K3 / I69c UI10 |
+| `CONST-BUDGET-4` | 预算 4 项：run 墙钟 / 节点数上限 / 并行上限 / token 归因；未配置 ≠ 0；`maxParallel` 缺省 4 | §9.6、`INV11` | I69b §2.2 / K4 |
+| `CONST-F-11` | 失败矩阵 11 条（`F1`–`F11`） | §10 | I69b §3.2 |
+| `CONST-A-32` | 判据 `A1`–`A32` 跨两卷统一定义（A1–A24 / A26 / A28–A32 在本卷 §13；A25 / A27 在 I69b §4） | §13 | 两卷验收 |
+| `CONST-K-12` | 前端读取纪律 `K1`–`K12` | [I69b §3.2](./I69b-agent-orchestration-contract-spec.md) | I69c §6 |
+| `CONST-UI-15` | 界面段判据 `UI1`–`UI15` | [I69c §6](./I69c-agent-orchestration-canvas-spec.md) | I69 §1.1 DoD7 |
