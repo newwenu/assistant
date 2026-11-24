@@ -3,6 +3,7 @@
 > 日期：2026-11-21｜性质：**分析 + 可行设计候选**，非规格、非实施计划
 > 范围：本项目审批配置面（前端 `toolConfig` / 后端 `assistant-tools` 策略层 / `agent_modes` 持久化）与 `references/1-ai-agent/` 下参考项目的审批策略配置机制
 > 关联：[AI 审批参考分析](./AGENT-AI-APPROVAL-REFERENCE-ANALYSIS.md)（AI 在审批链上的位置）、[I38g AI 审批顾问规格](../store/I38g-agent-approval-advisor-spec.md)（单向顾问，P10 未实现）、[项目设计指导纲要](./PROJECT-DESIGN-GUIDELINES.md)（DTO / 分层约定）
+> 规格落点：[I70 审批粒度规格](../store/I70-approval-granularity-spec.md)（本文结论的正式规格；两文冲突以规格为准，本文只保留时点事实与候选推演）
 > 阅读约定：参考项目事实以本地检出为准，`path:line` 为 2026-11-21 时点快照；已有参考分析 §2–§6 是历史快照，本文只补「配置面」事实，不追改其结论。
 
 ---
