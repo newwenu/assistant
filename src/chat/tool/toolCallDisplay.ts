@@ -22,6 +22,28 @@ const PRIMARY_ARG_KEYS = [
   "name",
 ] as const;
 
+/** `intents[].action` → i18n 键（I72 §8.2）；封闭集合外的 action 原样回显。 */
+export const INTENT_ACTION: Readonly<Record<string, string>> = {
+  read: "chat.tool.approval.intent.action.read",
+  readToolOutput: "chat.tool.approval.intent.action.readToolOutput",
+  edit: "chat.tool.approval.intent.action.edit",
+  delete: "chat.tool.approval.intent.action.delete",
+  purge: "chat.tool.approval.intent.action.purge",
+  execute: "chat.tool.approval.intent.action.execute",
+  mcp: "chat.tool.approval.intent.action.mcp",
+};
+
+export type ActionTranslate = (
+  key: string,
+  options?: Record<string, unknown>,
+) => string;
+
+/** 动作码 → 人话；未知动作不猜，原样回显（I72 §8.2）。 */
+export function formatAction(action: string, t: ActionTranslate): string {
+  const key = INTENT_ACTION[action];
+  return key ? t(key) : action;
+}
+
 export interface PersistedOutput {
   path: string;
   preview: string;

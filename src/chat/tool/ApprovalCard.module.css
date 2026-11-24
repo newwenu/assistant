@@ -11,12 +11,26 @@
   min-width: 0;
 }
 
-.title {
+.decision {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: 8px;
-  font-weight: 600;
+  min-width: 0;
   color: var(--color-text);
+}
+
+.decisionText {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.decisionVerb {
+  font-weight: 600;
+}
+
+.boundary {
+  color: var(--color-error, #ff4d4f);
+  white-space: nowrap;
 }
 
 .timer {
@@ -36,11 +50,6 @@
   white-space: nowrap;
 }
 
-.tierSandbox {
-  color: var(--color-text-tertiary);
-  background: var(--color-border-secondary);
-}
-
 .tierOs {
   color: var(--color-warning, #faad14);
   background: var(--color-warning-bg);
@@ -51,82 +60,15 @@
   background: var(--color-error-bg);
 }
 
-.row {
-  display: flex;
-  gap: 8px;
-  min-width: 0;
-}
-
-.label {
-  flex: 0 0 auto;
-  color: var(--color-text-tertiary);
-  white-space: nowrap;
-}
-
-.value {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-  color: var(--color-text);
-  overflow-wrap: anywhere;
-}
-
-.intent {
-  display: flex;
-  gap: 6px;
+.commandBlock {
+  margin: 0;
+  padding: 6px 8px;
+  border-radius: 4px;
+  background: var(--color-bg-container);
   font-family: var(--font-mono);
-  min-width: 0;
-}
-
-.intentAction {
-  color: var(--color-text-secondary);
-  white-space: nowrap;
-}
-
-.readOnly {
-  color: var(--color-warning, #faad14);
-}
-
-.destructive {
-  color: var(--color-error, #ff4d4f);
-}
-
-.openWorld {
-  color: var(--color-warning, #faad14);
-}
-
-.extension {
-  display: flex;
-  gap: 6px;
-  min-width: 0;
+  white-space: pre-wrap;
   overflow-wrap: anywhere;
-}
-
-.extensionLabel {
-  flex: 0 0 auto;
-  font-weight: 600;
-}
-
-.severityDanger {
-  color: var(--color-error, #ff4d4f);
-}
-
-.severityCaution {
-  color: var(--color-warning, #faad14);
-}
-
-.severityInfo {
-  color: var(--color-text-secondary);
-}
-
-.reason {
-  color: var(--color-text-secondary);
-}
-
-.note {
-  color: var(--color-text-tertiary);
-  font-style: italic;
+  color: var(--color-text);
 }
 
 .error {
@@ -140,7 +82,111 @@
   flex-wrap: wrap;
 }
 
-.alwaysHint {
+.denyReasonEntry {
+  margin-left: auto;
+  padding: 0;
+  border: none;
+  background: none;
   color: var(--color-text-tertiary);
   font-size: 11px;
+  cursor: pointer;
+}
+
+.denyReasonEntry:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.denyReasonField {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.denyReasonHint {
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+}
+
+.fold {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.foldEntry {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.foldBody {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-left: 16px;
+  min-width: 0;
+}
+
+.foldSection {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+}
+
+.foldLabel {
+  flex: 0 0 auto;
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+}
+
+.foldValue {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  color: var(--color-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.foldAction {
+  color: var(--color-text-secondary);
+  margin-right: 6px;
+}
+
+.foldNote {
+  color: var(--color-text-tertiary);
+  font-style: italic;
+}
+
+.evidence {
+  margin: 0;
+  padding: 6px 8px;
+  border-radius: 4px;
+  background: var(--color-bg-container);
+  font-family: var(--font-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--color-text);
+}
+
+.severityDanger {
+  color: var(--color-error, #ff4d4f);
+}
+
+.severityCaution {
+  color: var(--color-warning, #faad14);
+}
+
+.severityInfo {
+  color: var(--color-text-secondary);
 }

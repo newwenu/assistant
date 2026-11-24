@@ -6,7 +6,7 @@
 | 修订 | v2.1 按代码核对；v2.2 移除 ToolBox-only 工具并新增 §2.5 受众执行期强制；v2.3 前后端同批交付、取消按数据可得性缩减范围；v2.4 补齐 MCP 动词来源、`summary` 共存规则、shell 边界段生效条件；v2.5 敲定 `extensions` 删 `label`/`value`、`shell` 的 `summary` 置空、范围说明不做常驻偏好项；v2.6 补「世界」定义、折叠区固定顺序（§4.5），并修正 `find_by_name` 三处、`kind.code` 措辞对齐 |
 | 日期 | 2026-11-23（v2；v2.1–v2.6 修订 2026-11-24） |
 | 关联 | I38d-agent-frontend-modes-spec（已归档，审批信息分级与四动作硬约束）、I70 审批粒度与原因归因、I71 工具执行链路加固、I58 §3.6 super_edit 升级；任务级进度见 [I72-approval-card-decision-tasklist.md](./I72-approval-card-decision-tasklist.md) |
-| 影响范围 | 前端：`src/chat/tool/ApprovalCard.tsx`、`ApprovalCard.module.css`、`src/chat/tool/approvalPresentation.ts`（新增）、`src/i18n/locales/*.json`、拒绝理由可选输入（§8.5，wire 字段已存在）。后端：`agent_delete` 校验位置上移、`find_for_agent` 受众强制（§2.5）、`preview` 结构化（规模 / 目标类型 / 链接 / `verbCode` / shell 语义与目标范围）与 `extensions` 改 `kind + code`（§10.2，含 `contract:gen`）。两侧同批交付 |
+| 影响范围 | 前端：`src/chat/tool/ApprovalCard.tsx`、`ApprovalCard.module.css`、`src/chat/tool/approvalPresentation/`（新增目录模块，见 §10.1）、`src/i18n/locales/*.json`、拒绝理由可选输入（§8.5，wire 字段已存在）。后端：`agent_delete` 校验位置上移、`find_for_agent` 受众强制（§2.5）、`preview` 结构化（规模 / 目标类型 / 链接 / `verbCode` / shell 语义与目标范围）与 `extensions` 改 `kind + code`（§10.2，含 `contract:gen`）。两侧同批交付 |
 | 核心结论 | 卡片只回答两件事：**批准后世界会怎样变**、**我在授权什么范围**。常态 3 行、硬顶 4 行。字段去留由**区分度**决定，不由「行数能不能砍」决定 |
 | 展示决策归属 | **三层分离**（§2.4）：内容由数据决定、语义由参数字典决定、呈现由前端决定。前端不产生事实，也不产生语义 |
 
@@ -513,7 +513,9 @@ mcp     mcp__* 动态名      调用外部工具  <toolName> <参数摘要>（�
 
 **id 必须用 wire 上的 `toolName`，不是 Rust 路径名。** 工具 id 常量是 `"delete"` / `"shell"` / `"super_edit"` 等（各工具 `TOOL_ID`，[agent_delete/mod.rs](../../src-tauri/crates/assistant-tools/src/os/tools/agent_delete/mod.rs)、[agent_shell/mod.rs](../../src-tauri/crates/assistant-tools/src/os/tools/agent_shell/mod.rs)），`Tool::name()` 默认返回 `id()`（[contract/trait.rs](../../src-tauri/crates/assistant-tools/src/contract/trait.rs)），因此 wire `toolName` 就是这些常量。写成 `agent_delete` / `agent_shell` 会让查表全部落空、常量过滤失效。
 
-护栏：`TOOL_PROFILES` 的键集合必须等于「后端注册工具 id 扣除 `TOOLBOX_ONLY` 集合」（当前 14 个）；条目内容只是「恒定字段」，显示逻辑仍由 §5.1 求值决定。测试口径为**源码扫描**：按 `src-tauri/crates/assistant-tools/src/os/tools/` 下显式列出的工具文件清单逐个读取（不新增 glob 依赖），提取全部 `const TOOL_ID: &str = "…"`，扣除前端 `TOOLBOX_ONLY_IDS` 后与 `TOOL_PROFILES` 逐一比对；`TOOLBOX_ONLY_IDS` 与 Rust `audience()` 实际结果的一致性由 Rust 侧测试断言（§11 B18b），避免手写清单与后端漂移。
+护栏：`TOOL_PROFILES` 的键集合必须等于「后端注册工具 id 扣除 `TOOLBOX_ONLY` 集合」（当前 14 个）；条目内容只是「恒定字段」，显示逻辑仍由 §5.1 求值决定。测试口径为**源码扫描**：用 `node:fs` 递归读取 `src-tauri/crates/assistant-tools/src/os/tools/` 下全部 `*.rs`（不新增 glob 依赖，**不维护文件清单**——清单本身会漂移，反而削弱护栏），提取全部 `const TOOL_ID: &str = "…"`，扣除前端 `TOOLBOX_ONLY_IDS` 后与 `TOOL_PROFILES` 逐一比对；`TOOLBOX_ONLY_IDS` 与 Rust `audience()` 实际结果的一致性由 Rust 侧测试断言（§11 B18b）。
+
+护栏只断言**键集合**，不断言条目内容：条目字段（如 `destructive=true`）是常量抄录，比对它属于变更检测，其行为侧已由 A13 覆盖。
 
 ### 5.6 真实工具卡片形态（与代码侧 1:1）
 
@@ -825,6 +827,8 @@ pub struct StatementEffect {
 
 沿用 [ApprovalCard.tsx](../../src/chat/tool/ApprovalCard.tsx) 现有 `reasonText` 分支（六种全覆盖、无 `default` 兜底，已由 `approvalRulesUi.test.ts` 锁定），只调整**选取规则**与**呈现位置**：
 
+职责切分：**选取**（§7.2 优先级排序，产出 `primary` 与 `rest` 两个数据槽）归视图模型 `buildApprovalView`；**文案**（`reasonText` 六分支）仍留在卡片，视图模型不产出任何本地化文本。因此 A11 继续由 `approvalRulesUi.test.ts` 的现有断言覆盖，A12（主句优先级）写在 `approvalPresentation.test.ts`。
+
 | 原因 | 主句模板 |
 | --- | --- |
 | `approvalLevel` | 当前档位（<档位人话名>）下，<动作> 需要你确认 |
@@ -972,13 +976,13 @@ pub struct StatementEffect {
 
 | 文件 | 改动 |
 | --- | --- |
-| `src/chat/tool/approvalPresentation.ts`（新增） | 纯函数 `buildApprovalView(approval) → ApprovalView`：对 §5.1 决策要素**求值**（有值则产出、无值则省略），动词与后果由 §5.2 参数语义字典驱动，证据形态由参数形态决定（§5.3）；内含四张纯表：参数语义字典、`TOOL_PROFILES`（§5.5）、`extension kind.code` 字典（§3.1）与 `intent action` 字典（§8.2）；不依赖 React、不按 `toolName` 分支（唯一例外：`TOOL_PROFILES` 查表与未知工具回显） |
+| `src/chat/tool/approvalPresentation/`（新增目录模块，入口 `index.ts`） | 纯函数 `buildApprovalView(approval) → ApprovalView`：对 §5.1 决策要素**求值**（有值则产出、无值则省略），动词与后果由 §5.2 参数语义字典驱动，证据形态由参数形态决定（§5.3）；按 §7.2 优先级选取原因（只产出 `reasons.primary` / `reasons.rest` 两个数据槽，**不产出任何本地化文案**）；内含四张纯表：参数语义字典、`TOOL_PROFILES`（§5.5）、`extension kind.code` 字典（§3.1）与 `intent action` 字典（§8.2）；不依赖 React、不按 `toolName` 分支（唯一例外：`TOOL_PROFILES` 查表与未知工具回显）。按 `docs/principle/CODE-SPLIT-PRINCIPLE.md` 按职责拆为 `types.ts`（视图契约）/ `tables.ts`（四表与阈值）/ `text.ts`（叶子纯函数）/ `elements.ts`（要素求值 + 取词）/ `evidence.ts`（证据块）/ `diagnostics.ts`（诊断与降级）/ `detail.ts`（原因 / 授权范围 / 区块顺序）/ `view.ts`（组合入口），依赖单向无环 |
 | `src/chat/tool/ApprovalCard.tsx` | 按视图模型渲染 4 行结构；折叠区按 §4.5 固定顺序、入口文案按实际区块拼接；保留现有 reason 六分支与四按钮逻辑；删除 `row` 平铺；`decide` 增加可选 `reason` 透传（仅 `deny`，空则省略）；「填写理由」为弱化文本入口，默认不渲染输入框（§8.5） |
 | `src/chat/tool/ApprovalCard.module.css` | 新增决策句（动词加粗）/ 命令块（等宽 + `white-space: pre-wrap`）/ 危险标记 / 折叠区 / 展开态单行理由输入；删除 `row` 平铺样式 |
 | `src/chat/tool/toolCallDisplay.ts` | 复用 `summarizeArguments`、`sortApprovalExtensions`；新增 `formatAction`（action 字典）。末段复用 `src/chat/core/workspaceDisplay.ts` 的 `workspaceBasename`（已含 verbatim 前缀剥离、双分隔符、尾分隔符，见 N18），**不新增 `formatPathTail`** |
 | `src/i18n/locales/zh-CN.json` / `en-US.json` | 新增动词、后果句、范围说明、拒绝后果、诊断项、`extension` 的 `kind.code` 复合键文案（如 `extension.workspace.outside`）与 `intent.action` 文案；新增拒绝理由文案（`deny_reason_open` / `deny_reason_close` / `deny_reason_placeholder` / `deny_reason_hint`）；移除 `always_hint` 固定行 |
-| `src/chat/tool/__tests__/approvalPresentation.test.ts`（新增） | 视图模型纯函数单测；含 `TOOL_PROFILES` 键集合与 Rust `TOOL_ID` 的源码扫描比对（§5.5） |
-| `src/chat/tool/__tests__/approvalRulesUi.test.ts` | 追加结构断言（4 行结构、`white-space` 保留、四按钮不变、`always_hint` 不再被引用） |
+| `src/chat/tool/__tests__/approvalPresentation.test.ts`（新增） | 视图模型纯函数单测：A1–A8、A9b、A10b–A10f、A12、A13–A13f（A9 只测首屏部分、A13b 只测键集合）；含 `TOOL_PROFILES` 键集合与 Rust `TOOL_ID` 的源码扫描比对（§5.5）。A11 与 A13e 的签名断言不在本文件（§11） |
+| `src/chat/tool/__tests__/approvalRulesUi.test.ts` | 追加结构断言（4 行结构、`white-space` 保留、四按钮不变、`always_hint` 不再被引用、折叠区截断 / 估算标注）；`reasonText` 六分支的现有断言沿用不改（A11） |
 | `src/chat/tool/ToolCallBubble.tsx` | 等待审批态隐藏上方 `name + argsSummary` 行，避免与行 1 / 证据块重复 |
 
 后端改动见 §10.2（同批交付）。
@@ -1022,7 +1026,7 @@ pub struct StatementEffect {
 
 ## 11. 验收判据
 
-**A. 纯函数（`approvalPresentation.test.ts`）**
+**A. 纯函数（`approvalPresentation.test.ts`；A11 与 A13e 的签名部分除外）**
 
 1. `delete` + `permanent=true` → 行 1 动词为「永久删除」，后果含「无法恢复」。
 2. `delete` + `permanent=false` → 动词为「删除」，后果含「回收站」「可恢复」。
@@ -1033,7 +1037,7 @@ pub struct StatementEffect {
 6. `edit` → 规模段为 `N 行 → M 行`，diff 进 `detail` 且保留 `\n`；`super_edit` → 规模段为 `startLine–endLine 行 → M 行`（均由参数计数，§5.6.4）。
 7. `shell` 命令长度未超阈值 → 对象段为命令原文；超阈值**或**含控制操作符 → 命令全文进证据块（`detail`）且未被截断、保留 `\n`（§5.3、R1）。
 8. `shell` 含 `&&` → 行 1 含语句数「2 条串联」与类别；含 `>` → 行 1 含重定向目标；单条命令**不出现**「1 条」规模段；`targetsScope=inside` → 边界段「改动限于工作区内」，`unknown` / `null` → 边界段整段消失；以上均**不产生「只读」结论**（R2、§6.5）。
-9. `preview=null` → 无规模段（N1）；`truncated` / `estimated` → 只在折叠区 `summary` 前加标注（量级前加「≥」），`summary` 为空时无标注（N2 / N3）。
+9. `preview=null` → 无规模段（N1）；`truncated` / `estimated` 不进首屏（首屏不出现「≥」及任何截断 / 估算措辞），也不得据此把 `entries` / `bytes` 写成精确值（N2 / N3）。折叠区 `summary` 前的「预演已截断」/「按参数估算」标注属渲染职责，由 B14 的折叠区结构断言覆盖，本文件不测。
 9b. 目标为链接 → 后果「只删链接，不碰目标」（`preview.symlink`）。
 10. 未知 `toolName`（无 `intents`、无参数字典命中）→ 求值视图只含「调用 + `toolName` + 参数摘要」（无后果段），不抛异常、不猜字段（§5.4、N14）。
 10b. 要素缺失时不产生空槽与多余分隔符：`read` 求值结果为两段（动词 + 对象）、`delete`（`permanent=false`，`preview.bytes` 有值）为四段（动词 + 对象 + 规模 + 后果），且都不含 `· ·`（N14）。
@@ -1041,13 +1045,13 @@ pub struct StatementEffect {
 10d. 不可证事实不出现：任何视图的后果段都不含「自动备份」「无备份」字样（§5.2、D11）。
 10e. 有效性措辞不进卡片：后果段不含「会失败」「可能失败」（N13）。
 10f. `mcp__<server>__<tool>`（`intents[0].action = "mcp"`）→ 动词为「调用外部工具」，对象段为 `toolName` + 参数摘要（**不含** `mcp:<server>:<hash>` 的 hash 末段），无后果段（§5.4 / §5.6.7）。
-11. 六种 `reason` 全覆盖且无 `default` 兜底（沿用现有断言）。
-12. 多原因时主句取优先级最高者，其余全部进 `detail`。
+11. 六种 `reason` 全覆盖且无 `default` 兜底——**不在本文件断言**：`reasonText` 留在 `ApprovalCard.tsx`（§7.1），沿用 `approvalRulesUi.test.ts` 的现有源码断言，本文件不重复。
+12. 多原因时主句取优先级最高者（视图模型产出 `reasons.primary`），其余全部进 `reasons.rest`，渲染时落折叠区 `detail`（§7.2；选取归视图模型、文案归卡片）。
 13. `destructive=true` 对 `delete` / `shell` / `super_edit`、`openWorld=true` 对 `shell` **均不产生首屏文案**（N12、§5.5）。
-13b. `TOOL_PROFILES` 键集合 = Rust `TOOL_ID` 集合扣除 `TOOLBOX_ONLY_IDS`（当前 14 个，排除清单当前只含 `fs_link`），且三个常量条目字段与 §5.5 表一致。
+13b. `TOOL_PROFILES` 键集合 = Rust `TOOL_ID` 集合扣除 `TOOLBOX_ONLY_IDS`（当前 14 个，排除清单当前只含 `fs_link`）。**只断言键集合**：条目字段（`destructive` / `openWorld` 等）与 §5.5 表的字面量比对属变更检测，其行为侧由 A13 覆盖，不重复断言（§5.5）。
 13c. `extensions` 首屏只出现 `kind.code` 字典文案，不含任何英文散文；未知 `kind.code` 折叠区保留原文（N16）。
 13d. `intents` 首屏为 action 人话 + 路径末段，不含 `purge` 字样与绝对路径；折叠区保留原文（N15、§8.2）。
-13e. 路径显示单点：`arguments.path` 与 `intents.resources` 的绝对路径在首屏只剩末段（verbatim 前缀、双分隔符、尾分隔符均已归一，复用 `workspaceBasename`）；`buildApprovalView` 不接收工作区根、不产出相对路径（N18、§4.2 对象段）。
+13e. 路径显示单点：`arguments.path` 与 `intents.resources` 的绝对路径在首屏只剩末段（verbatim 前缀、双分隔符、尾分隔符均已归一，复用 `workspaceBasename`）；不产出相对路径（N18、§4.2 对象段）。签名层面（不接收工作区根、不引用 `useChatStore`）属源码断言，并入 B18。
 13f. `mkdir` → 行 1 动词为「新建目录」（取自 `preview.verbCode`），**不回退成「修改」**、不抛异常（§5.2、G2）。
 
 **B. 结构断言（源码层，沿用 `panelStructure` 口径）**
@@ -1056,7 +1060,7 @@ pub struct StatementEffect {
 15. 证据块容器含 `white-space: pre-wrap`，且使用等宽字体。
 16. 决策按钮仍为四个，文案键不变。
 17. `always_hint` 固定文案不再被引用（改为动态范围说明键）。
-18. `approvalPresentation.ts` 不 import React，且不含 `toolName ===` 分支（`TOOL_PROFILES` 查表与未知工具回显除外）。
+18. `approvalPresentation/` 整组模块不 import React，且不含 `toolName ===` 分支（`TOOL_PROFILES` 查表与未知工具回显除外）；同时不引用 `useChatStore` / 工作区根，签名不接收工作区根（N18、A13e）。
 18b. 受众守卫（Rust，`tests/registration.rs`）：`TOOLBOX_ONLY` 工具（当前 `fs_link`）`find_for_agent(name)` 为 `None`、`find_for_toolbox(id)` 为 `Some`；`TOOLBOX_ONLY` 集合当前等于 `{"fs_link"}`（§2.5）。
 18c. 执行期守卫（Rust，`tests/pipeline.rs`）：以 `tool_name = "fs_link"` 构造调用 → 在 `Find` 阶段失败、错误含 `unknown tool`、临时工作区内无新建链接（§2.5）。
 18d. `workspace` 扩展守卫（Rust，`gateway/context.rs` 单测）：`pending` 的 `action` 为 `execute` / `mcp` 时**不产出** `workspace` 条目；`edit` / `delete` / `read` / `readToolOutput` 照常判定（§5.6.8 G1）。同时断言 `extensions` 的 `kind` 只可能是 `workspace` / `sandbox.enforcement`，且每项只有 `kind` / `code` / `severity`（`sandbox.root` / `output.scope` 已无产出点，§3.1）。

@@ -77,6 +77,8 @@ export const ToolCallBubble: React.FC<ToolCallBubbleProps> = ({ view }) => {
     summarizeArguments(view.arguments) ??
     (view.argsText?.trim() ? view.argsText.trim() : null);
   const active = view.status === "preparing" || view.status === "running";
+  const awaitingUser = view.status === "awaiting_user";
+  const awaitingApproval = awaitingUser && view.approval !== null;
   const now = useNowTick(active);
   const duration = formatToolTiming(view, now);
   const stats =
@@ -96,20 +98,22 @@ export const ToolCallBubble: React.FC<ToolCallBubbleProps> = ({ view }) => {
         <span className={css.statusIcon}>
           <StatusIcon status={view.status} />
         </span>
-        <span className={css.name}>{view.name}</span>
+        {!awaitingApproval && <span className={css.name}>{view.name}</span>}
         <span className={css.statusLabel}>
           {t(`chat.tool.status.${view.status}`)}
         </span>
         {duration && <span className={css.duration}>{duration}</span>}
       </div>
 
-      {argsSummary && <div className={css.args}>{argsSummary}</div>}
+      {!awaitingApproval && argsSummary && (
+        <div className={css.args}>{argsSummary}</div>
+      )}
 
-      {view.status === "awaiting_user" && view.approval && (
+      {awaitingUser && view.approval && (
         <ApprovalCard approval={view.approval} startedAt={view.startedAt} />
       )}
 
-      {view.status === "awaiting_user" && view.question && (
+      {awaitingUser && view.question && (
         <QuestionCard question={view.question} startedAt={view.startedAt} />
       )}
 

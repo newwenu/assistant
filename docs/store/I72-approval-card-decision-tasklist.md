@@ -16,14 +16,15 @@
 
 ---
 
-## W1 — 视图模型与字典（§5，A1–A13f）
+## W1 — 视图模型与字典（§5，A1–A13f 中归纯函数的部分）
 
-- [ ] `src/chat/tool/approvalPresentation.ts`（新增）：`ApprovalView` 类型与 `buildApprovalView`，按 §5.1 顺序求值，空要素返回 `null`；不 import React、不按 `toolName` 分支、不接收工作区根（N18 / A13e）
-- [ ] 同文件纯表：参数语义字典（§5.2）、`TOOL_PROFILES` 与 `TOOLBOX_ONLY_IDS`（§5.5）、`EXTENSION_KIND`（`kind.code` 复合键，§3.1）、`INTENT_ACTION`（§8.2，含 `readToolOutput`）
-- [ ] 同文件：证据形态（§5.3）、`summary` 为空即不渲染（含 `truncated` / `estimated` 无正文不标注，§5.3）、消费 W4 产出的结构化字段（`verbCode` / `entries` / `bytes` / `targetKind` / `exists` / `symlink` / shell 结构）
-- [ ] `src/chat/tool/toolCallDisplay.ts`：新增 `formatAction`，从 `approvalPresentation.ts` 的 `INTENT_ACTION` 取词（不另建表）；末段复用 `workspaceBasename`（N18）
-- [ ] `src/i18n/locales/zh-CN.json` / `en-US.json`：§10.1 列出的全部新键，双语对齐；移除 `always_hint`
-- [ ] `src/chat/tool/__tests__/approvalPresentation.test.ts`（新增）：A1–A13f；`TOOL_PROFILES` 键集合 = 源码扫描 `TOOL_ID` 扣除 `TOOLBOX_ONLY_IDS`
+- [x] `src/chat/tool/approvalPresentation/`（新增目录模块，按 `docs/principle/CODE-SPLIT-PRINCIPLE.md` 按职责拆分；对外入口 `index.ts`）：`ApprovalView` 类型与 `buildApprovalView`，按 §5.1 顺序求值，空要素返回 `null`；按 §7.2 优先级产出 `reasons.primary` / `reasons.rest` 两个数据槽，不产出文案；不 import React、不按 `toolName` 分支、不接收工作区根（N18；签名断言见 B18）
+  - `types.ts` 视图契约｜`view.ts` 组合入口｜`elements.ts` §5.1 要素求值 + 取词｜`evidence.ts` §5.3 证据块｜`diagnostics.ts` N7 诊断与降级｜`detail.ts` §7.2 原因 / §8.2 授权范围 / §4.5 区块顺序｜`text.ts` 叶子纯函数
+- [x] `approvalPresentation/tables.ts` 纯表：参数语义字典（§5.2）、`TOOL_PROFILES` 与 `TOOLBOX_ONLY_IDS`（§5.5）、`EXTENSION_KIND`（`kind.code` 复合键，§3.1）、`INTENT_ACTION`（§8.2，含 `readToolOutput`）
+- [x] `approvalPresentation/elements.ts` / `evidence.ts` / `diagnostics.ts`：证据形态（§5.3）、`summary` 为空即不渲染（含 `truncated` / `estimated` 无正文不标注，§5.3）、消费 W4 产出的结构化字段（`verbCode` / `entries` / `bytes` / `targetKind` / `exists` / `symlink` / shell 结构）
+- [x] `src/chat/tool/toolCallDisplay.ts`：新增 `formatAction`，从 `approvalPresentation/tables.ts` 的 `INTENT_ACTION` 取词（不另建表）；末段复用 `workspaceBasename`（N18）
+- [x] `src/i18n/locales/zh-CN.json` / `en-US.json`：§10.1 列出的全部新键，双语对齐；移除 `always_hint`（须与 W2 删除 `ApprovalCard` 的引用同批，单独先删会让 `typecheck` 失败）
+- [x] `src/chat/tool/__tests__/approvalPresentation.test.ts`（新增）：A1–A8、A9b、A10b–A10f、A12、A13–A13f（A9 只测首屏、A13b 只测键集合）；`TOOL_PROFILES` 键集合 = 源码扫描 `TOOL_ID` 扣除 `TOOLBOX_ONLY_IDS`。A11（`reasonText` 六分支）与 A13e 的签名断言不在此文件（§11）
 
 > 验收：`npx vitest run src/chat/tool/__tests__/approvalPresentation.test.ts`；`npm run typecheck`。
 
@@ -31,11 +32,11 @@
 
 ## W2 — 卡片结构改版（§3/§4/§7/§8.2/§8.4，B14–B18、C19）
 
-- [ ] `src/chat/tool/ApprovalCard.tsx`：改为四区块（决策句 / 证据块 / 按钮 / 折叠区），删 `row` 平铺与 `preview` / `intents` / `impact` / `extensions` / `reasons` 原始渲染；折叠区按 §4.5 固定顺序（原因 → 授权范围 → 证据 → 全部参数 → 诊断 → 拒绝后果），入口文案按实际区块拼接
-- [ ] 同文件：范围说明（§8.2，删 `alwaysHint` 改按需展示）、`always_confirm` 内容扩充（§8.3）、折叠区末尾拒绝后果一句（§8.4）
-- [ ] `src/chat/tool/ToolCallBubble.tsx`：`awaiting_user` 态隐藏上方 `name + argsSummary` 行
-- [ ] `src/chat/tool/ApprovalCard.module.css`：新增 `decision` / `commandBlock` / `boundary` / `evidence` / `fold`；删 `row` / `label` / `intent` / `extension` / `alwaysHint` 平铺样式
-- [ ] `src/chat/tool/__tests__/approvalRulesUi.test.ts`：追加 B14–B18 结构断言与 C19 双语键对齐；既有六种 `reason` 分支断言保持通过
+- [x] `src/chat/tool/ApprovalCard.tsx`：改为四区块（决策句 / 证据块 / 按钮 / 折叠区），删 `row` 平铺与 `preview` / `intents` / `impact` / `extensions` / `reasons` 原始渲染；折叠区按 §4.5 固定顺序（原因 → 授权范围 → 证据 → 全部参数 → 诊断 → 拒绝后果），入口文案按实际区块拼接
+- [x] 同文件：范围说明（§8.2，删 `alwaysHint` 改按需展示）、`always_confirm` 内容扩充（§8.3）、折叠区末尾拒绝后果一句（§8.4）
+- [x] `src/chat/tool/ToolCallBubble.tsx`：`awaiting_user` 态隐藏上方 `name + argsSummary` 行
+- [x] `src/chat/tool/ApprovalCard.module.css`：新增 `decision` / `commandBlock` / `boundary` / `evidence` / `fold`；删 `row` / `label` / `intent` / `extension` / `alwaysHint` 平铺样式
+- [x] `src/chat/tool/__tests__/approvalRulesUi.test.ts`：追加 B14–B18 结构断言与 C19 双语键对齐；既有六种 `reason` 分支断言保持通过（A11，不新增）
 
 > 验收：`npx vitest run src/chat/tool/__tests__/`；`npm run typecheck`。
 
@@ -43,11 +44,11 @@
 
 ## W3 — 拒绝理由（§8.5，E22–E28）
 
-- [ ] `src/chat/tool/ApprovalCard.tsx`：`decide` 增可选 `reason`，仅 `deny` 且 `trim()` 非空时带字段，其余省略（N17）
-- [ ] 同文件：`denyReasonOpen` 与弱化文本入口（默认不渲染输入框）；展开态单行输入（`maxLength=200`、自动聚焦、回车不提交）；提交失败保留展开与已输入内容；超时态随按钮一并隐藏/置灰
-- [ ] `src/chat/tool/ApprovalCard.module.css`：新增 `denyReasonEntry` / `denyReasonField`，不改动作行高度与按钮顺序
-- [ ] `src/i18n/locales/zh-CN.json` / `en-US.json`：`deny_reason_open` / `deny_reason_close` / `deny_reason_placeholder` / `deny_reason_hint`
-- [ ] `src/chat/tool/__tests__/approvalRulesUi.test.ts`：追加 E22–E28 源码断言
+- [x] `src/chat/tool/ApprovalCard.tsx`：`decide` 增可选 `reason`，仅 `deny` 且 `trim()` 非空时带字段，其余省略（N17）
+- [x] 同文件：`denyReasonOpen` 与弱化文本入口（默认不渲染输入框）；展开态单行输入（`maxLength=200`、自动聚焦、回车不提交）；提交失败保留展开与已输入内容；超时态随按钮一并隐藏/置灰
+- [x] `src/chat/tool/ApprovalCard.module.css`：新增 `denyReasonEntry` / `denyReasonField`，不改动作行高度与按钮顺序
+- [x] `src/i18n/locales/zh-CN.json` / `en-US.json`：`deny_reason_open` / `deny_reason_close` / `deny_reason_placeholder` / `deny_reason_hint`
+- [x] `src/chat/tool/__tests__/approvalRulesUi.test.ts`：追加 E22–E28 源码断言
 
 > 验收：`npx vitest run src/chat/tool/__tests__/approvalRulesUi.test.ts`；`npm run typecheck`；手工 E22–E28。
 
@@ -82,12 +83,12 @@
 
 ## W5 — 验收与清理
 
-- [ ] `npm run lint:fix`（先直接修，不再重复跑 lint 检查）
+- [x] `npm run lint:fix`（先直接修，不再重复跑 lint 检查）
 - [x] `npm run typecheck`
 - [x] `npm run test`
 - [x] `cargo test -p assistant-tools`（cwd = `src-tauri`）
 - [ ] 手工 D20 / D21 / D21b / D21c
-- [ ] 复核 §12 不做项未被引入（无模板分支、无前端重算策略结论、无 `TOOLBOX_ONLY` 工具进入 `TOOL_PROFILES`、无模型调用路径残留 `find_by_name` / `find`、无手改生成类型）
-- [ ] 复核本次收敛到位：`ApprovalExtensionDto` 无 `label` / `value`、无 `sandbox.root` / `output.scope` 产出点、无 `summary_for`、无范围说明常驻偏好项（§3.1、§5.3、§8.2、§12）
+- [x] 复核 §12 不做项未被引入（无模板分支、无前端重算策略结论、无 `TOOLBOX_ONLY` 工具进入 `TOOL_PROFILES`、无模型调用路径残留 `find_by_name` / `find`、无手改生成类型）
+- [x] 复核本次收敛到位：`ApprovalExtensionDto` 无 `label` / `value`、无 `sandbox.root` / `output.scope` 产出点、无 `summary_for`、无范围说明常驻偏好项（§3.1、§5.3、§8.2、§12）
 
-> 验收记录（待填）：日期、命令、通过项数、异常说明。
+> 验收记录：2026-11-24；`npm run test`（95 文件 / 1153 通过 / 1 跳过）、`npm run typecheck`（通过）、`npm run lint:fix`（无残留告警）、`cargo test -p assistant-tools`（通过）；§12 与收敛复核用源码扫描确认：`find_by_name` 仅存于注册表定义、测试与 `tool_setup` 断言，模型调用路径（`pipeline.rs` / `tool_escalation.rs`）无残留；`src` 下 `always_hint` / `alwaysHint` 仅存于断言；`ApprovalExtensionDto` 为 `kind + code + severity`。异常说明：无。

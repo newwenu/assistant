@@ -274,3 +274,296 @@ describe("规则编辑器复用与语义（I70 §7.3）", () => {
     );
   });
 });
+
+const CARD_CSS_FILE = "src/chat/tool/ApprovalCard.module.css";
+const PRESENTATION_DIR = "src/chat/tool/approvalPresentation";
+const PRESENTATION_FILES = [
+  "index.ts",
+  "types.ts",
+  "tables.ts",
+  "text.ts",
+  "elements.ts",
+  "evidence.ts",
+  "diagnostics.ts",
+  "detail.ts",
+  "view.ts",
+];
+
+/** 递归收集某节点下全部字符串叶子，键为相对路径。 */
+function stringLeaves(root: unknown, keys: string[]): Record<string, string> {
+  const out: Record<string, string> = {};
+  const walk = (value: unknown, prefix: string) => {
+    if (typeof value === "string") {
+      out[prefix] = value;
+      return;
+    }
+    if (typeof value !== "object" || value === null) return;
+    for (const [key, child] of Object.entries(value)) {
+      walk(child, prefix === "" ? key : `${prefix}.${key}`);
+    }
+  };
+  walk(pick(root, keys), "");
+  return out;
+}
+
+function cssRuleBody(source: string, className: string): string {
+  const start = source.indexOf(`.${className} {`);
+  expect(start, `缺少样式：.${className}`).toBeGreaterThanOrEqual(0);
+  return source.slice(start, source.indexOf("}", start));
+}
+
+describe("卡片四区块结构（I72 §4 / B14–B17）", () => {
+  const card = readRepoFile(CARD_FILE);
+  const cardCss = readRepoFile(CARD_CSS_FILE);
+
+  it("只有决策句 / 命令块 / 按钮 / 折叠区四个区块，无 row 平铺（B14）", () => {
+    for (const block of [
+      "css.decision",
+      "css.commandBlock",
+      "css.actions",
+      "css.fold",
+    ]) {
+      expect(card, block).toContain(block);
+    }
+    for (const stale of [
+      "css.row",
+      "css.preview",
+      "css.intents",
+      "css.impact",
+      "css.extensions",
+      "css.reasons",
+    ]) {
+      expect(card, stale).not.toContain(stale);
+    }
+    for (const staleRule of [
+      "row",
+      "label",
+      "intent",
+      "extension",
+      "alwaysHint",
+    ]) {
+      expect(cardCss, staleRule).not.toMatch(
+        new RegExp(`\\.${staleRule}\\s*{`),
+      );
+    }
+  });
+
+  it("折叠区按 §4.5 固定顺序渲染，入口文案按实际区块拼接（B14）", () => {
+    const detail = readRepoFile(`${PRESENTATION_DIR}/detail.ts`);
+    const start = detail.indexOf("export function foldSections");
+    expect(start).toBeGreaterThanOrEqual(0);
+    const body = detail.slice(start);
+    let cursor = 0;
+    for (const section of [
+      "why",
+      "scope",
+      "evidence",
+      "arguments",
+      "diagnostics",
+      "denyConsequence",
+    ]) {
+      const index = body.indexOf(`"${section}"`, cursor);
+      expect(index, `区块顺序：${section}`).toBeGreaterThanOrEqual(cursor);
+      cursor = index;
+    }
+    expect(card).toContain("foldSections.map(renderFoldSection)");
+    expect(card).toContain("translateKey(foldLabelKey(section))");
+    expect(card).toContain('.join(" · ")');
+  });
+
+  it("证据块保留换行且等宽（B15）", () => {
+    for (const className of ["commandBlock", "evidence"]) {
+      const body = cssRuleBody(cardCss, className);
+      expect(body, className).toContain("white-space: pre-wrap");
+      expect(body, className).toContain("var(--font-mono)");
+    }
+  });
+
+  it("决策按钮仍为四个，文案键不变（B16）", () => {
+    for (const key of ["approve", "deny", "session_allow", "always"]) {
+      expect(card, key).toContain(`chat.tool.approval.${key}`);
+    }
+    for (const kind of ["approve", "allowSession", "allowAlways"]) {
+      expect(card, kind).toContain(`decideOther("${kind}")`);
+    }
+    expect(card).toContain("onClick={decideDeny}");
+    expect(card).toContain('void decide("deny"');
+  });
+
+  it("always_hint 固定文案不再被引用，改为按需范围说明（B17）", () => {
+    expect(card).not.toContain("always_hint");
+    expect(card).toContain("view.scope.session");
+    expect(card).toContain("view.scope.always");
+    for (const [name, locale] of [
+      ["zh-CN", zhCN],
+      ["en-US", enUS],
+    ] as const) {
+      expect(
+        pick(locale, ["chat", "tool", "approval", "always_hint"]),
+        name,
+      ).toBeUndefined();
+    }
+  });
+
+  it("等待审批态隐藏上方 name + argsSummary 行", () => {
+    const bubble = readRepoFile("src/chat/tool/ToolCallBubble.tsx");
+    expect(bubble).toMatch(/!awaitingApproval && argsSummary/);
+    expect(bubble).toMatch(
+      /!awaitingApproval && <span className=\{css\.name\}/,
+    );
+  });
+});
+
+describe("视图模型纯度（I72 §10.1 / B18）", () => {
+  it("整组模块不 import React、不引用 store 与工作区根", () => {
+    for (const file of PRESENTATION_FILES) {
+      const source = readRepoFile(`${PRESENTATION_DIR}/${file}`);
+      expect(source, file).not.toMatch(
+        /from "react"|from "react-dom"|from "react-i18next"/,
+      );
+      expect(source, file).not.toContain("useChatStore");
+      expect(source, file).not.toContain("workspaceRoot");
+    }
+  });
+
+  it("不按 toolName 分支，签名不接收工作区根", () => {
+    for (const file of PRESENTATION_FILES) {
+      const source = readRepoFile(`${PRESENTATION_DIR}/${file}`);
+      expect(source, file).not.toMatch(/toolName\s*===\s*"/);
+      expect(source, file).not.toMatch(/toolName\s*===\s*'|toolName\s*!==\s*"/);
+    }
+    const view = readRepoFile(`${PRESENTATION_DIR}/view.ts`);
+    expect(view).toContain("approval: ToolApprovalRequest");
+    expect(view).toContain("t: TranslateFn");
+    expect(view).not.toMatch(/root|Root/);
+  });
+});
+
+describe("审批文案双语对齐（I72 §10.1 / C19）", () => {
+  const GROUPS: string[][] = [
+    ["chat", "tool", "approval", "verb"],
+    ["chat", "tool", "approval", "consequence"],
+    ["chat", "tool", "approval", "scale"],
+    ["chat", "tool", "approval", "boundary"],
+    ["chat", "tool", "approval", "object"],
+    ["chat", "tool", "approval", "intent"],
+    ["chat", "tool", "approval", "extension"],
+    ["chat", "tool", "approval", "fold"],
+    ["chat", "tool", "approval", "scope"],
+    ["chat", "tool", "approval", "diagnostic"],
+    ["chat", "tool", "approval", "evidence"],
+  ];
+
+  const DIRECT_KEYS = [
+    "always_confirm",
+    "expired_decision",
+    "deny_reason_open",
+    "deny_reason_close",
+    "deny_reason_placeholder",
+    "deny_reason_hint",
+  ];
+
+  it("新增键集合完全对齐，占位符集合一致", () => {
+    for (const keys of GROUPS) {
+      const zh = stringLeaves(zhCN, keys);
+      const en = stringLeaves(enUS, keys);
+      const label = keys.join(".");
+      expect(Object.keys(zh).sort(), label).toEqual(Object.keys(en).sort());
+      for (const key of Object.keys(zh)) {
+        expect(placeholders(en[key]), `${label}.${key}`).toEqual(
+          placeholders(zh[key]),
+        );
+      }
+    }
+  });
+
+  it("散键（二次确认 / 超时 / 拒绝理由）双语齐备且占位符一致", () => {
+    for (const key of DIRECT_KEYS) {
+      const zh = text(zhCN, ["chat", "tool", "approval", key]);
+      const en = text(enUS, ["chat", "tool", "approval", key]);
+      expect(placeholders(en), key).toEqual(placeholders(zh));
+    }
+    expect(
+      placeholders(text(zhCN, ["chat", "tool", "approval", "always_confirm"])),
+    ).toEqual(["intents"]);
+  });
+});
+
+describe("拒绝理由（I72 §8.5 / E22–E28）", () => {
+  const card = readRepoFile(CARD_FILE);
+
+  const functionBody = (signature: string): string => {
+    const start = card.indexOf(signature);
+    expect(start, signature).toBeGreaterThanOrEqual(0);
+    return card.slice(start, card.indexOf("\n  };", start));
+  };
+
+  it("默认路径零成本：拒绝单击即提交，无输入框、无二次确认（E22）", () => {
+    expect(card).toContain("onClick={decideDeny}");
+    const deny = functionBody("const decideDeny = () => {");
+    expect(deny).toContain('void decide("deny",');
+    const decide = functionBody("const decide = async");
+    expect(decide).toContain('if (kind === "deny" && reason !== undefined)');
+    expect(decide).toContain("payload.reason = reason");
+    expect((card.match(/<Popconfirm/g) ?? []).length).toBe(1);
+    expect(card).toContain('onConfirm={() => decideOther("allowAlways")}');
+  });
+
+  it("空白理由按未填写处理，不传空串（E23）", () => {
+    const deny = functionBody("const decideDeny = () => {");
+    expect(deny).toContain("const trimmed = denyReason.trim();");
+    expect(deny).toContain('trimmed === "" ? undefined : trimmed');
+  });
+
+  it("理由为 trim 后原文，且拒绝按钮不带二次确认（E24）", () => {
+    expect(card).toContain(
+      'void decide("deny", trimmed === "" ? undefined : trimmed)',
+    );
+    const denyStart = card.indexOf('loading={submitting === "deny"}');
+    expect(denyStart).toBeGreaterThanOrEqual(0);
+    const denyButton = card.slice(
+      denyStart,
+      card.indexOf("</Button>", denyStart),
+    );
+    expect(denyButton).not.toContain("Popconfirm");
+  });
+
+  it("放行类动作不携带理由，展开的理由框自动收起（E25）", () => {
+    const other = functionBody("const decideOther = (kind: DecisionKind) => {");
+    expect(other).toContain("setDenyReasonOpen(false);");
+    expect(other).toContain('setDenyReason("");');
+    expect(other).toContain("void decide(kind);");
+    for (const kind of ["approve", "allowSession", "allowAlways"]) {
+      expect(card, kind).toContain(`decideOther("${kind}")`);
+    }
+    expect(card).not.toContain('decideOther("deny")');
+  });
+
+  it("单行输入限长 200、自动聚焦、回车不提交（E26）", () => {
+    expect(card).toContain("maxLength={200}");
+    expect(card).toContain("autoFocus");
+    expect(card).toContain("onPressEnter={(event) => event.preventDefault()}");
+    expect(card).toContain("chat.tool.approval.deny_reason_placeholder");
+  });
+
+  it("提交失败保留展开与已输入内容（E27）", () => {
+    const decide = functionBody("const decide = async");
+    const catchStart = decide.indexOf("catch (err)");
+    expect(catchStart).toBeGreaterThanOrEqual(0);
+    const catchBody = decide.slice(catchStart);
+    expect(catchBody).toContain("setError(errorText(err));");
+    expect(catchBody).not.toContain("setDenyReasonOpen");
+    expect(catchBody).not.toContain("setDenyReason(");
+  });
+
+  it("超时态理由入口与按钮一起隐藏（E28）", () => {
+    const entryStart = card.indexOf("className={css.denyReasonEntry}");
+    expect(entryStart).toBeGreaterThanOrEqual(0);
+    const before = card.slice(0, entryStart);
+    const guard = before.lastIndexOf("{!expired && (");
+    expect(guard).toBeGreaterThanOrEqual(0);
+    expect(entryStart - guard).toBeLessThan(400);
+    expect(card).toContain("disabled={submitting !== null}");
+    expect(card).toContain("{denyReasonOpen && !expired && (");
+  });
+});

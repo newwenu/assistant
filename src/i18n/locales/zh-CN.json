@@ -1218,6 +1218,7 @@
         "title": "需要你确认",
         "remaining": "剩余 {{time}}",
         "expired": "已超时",
+        "expired_decision": "已超时，本次按拒绝处理",
         "preview": "预计",
         "resources": "范围",
         "impact": "影响",
@@ -1231,8 +1232,11 @@
         "deny": "拒绝",
         "session_allow": "本会话允许",
         "always": "始终允许",
-        "always_confirm": "将对该类操作永久放行（所有会话），可在设置页【已授权操作】撤销。确认继续？",
-        "always_hint": "【始终允许】会对该类操作永久放行（所有会话）",
+        "always_confirm": "所有会话都不再询问，将放行 {{intents}} · 可在此撤销。确认继续？",
+        "deny_reason_open": "填写理由",
+        "deny_reason_close": "收起",
+        "deny_reason_placeholder": "可选：为什么拒绝（例如「这个目录不能动」「先备份再删」）",
+        "deny_reason_hint": "模型会看到这段话 · 留空则与不填一样",
         "tier": {
           "sandbox": "沙箱",
           "os": "系统",
@@ -1257,6 +1261,100 @@
           "user_rule": "审批规则：{{action}} {{resource}}",
           "tier_ceiling": "层级上限：{{tier}}",
           "advisor": "AI 顾问：{{rationale}}"
+        },
+        "verb": {
+          "call": "调用",
+          "mkdir": "新建目录",
+          "move": "移动",
+          "delete": "删除",
+          "delete_dir": "删除目录",
+          "delete_permanent": "永久删除",
+          "delete_dir_permanent": "永久删除目录",
+          "append": "追加到",
+          "create": "新建",
+          "overwrite": "覆盖",
+          "create_or_overwrite": "新建或覆盖"
+        },
+        "consequence": {
+          "shell_read_only": "只读类命令",
+          "shell_network": "联网命令",
+          "shell_destructive": "破坏性命令",
+          "shell_unknown": "无法判定影响",
+          "unrecoverable": "不经回收站，无法恢复",
+          "recoverable": "移入回收站，可恢复",
+          "link_only": "只删链接，不碰目标",
+          "append_keep": "已有内容保留",
+          "overwritten": "原内容被替换",
+          "overwrite_if_exists": "目标已存在时原内容被替换",
+          "no_overwrite": "不会覆盖已有目标"
+        },
+        "scale": {
+          "statements": "{{count}} 条串联",
+          "redirect": "写入 {{target}}",
+          "lines_transition": "{{from}} 行 → {{to}} 行",
+          "range_transition": "第 {{from}}–{{to}} 行 → {{lines}} 行",
+          "new_lines": "新 {{count}} 行",
+          "lines_bytes": "{{lines}} 行 · {{bytes}}",
+          "lines": "{{count}} 行",
+          "bytes": "{{bytes}}",
+          "entries": "共 {{count}} 项"
+        },
+        "boundary": {
+          "shell_inside": "改动限于工作区内",
+          "shell_outside": "可写入工作区外"
+        },
+        "object": {
+          "echo": "{{tool}} {{summary}}",
+          "pair": "{{source}} → {{target}}"
+        },
+        "intent": {
+          "unrecognized": "未识别：{{action}}",
+          "action": {
+            "read": "读取",
+            "readToolOutput": "读取工具输出",
+            "edit": "修改",
+            "delete": "删除",
+            "purge": "永久删除",
+            "execute": "执行命令",
+            "mcp": "调用外部工具"
+          }
+        },
+        "extension": {
+          "workspace": {
+            "inside": "目标在工作区内",
+            "outside": "目标在工作区外",
+            "partial": "部分目标在工作区外"
+          },
+          "sandbox": {
+            "enforcement": {
+              "full": "沙箱强制隔离",
+              "partial": "沙箱部分隔离"
+            }
+          }
+        },
+        "scope": {
+          "session": "同「{{action}} {{object}}」不再询问，会话结束失效 · 可在此撤销",
+          "always": "所有会话都不再询问，将放行 {{intents}} · 可在此撤销",
+          "intent_separator": "、"
+        },
+        "fold": {
+          "why": "为什么问我",
+          "scope": "授权范围",
+          "evidence": "证据补充",
+          "arguments": "全部参数",
+          "diagnostics": "诊断",
+          "deny_consequence": "拒绝后这次不会执行该操作；模型会收到拒绝结果，可能改用其它方式完成任务",
+          "deny_consequence_label": "拒绝后果"
+        },
+        "diagnostic": {
+          "preview_truncated": "预演已截断",
+          "preview_estimated": "按参数估算",
+          "preview_source": "后端预演",
+          "preview_unavailable": "预演不可用（目标是否已存在未知）"
+        },
+        "evidence": {
+          "omitted": "其余 {{count}} 行已省略",
+          "truncated": "已截断"
         }
       },
       "question": {

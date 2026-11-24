@@ -1245,6 +1245,7 @@
         "title": "Approval required",
         "remaining": "{{time}} left",
         "expired": "Timed out",
+        "expired_decision": "Timed out; treated as denied",
         "preview": "Expected",
         "resources": "Scope",
         "impact": "Impact",
@@ -1258,8 +1259,11 @@
         "deny": "Deny",
         "session_allow": "Allow in this conversation",
         "always": "Always allow",
-        "always_confirm": "This permanently allows this kind of operation across all conversations. You can revoke it under Settings → Authorized actions. Continue?",
-        "always_hint": "\"Always allow\" permanently permits this kind of operation across all conversations",
+        "always_confirm": "No more prompts in any conversation; allows {{intents}} · revoke here. Continue?",
+        "deny_reason_open": "Add a reason",
+        "deny_reason_close": "Collapse",
+        "deny_reason_placeholder": "Optional: why deny (e.g. \"this directory must stay\", \"back up first\")",
+        "deny_reason_hint": "The model will see this · leaving it empty is the same as not filling it",
         "tier": {
           "sandbox": "Sandbox",
           "os": "OS",
@@ -1284,6 +1288,100 @@
           "user_rule": "Approval rule: {{action}} {{resource}}",
           "tier_ceiling": "Tier ceiling: {{tier}}",
           "advisor": "AI advisor: {{rationale}}"
+        },
+        "verb": {
+          "call": "Call",
+          "mkdir": "Create directory",
+          "move": "Move",
+          "delete": "Delete",
+          "delete_dir": "Delete directory",
+          "delete_permanent": "Permanently delete",
+          "delete_dir_permanent": "Permanently delete directory",
+          "append": "Append to",
+          "create": "Create",
+          "overwrite": "Overwrite",
+          "create_or_overwrite": "Create or overwrite"
+        },
+        "consequence": {
+          "shell_read_only": "Read-only command",
+          "shell_network": "Network command",
+          "shell_destructive": "Destructive command",
+          "shell_unknown": "Impact undetermined",
+          "unrecoverable": "Skips the trash; unrecoverable",
+          "recoverable": "Moves to the trash; recoverable",
+          "link_only": "Removes the link only; target untouched",
+          "append_keep": "Existing content preserved",
+          "overwritten": "Existing content replaced",
+          "overwrite_if_exists": "Replaces the target only if it already exists",
+          "no_overwrite": "Will not overwrite an existing target"
+        },
+        "scale": {
+          "statements": "{{count}} chained statements",
+          "redirect": "Writes to {{target}}",
+          "lines_transition": "{{from}} lines → {{to}} lines",
+          "range_transition": "Lines {{from}}–{{to}} → {{lines}} lines",
+          "new_lines": "{{count}} new lines",
+          "lines_bytes": "{{lines}} lines · {{bytes}}",
+          "lines": "{{count}} lines",
+          "bytes": "{{bytes}}",
+          "entries": "{{count}} entries"
+        },
+        "boundary": {
+          "shell_inside": "Changes limited to the workspace",
+          "shell_outside": "Can write outside the workspace"
+        },
+        "object": {
+          "echo": "{{tool}} {{summary}}",
+          "pair": "{{source}} → {{target}}"
+        },
+        "intent": {
+          "unrecognized": "Unrecognized: {{action}}",
+          "action": {
+            "read": "Read",
+            "readToolOutput": "Read tool output",
+            "edit": "Edit",
+            "delete": "Delete",
+            "purge": "Permanently delete",
+            "execute": "Run command",
+            "mcp": "Call external tool"
+          }
+        },
+        "extension": {
+          "workspace": {
+            "inside": "Target inside the workspace",
+            "outside": "Target outside the workspace",
+            "partial": "Some targets outside the workspace"
+          },
+          "sandbox": {
+            "enforcement": {
+              "full": "Sandbox fully enforced",
+              "partial": "Sandbox partially enforced"
+            }
+          }
+        },
+        "scope": {
+          "session": "No more prompts for \"{{action}} {{object}}\" in this conversation; expires when the conversation ends · revoke here",
+          "always": "No more prompts in any conversation; allows {{intents}} · revoke here",
+          "intent_separator": ", "
+        },
+        "fold": {
+          "why": "Why ask",
+          "scope": "Granted scope",
+          "evidence": "Supporting evidence",
+          "arguments": "Full arguments",
+          "diagnostics": "Diagnostics",
+          "deny_consequence": "Denying means this operation will not run; the model receives the rejection and may try another approach",
+          "deny_consequence_label": "If you deny"
+        },
+        "diagnostic": {
+          "preview_truncated": "Preview truncated",
+          "preview_estimated": "Estimated from arguments",
+          "preview_source": "Backend preview",
+          "preview_unavailable": "Preview unavailable (whether the target exists is unknown)"
+        },
+        "evidence": {
+          "omitted": "{{count}} more lines omitted",
+          "truncated": "Truncated"
         }
       },
       "question": {
