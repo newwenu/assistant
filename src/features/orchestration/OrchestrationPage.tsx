@@ -1,35 +1,45 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { CanvasPalette } from "@/features/canvas/CanvasPalette";
-import { CanvasPresetBadge } from "@/features/canvas/CanvasPresetBadge";
 import {
   CanvasViewport,
   type CanvasPlaceRequest,
 } from "@/features/canvas/CanvasViewport";
-import { BUILTIN_AGENT_PRESET } from "@/features/canvas/presets/builtinAgentPreset";
-import { CARD_KINDS } from "@/features/canvas/presets/cardKinds";
 import { CARD_METRICS } from "@/features/canvas/presets/metrics";
-import type { CardKindId } from "@/features/canvas/presets/types";
 import type { CanvasCardView, Point } from "@/features/canvas/types";
 import type { CanvasViewportState } from "@/features/canvas/viewport";
-import {
-  canvasContentOf,
-  exampleCardOf,
-  paletteItemsOf,
-} from "@/features/observation/canvasContent";
+import { isOrchCardKind, orchCardOf, orchPaletteItemsOf } from "./cardKinds";
+import type { WorkflowNode } from "./types";
 import styles from "./orchestration.module.css";
 
 const INITIAL_VIEWPORT: CanvasViewportState = { x: 32, y: 64, scale: 1 };
 
 const DROP_PREVIEW_SIZE = { w: CARD_METRICS.cellW, h: CARD_METRICS.cellH };
 
-function isCardKindId(kind: string): kind is CardKindId {
-  return kind in CARD_KINDS;
+const EMPTY_CONTENT = {
+  cards: [] as readonly CanvasCardView[],
+  edges: [],
+  labels: [],
+};
+
+/** 放置栏落卡生成的草稿节点：参数留空、标题留空，由构造器给分型默认名。 */
+function draftNodeOf(kind: "turn" | "hitl", seq: number): WorkflowNode {
+  return {
+    id: `${kind}#${seq}`,
+    kind,
+    title: "",
+    params:
+      kind === "turn"
+        ? { content: "", modeId: null, providerId: null, modelId: null }
+        : null,
+    groupId: null,
+  };
 }
 
 /**
  * 编排 Agent 页：画布独占全部可用空间，无实例栏、无固定面板。
- * 放置栏浮在画布左上角、预设标识浮在画布底部，都不参与布局栅格。
+ * 放置栏只列 `ORCH_CARD_KINDS` 的两类真实卡片；卡片内容由编排构造器产出，
+ * 不调用观测侧的示例构造器（I69d OC1）。模板加载与运行态叠加属 W3（I69c）。
  */
 export function OrchestrationPage() {
   const { t } = useTranslation();
@@ -42,22 +52,18 @@ export function OrchestrationPage() {
 
   const placeCard = useCallback(
     (kind: string, point: Point) => {
-      if (!isCardKindId(kind)) return;
-      const card = exampleCardOf(kind, t);
+      if (!isOrchCardKind(kind)) return;
       placedSeq.current += 1;
-      setPlacedCards((prev) => [
-        ...prev,
-        {
-          ...card,
-          id: `${kind}#${placedSeq.current}`,
-          box: {
-            x: point.x - card.box.w / 2,
-            y: point.y - card.box.h / 2,
-            w: card.box.w,
-            h: card.box.h,
-          },
+      const card = orchCardOf(draftNodeOf(kind, placedSeq.current), null, {
+        box: {
+          x: point.x - CARD_METRICS.cellW / 2,
+          y: point.y - CARD_METRICS.cellH / 2,
+          w: CARD_METRICS.cellW,
+          h: CARD_METRICS.cellH,
         },
-      ]);
+        t,
+      });
+      setPlacedCards((prev) => [...prev, card]);
     },
     [t],
   );
@@ -66,28 +72,20 @@ export function OrchestrationPage() {
     setPlaceRequest((prev) => ({ kind, token: (prev?.token ?? 0) + 1 }));
   }, []);
 
-  const paletteItems = useMemo(() => paletteItemsOf(t), [t]);
-  const content = useMemo(() => canvasContentOf(null, t), [t]);
+  const paletteItems = useMemo(() => orchPaletteItemsOf(t), [t]);
 
   return (
     <div className={styles.page}>
       <div className={styles.canvasHost}>
         <CanvasViewport
-          cards={content.cards}
-          edges={content.edges}
-          labels={content.labels}
+          cards={EMPTY_CONTENT.cards}
+          edges={EMPTY_CONTENT.edges}
+          labels={EMPTY_CONTENT.labels}
           initialViewport={INITIAL_VIEWPORT}
           placedCards={placedCards}
           onDropCard={placeCard}
           placeRequest={placeRequest}
           dropPreviewSize={DROP_PREVIEW_SIZE}
-          header={
-            <CanvasPresetBadge
-              name={t(BUILTIN_AGENT_PRESET.titleKey)}
-              description={t(BUILTIN_AGENT_PRESET.descriptionKey)}
-              hint={t("canvas.preset.readonly_hint")}
-            />
-          }
         />
         <CanvasPalette
           title={t("canvas.palette.title")}

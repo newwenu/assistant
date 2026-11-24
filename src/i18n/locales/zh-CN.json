@@ -2434,5 +2434,65 @@
     "palette": {
       "title": "卡片放置栏"
     }
+  },
+  "orch": {
+    "card": {
+      "kind": {
+        "turn": "执行卡片 · 轮次",
+        "hitl": "执行卡片 · 人工介入",
+        "unknown": "未知类别"
+      },
+      "name": {
+        "turn": "轮次",
+        "hitl": "人工介入"
+      },
+      "summary": {
+        "turn": "一次模型轮次",
+        "hitl": "等待人工决策后再继续"
+      },
+      "param": {
+        "content": "内容",
+        "mode": "模式",
+        "model": "模型"
+      },
+      "value": {
+        "inherited": "会话当前值",
+        "decision_pending": "等待决策"
+      },
+      "row": {
+        "turn": "轮次",
+        "note": "备注",
+        "result": "结果",
+        "reason": "原因",
+        "decision": "决策"
+      },
+      "empty": {
+        "idle": "未运行",
+        "pending": "待发起",
+        "skipped": "上游未走通",
+        "cancelled": "已取消",
+        "unknown_kind": "未知节点类别"
+      },
+      "hitl": {
+        "section": "人工介入说明"
+      }
+    },
+    "node": {
+      "state": {
+        "pending": "待发起",
+        "running": "进行中",
+        "waiting": "等待人工",
+        "finished": "已完成",
+        "failed": "失败",
+        "skipped": "调度阻断",
+        "cancelled": "已取消"
+      }
+    },
+    "edge": {
+      "cond": {
+        "onSuccess": "成功",
+        "onFailure": "失败"
+      }
+    }
   }
 }

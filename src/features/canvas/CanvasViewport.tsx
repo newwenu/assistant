@@ -99,6 +99,25 @@ export interface CanvasPlaceRequest {
   token: number;
 }
 
+export interface CanvasEditMove {
+  id: string;
+  x: number;
+  y: number;
+}
+
+export interface CanvasEditEdge {
+  id: string;
+  from: string;
+  to: string;
+}
+
+export interface CanvasEditResult {
+  moved: readonly CanvasEditMove[];
+  removed: readonly string[];
+  addedEdges: readonly CanvasEditEdge[];
+  rewired: readonly CanvasEditEdge[];
+}
+
 export interface CanvasViewportProps {
   cards: readonly CanvasCardView[];
   edges?: readonly CanvasEdgeView[];
@@ -120,6 +139,7 @@ export interface CanvasViewportProps {
   placeRequest?: CanvasPlaceRequest | null;
   /** 放置栏拖入时的落点预览框尺寸；省略则取观测栅格单元。 */
   dropPreviewSize?: { w: number; h: number };
+  onEditResult?: (result: CanvasEditResult) => void;
 }
 
 function boxesOf(cards: readonly CanvasCardView[]): Map<string, CanvasBox> {
@@ -152,6 +172,7 @@ export function CanvasViewport({
   onDropCard,
   placeRequest = null,
   dropPreviewSize = { w: CANVAS_METRICS.cellW, h: CANVAS_METRICS.cellH },
+  onEditResult,
 }: CanvasViewportProps) {
   const { t } = useTranslation();
   const surfaceRef = useRef<HTMLDivElement | null>(null);
@@ -222,6 +243,18 @@ export function CanvasViewport({
   const boxesRef = useRef<Map<string, CanvasBox>>(new Map());
   const onDropCardRef = useRef(onDropCard);
   onDropCardRef.current = onDropCard;
+  const onEditResultRef = useRef(onEditResult);
+  onEditResultRef.current = onEditResult;
+  const edgeEndpointsRef = useRef(edgeEndpoints);
+  edgeEndpointsRef.current = edgeEndpoints;
+  const edgesRef = useRef(edges);
+  edgesRef.current = edges;
+  const addedEdgesRef = useRef(addedEdges);
+  addedEdgesRef.current = addedEdges;
+
+  const emitEditResult = useCallback((result: CanvasEditResult) => {
+    onEditResultRef.current?.(result);
+  }, []);
 
   const selected = selectedId === undefined ? internalSelected : selectedId;
 
@@ -573,27 +606,40 @@ export function CanvasViewport({
       reconnectRef.current = null;
       const targetId = cardIdAtPoint(event.clientX, event.clientY);
       if (targetId !== null) {
-        setEdgeEndpoints((prev) => {
-          const current = prev.get(reconnect.id);
-          const next: EdgeEndpoints = {
-            from:
-              reconnect.side === "source"
-                ? targetId
-                : (current?.from ?? targetId),
-            to:
-              reconnect.side === "target"
-                ? targetId
-                : (current?.to ?? targetId),
-          };
-          if (next.from === next.to) return prev;
-          return new Map(prev).set(reconnect.id, next);
-        });
+        const current = edgeEndpointsRef.current.get(reconnect.id);
+        const next: EdgeEndpoints = {
+          from:
+            reconnect.side === "source"
+              ? targetId
+              : (current?.from ?? targetId),
+          to:
+            reconnect.side === "target" ? targetId : (current?.to ?? targetId),
+        };
+        if (next.from === next.to) {
+          return;
+        }
+        const base =
+          edgesRef.current.find((edge) => edge.id === reconnect.id) ??
+          addedEdgesRef.current.find((edge) => edge.id === reconnect.id);
+        const before = current ?? base;
+        setEdgeEndpoints((prev) => new Map(prev).set(reconnect.id, next));
+        if (
+          before !== undefined &&
+          (next.from !== before.from || next.to !== before.to)
+        ) {
+          emitEditResult({
+            moved: [],
+            removed: [],
+            addedEdges: [],
+            rewired: [{ id: reconnect.id, from: next.from, to: next.to }],
+          });
+        }
       }
       if (event.currentTarget.hasPointerCapture(event.pointerId)) {
         event.currentTarget.releasePointerCapture(event.pointerId);
       }
     },
-    [],
+    [emitEditResult],
   );
 
   /** 从占位端口圆点拖出，落在另一张卡片：新建一条示例连线（会话状态，不持久化）。 */

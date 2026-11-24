@@ -2461,5 +2461,65 @@
     "palette": {
       "title": "Card palette"
     }
+  },
+  "orch": {
+    "card": {
+      "kind": {
+        "turn": "Execution card · Turn",
+        "hitl": "Execution card · Human step",
+        "unknown": "Unknown kind"
+      },
+      "name": {
+        "turn": "Turn",
+        "hitl": "Human step"
+      },
+      "summary": {
+        "turn": "One model turn",
+        "hitl": "Waits for a human decision before continuing"
+      },
+      "param": {
+        "content": "Content",
+        "mode": "Mode",
+        "model": "Model"
+      },
+      "value": {
+        "inherited": "Conversation default",
+        "decision_pending": "Awaiting decision"
+      },
+      "row": {
+        "turn": "Turn",
+        "note": "Note",
+        "result": "Result",
+        "reason": "Reason",
+        "decision": "Decision"
+      },
+      "empty": {
+        "idle": "Not run yet",
+        "pending": "Not started",
+        "skipped": "Upstream not taken",
+        "cancelled": "Cancelled",
+        "unknown_kind": "Unknown node kind"
+      },
+      "hitl": {
+        "section": "Human step"
+      }
+    },
+    "node": {
+      "state": {
+        "pending": "Not started",
+        "running": "Running",
+        "waiting": "Waiting for human",
+        "finished": "Finished",
+        "failed": "Failed",
+        "skipped": "Scheduling blocked",
+        "cancelled": "Cancelled"
+      }
+    },
+    "edge": {
+      "cond": {
+        "onSuccess": "Success",
+        "onFailure": "Failure"
+      }
+    }
   }
 }

@@ -194,6 +194,34 @@
   outline-offset: -3px;
 }
 
+/* 运行态左缘色带（INC2）：只在有 `status` 时渲染，颜色只取 tone 对应的 CSS 变量。
+   `default` / `muted` 不画——待发起、调度阻断、已取消共用中性形态，由药丸文案区分。 */
+.cardRunBand {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 3px;
+  border-radius: var(--radius-lg) 0 0 var(--radius-lg);
+  pointer-events: none;
+}
+
+.cardRunBand[data-tone="active"] {
+  background: var(--ant-color-primary);
+}
+
+.cardRunBand[data-tone="success"] {
+  background: var(--ant-color-success);
+}
+
+.cardRunBand[data-tone="warning"] {
+  background: var(--ant-color-warning);
+}
+
+.cardRunBand[data-tone="danger"] {
+  background: var(--ant-color-error);
+}
+
 /* 头部（38px）：实色身份带，整卡唯一的实色重心。 */
 .cardHeader {
   position: relative;
@@ -509,6 +537,47 @@
   top: 75%;
   left: 63%;
   width: 8%;
+}
+
+/* 通用附加区变体 `detail`（INC1）：只读键值行 + 空提示，不承载任何域语义。
+   最多两行可见（I69d §4.3）；超出由调用方截断，完整内容留在面板。 */
+.cardDetail {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+  overflow: hidden;
+  font-size: 10px;
+  line-height: 18px;
+}
+
+.cardDetailRow {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+
+.cardDetailLabel {
+  flex: none;
+  color: var(--ant-color-text-tertiary);
+}
+
+.cardDetailValue {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--ant-color-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cardDetailEmpty {
+  color: var(--ant-color-text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* 其余类别：内容占位（形全、内容不做）。 */
@@ -886,6 +955,19 @@
 }
 
 .label[data-tone="muted"] {
+  color: var(--ant-color-text-tertiary);
+}
+
+/* 可选虚线框（INC3）：`frame` 为真时把纯文字标签升级为「框 + 左上标题」。
+   缺省不渲染框，观测侧现有标签逐像素不变。 */
+.label[data-frame="true"] {
+  align-items: flex-start;
+  padding: 2px 6px;
+  border: 1px dashed var(--ant-color-border-secondary);
+  border-radius: var(--radius-lg);
+  box-sizing: border-box;
+  font-size: 11px;
+  line-height: 1.2;
   color: var(--ant-color-text-tertiary);
 }
 

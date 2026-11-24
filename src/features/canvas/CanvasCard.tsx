@@ -50,6 +50,7 @@ function CanvasCardImpl({
       data-card-id={card.id}
       data-container={card.container === true}
       data-selected={selected}
+      data-run={card.status !== undefined}
       aria-pressed={selected}
       aria-label={ariaLabel}
       style={{
@@ -60,6 +61,13 @@ function CanvasCardImpl({
       }}
       onClick={() => onSelect(card.id)}
     >
+      {card.status !== undefined && (
+        <span
+          className={styles.cardRunBand}
+          data-tone={card.tone ?? "default"}
+          aria-hidden="true"
+        />
+      )}
       <span className={styles.cardGrip} aria-hidden="true" />
 
       <span className={styles.cardHeader}>
@@ -85,12 +93,14 @@ function CanvasCardImpl({
           </span>
         )}
         <span className={styles.cardExtra} data-kind={card.body.kind}>
-          <span className={styles.cardExtraHead}>
-            <span className={styles.cardExtraLabel}>{card.body.label}</span>
-            {card.body.kind === "phases" && (
-              <span className={styles.cardStageCount}>{card.body.count}</span>
-            )}
-          </span>
+          {card.body.label !== "" && (
+            <span className={styles.cardExtraHead}>
+              <span className={styles.cardExtraLabel}>{card.body.label}</span>
+              {card.body.kind === "phases" && (
+                <span className={styles.cardStageCount}>{card.body.count}</span>
+              )}
+            </span>
+          )}
           {card.body.kind === "phases" ? (
             <span className={styles.cardPhases}>
               {card.body.phases.map((phase) => (
@@ -136,6 +146,28 @@ function CanvasCardImpl({
                   data-link={index}
                 />
               ))}
+            </span>
+          ) : card.body.kind === "detail" ? (
+            <span className={styles.cardDetail}>
+              {card.body.rows.length > 0
+                ? card.body.rows.map((row, index) => (
+                    <span
+                      key={`${card.id}-detail-${index}`}
+                      className={styles.cardDetailRow}
+                    >
+                      <span className={styles.cardDetailLabel}>
+                        {row.label}
+                      </span>
+                      <span className={styles.cardDetailValue}>
+                        {row.value}
+                      </span>
+                    </span>
+                  ))
+                : card.body.emptyHint !== undefined && (
+                    <span className={styles.cardDetailEmpty}>
+                      {card.body.emptyHint}
+                    </span>
+                  )}
             </span>
           ) : (
             <span className={styles.cardPlaceholder} aria-hidden="true" />

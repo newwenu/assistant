@@ -59,7 +59,13 @@ export type CanvasCardBodyView =
   | { kind: "output"; label: string }
   | { kind: "messages"; label: string }
   | { kind: "question"; label: string }
-  | { kind: "subgraph"; label: string; nodes: string };
+  | { kind: "subgraph"; label: string; nodes: string }
+  | {
+      kind: "detail";
+      label: string;
+      rows: readonly { label: string; value: string }[];
+      emptyHint?: string;
+    };
 
 /** 参数摘要的一行（只读，无控件、无校验）。 */
 export interface CanvasCardParamView {
@@ -116,4 +122,6 @@ export interface CanvasLabelView {
   box: CanvasBox;
   text: string;
   tone?: "muted" | "default";
+  /** 可选虚线框（I69d INC3）：`true` 时画虚线边框 + 左上标题；缺省为纯文字标签。 */
+  frame?: boolean;
 }
