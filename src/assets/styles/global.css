@@ -52,7 +52,6 @@
   --orb-header-height: 36px;
 
   --orb-opacity: 1;
-  --orb-scale: 1;
   --orb-idle-opacity: 0.85;
   --orb-hover-delay: 0ms;
 
@@ -193,7 +192,7 @@ div[data-orb-window] .orb-hitbox {
   align-items: center;
   justify-content: center;
   opacity: var(--orb-opacity, 1);
-  transform: scale(var(--orb-scale, 1));
+  transform: scale(1);
   transition:
     opacity 150ms ease-in-out,
     filter 300ms ease-in-out,

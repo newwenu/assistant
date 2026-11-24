@@ -43,7 +43,6 @@ pub struct AppConfDto {
 pub struct OrbConfDto {
     pub click_through: bool,
     pub always_on_top: bool,
-    pub scale_percent: u16,
     pub opacity_percent: u8,
     pub hide_on_pointer_hover: bool,
     pub hover_delay_ms: u64,

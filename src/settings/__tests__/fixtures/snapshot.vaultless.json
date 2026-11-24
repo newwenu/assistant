@@ -3,7 +3,7 @@
     "pages": 8,
     "categories": 3,
     "sections": 7,
-    "fields": 34,
+    "fields": 33,
     "routes": 0,
     "sidebar": 0,
     "confPageMap": 3
@@ -187,12 +187,6 @@
     },
     {
       "key": "idleOpacityPercent",
-      "group": "orb",
-      "section": "orb-ball",
-      "type": "slider"
-    },
-    {
-      "key": "scalePercent",
       "group": "orb",
       "section": "orb-ball",
       "type": "slider"

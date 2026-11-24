@@ -10,7 +10,6 @@ fn default_idle_opacity() -> u8 {
 pub struct OrbConf {
     pub click_through: bool,
     pub always_on_top: bool,
-    pub scale_percent: u16,
     pub opacity_percent: u8,
     pub hide_on_pointer_hover: bool,
     pub hover_delay_ms: u64,
@@ -27,7 +26,6 @@ impl OrbConf {
         Self {
             click_through: false,
             always_on_top: true,
-            scale_percent: 100,
             opacity_percent: 100,
             hide_on_pointer_hover: false,
             hover_delay_ms: 0,
@@ -45,12 +43,6 @@ impl ConfGroup for OrbConf {
     const LOAD_POLICY: LoadPolicy = LoadPolicy::Lenient;
 
     fn validate(&self) -> Result<(), String> {
-        if self.scale_percent < 10 || self.scale_percent > 300 {
-            return Err(format!(
-                "scale_percent must be 10-300, got {}",
-                self.scale_percent
-            ));
-        }
         if self.opacity_percent < 10 || self.opacity_percent > 100 {
             return Err(format!(
                 "opacity_percent must be 10-100, got {}",

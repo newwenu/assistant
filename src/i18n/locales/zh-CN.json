@@ -197,13 +197,15 @@
     "orb": {
       "opacity_percent": { "label": "悬停透明度" },
       "idle_opacity_percent": { "label": "空闲透明度" },
-      "scale_percent": { "label": "缩放" },
       "click_through": {
         "label": "鼠标穿透",
         "extra": "开启后鼠标可穿透悬浮球点击下方内容"
       },
       "hide_on_pointer_hover": { "label": "悬停隐藏" },
-      "hover_delay_ms": { "label": "悬停延迟 (ms)" },
+      "hover_delay_ms": {
+        "label": "悬停淡入淡出时长 (ms)",
+        "extra": "悬浮球悬停隐藏时淡出、移出后淡入所用的时长，0 为瞬间切换"
+      },
       "always_on_top": { "label": "始终置顶" }
     },
     "mascot": {

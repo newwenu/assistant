@@ -203,13 +203,15 @@
     "orb": {
       "opacity_percent": { "label": "Hover Opacity" },
       "idle_opacity_percent": { "label": "Idle Opacity" },
-      "scale_percent": { "label": "Scale" },
       "click_through": {
         "label": "Click Through",
         "extra": "When enabled, clicks pass through the orb to content below"
       },
       "hide_on_pointer_hover": { "label": "Hide on Hover" },
-      "hover_delay_ms": { "label": "Hover Delay (ms)" },
+      "hover_delay_ms": {
+        "label": "Hover Fade Duration (ms)",
+        "extra": "How long the orb takes to fade out on hover and fade back in after leaving; 0 switches instantly"
+      },
       "always_on_top": { "label": "Always on Top" }
     },
     "mascot": {

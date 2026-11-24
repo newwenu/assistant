@@ -279,7 +279,7 @@ expressible: Array<string>,
 unsupported: Array<string>, };
 export type MousePositionDto = { clientX: number, clientY: number, };
 export type NodeStateDto = "pending" | "running" | "waiting" | "finished" | "error" | "skipped" | "cancelled";
-export type OrbConfDto = { clickThrough: boolean, alwaysOnTop: boolean, scalePercent: number, opacityPercent: number, hideOnPointerHover: boolean, hoverDelayMs: number, idleOpacityPercent: number, positionX: number | null, positionY: number | null, };
+export type OrbConfDto = { clickThrough: boolean, alwaysOnTop: boolean, opacityPercent: number, hideOnPointerHover: boolean, hoverDelayMs: number, idleOpacityPercent: number, positionX: number | null, positionY: number | null, };
 export type OsToolExecRequestDto = { tool: string, action: string, params: unknown, };
 export type OsToolResultDto = { ok: boolean, data: unknown, resultForAssistant: string | null, error: string | null, errorKind: ToolErrorKindDto | null, };
 export type PermissionGrantDto = { grantKey: string, tool: string, scope: GrantScopeDto, conversationId: string | null, scopeSummary: string, createdAt: number, };

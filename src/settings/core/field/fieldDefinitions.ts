@@ -146,17 +146,6 @@ export const ORB_BALL_SETTINGS = [
     marks: { 10: "10%", 85: "85%", 100: "100%" },
   }),
   defineSetting({
-    key: "scalePercent",
-    group: "orb",
-    section: "orb-ball",
-    type: "slider",
-    default: 100,
-    label: "settings.orb.scale_percent.label",
-    min: 50,
-    max: 200,
-    marks: { 50: "50%", 100: "100%", 200: "200%" },
-  }),
-  defineSetting({
     key: "clickThrough",
     group: "orb",
     section: "orb-ball",
@@ -181,10 +170,12 @@ export const ORB_BALL_SETTINGS = [
     type: "slider",
     default: 0,
     label: "settings.orb.hover_delay_ms.label",
+    extra: "settings.orb.hover_delay_ms.extra",
     min: 0,
     max: 5000,
     step: 50,
-    marks: { 0: "0", 300: "300", 1000: "1s" },
+    marks: { 0: "0s", 300: "0.3s", 1000: "1s", 3000: "3s" },
+    visible: (conf: Record<string, unknown>) => !!conf.hideOnPointerHover,
   }),
 ];
 

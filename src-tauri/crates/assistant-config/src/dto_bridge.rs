@@ -45,7 +45,6 @@ impl From<crate::orb_conf::OrbConf> for OrbConfDto {
         Self {
             click_through: c.click_through,
             always_on_top: c.always_on_top,
-            scale_percent: c.scale_percent,
             opacity_percent: c.opacity_percent,
             hide_on_pointer_hover: c.hide_on_pointer_hover,
             hover_delay_ms: c.hover_delay_ms,

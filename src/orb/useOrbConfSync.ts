@@ -31,11 +31,6 @@ async function applyOrbConf(
     "--orb-opacity",
     `${conf.opacityPercent / 100}`,
   );
-  document.documentElement.style.setProperty(
-    "--orb-scale",
-    `${conf.scalePercent / 100}`,
-  );
-
   if (conf.hideOnPointerHover) {
     document.documentElement.classList.add("orb-hover-hide");
   } else {
