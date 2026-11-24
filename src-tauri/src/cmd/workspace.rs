@@ -141,3 +141,28 @@ pub async fn forget_workspace(app: AppHandle, path: String) -> Result<(), String
     .await
     .map_err(|e| e.to_string())?
 }
+
+/// 在系统文件管理器里打开该会话绑定的工作区。
+///
+/// 参数只有会话 id：真实路径由 `resolve_workspace` 从库里推导，前端不传路径。
+/// `open_path` 在 Windows 上是 `ShellExecute`，传可执行文件即执行，因此**绝不能让
+/// 前端提供路径**——可达集合必须收窄为「某会话真实绑定、且已通过
+/// `validate_workspace_root`（绝对路径 + `canonicalize` + `is_dir`）的目录」。
+///
+/// 返回 `false` 表示「未绑定 / 目录已失效」，与 `open_attachment` 同一约定：
+/// 不可打开不升格为命令错误，由前端提示。
+#[command]
+pub async fn open_workspace_dir(app: AppHandle, conversation_id: String) -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<crate::setup::DbState>();
+        let conn = super::get_db_conn(&state)?;
+        let Some(root) = crate::tool_setup::resolve_workspace(&conn, &conversation_id) else {
+            return Ok(false);
+        };
+        tauri_plugin_opener::open_path(std::path::Path::new(&root), None::<&str>)
+            .map_err(|e| e.to_string())?;
+        Ok(true)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}

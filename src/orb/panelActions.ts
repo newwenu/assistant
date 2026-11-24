@@ -1,5 +1,6 @@
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { openAttachmentFile } from "@/chat/attachment/paths";
+import { workspaceService } from "../services/desktop/workspaceService";
 import { WINDOW_ORB } from "@/config/constants";
 import { orbService } from "../services/desktop/orbService";
 import { createLogger } from "@/services/system/logger";
@@ -10,7 +11,9 @@ import { collapseOrbPanel, suppressOrbBlurCollapse } from "./OrbExpand";
 const log = createLogger("PanelActions");
 
 export type PanelOpenTarget =
-  { kind: "attachment"; id: string } | { kind: "main"; route?: string };
+  | { kind: "attachment"; id: string }
+  | { kind: "workspace"; conversationId: string }
+  | { kind: "main"; route?: string };
 
 export type PanelCollapsePolicy = "always" | "never";
 
@@ -40,6 +43,11 @@ export async function openFromPanel(
         "chat.attachment.open_failed_title",
         "chat.attachment.open_failed_description",
       );
+    } else if (target.kind === "workspace") {
+      notifyError(
+        "workspace.error.open.title",
+        "workspace.error.open.description",
+      );
     }
   } finally {
     if (shouldCollapse && opened) {
@@ -56,6 +64,17 @@ async function runTarget(target: PanelOpenTarget): Promise<boolean> {
         notifyError(
           "chat.attachment.missing_title",
           "chat.attachment.missing_description",
+        );
+      }
+      return opened;
+    }
+    case "workspace": {
+      // 路径由后端 `resolve_workspace` 推导，前端只传会话 id（见 `open_workspace_dir`）。
+      const opened = await workspaceService.openDir(target.conversationId);
+      if (!opened) {
+        notifyError(
+          "workspace.error.open.title",
+          "workspace.error.open.description",
         );
       }
       return opened;

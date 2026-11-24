@@ -20,4 +20,14 @@ export const workspaceService = {
     invoke<WorkspaceEntry>("register_workspace", { path, name: name ?? null }),
 
   forget: (path: string): Promise<void> => invoke("forget_workspace", { path }),
+
+  /**
+   * 在系统文件管理器里打开该会话绑定的工作区。
+   *
+   * 只传会话 id：路径由后端 `resolve_workspace` 推导，前端不持有「打开任意路径」
+   * 的能力（`open_path` 在 Windows 上是 `ShellExecute`，传可执行文件即执行）。
+   * 返回 `false` 表示未绑定或目录已失效。
+   */
+  openDir: (conversationId: string): Promise<boolean> =>
+    invoke<boolean>("open_workspace_dir", { conversationId }),
 };

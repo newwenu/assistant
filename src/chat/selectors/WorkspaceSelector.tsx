@@ -4,6 +4,7 @@ import type { MenuProps } from "antd";
 import {
   DownOutlined,
   ExclamationCircleOutlined,
+  ExportOutlined,
   FolderOpenOutlined,
 } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
@@ -17,6 +18,7 @@ import {
 } from "../core/workspaceDisplay";
 import { switchWorkspace } from "../core/workspaceSwitch";
 import { onOrbCloseOverlays } from "../../orb/orbOverlays";
+import { openFromPanel } from "../../orb/panelActions";
 import { notifyError, notifyInfo } from "../../stores/system/notifyStore";
 import { createLogger } from "../../services/system/logger";
 
@@ -25,6 +27,8 @@ const log = createLogger("WorkspaceSelector");
 const PATH_KEY_PREFIX = "path:";
 
 interface WorkspaceSelectorProps {
+  /** 当前会话 id；「在资源管理器打开」只传 id，路径由后端推导。 */
+  conversationId: string | null;
   /** 当前会话绑定的工作区根；空串 = 未配置（I38h §8.1）。 */
   workspaceRoot: string;
   /** turn 进行中禁用（C6.6）。 */
@@ -45,6 +49,7 @@ interface WorkspaceSelectorProps {
  * 不做乐观更新，失败时保留原值并由 store 弹出后端错误。
  */
 export const WorkspaceSelector: React.FC<WorkspaceSelectorProps> = ({
+  conversationId,
   workspaceRoot,
   disabled = false,
   openRef,
@@ -143,6 +148,15 @@ export const WorkspaceSelector: React.FC<WorkspaceSelectorProps> = ({
       );
   }, [onClear]);
 
+  /**
+   * 「在资源管理器打开」走面板统一入口 `openFromPanel`：它会抢走 orb 焦点，
+   * 收起时机必须由那里显式决定；路径由后端按会话 id 推导，前端不传路径。
+   */
+  const handleOpenDir = useCallback(() => {
+    if (!conversationId) return;
+    void openFromPanel({ kind: "workspace", conversationId });
+  }, [conversationId]);
+
   const handleMenuClick: MenuProps["onClick"] = useCallback(
     ({ key, domEvent }) => {
       domEvent.stopPropagation();
@@ -215,12 +229,41 @@ export const WorkspaceSelector: React.FC<WorkspaceSelectorProps> = ({
     </Dropdown>
   );
 
-  if (disabled) {
-    return (
-      <Tooltip title={t("workspace.error.busy")}>
-        <span className="orb-workspace-chip-wrap">{chip}</span>
-      </Tooltip>
-    );
-  }
-  return chip;
+  /**
+   * turn 进行中只锁「切换」：C6.6 的禁用针对「写 workspace_root + 清会话授权」的写入操作，
+   * 后端 C5.5 同样以 `error.conversation_busy` 拒绝。打开资源管理器是只读的，
+   * 不改任何绑定与授权，与进行中的 turn 互不影响，因此不随 `disabled` 一起关闭。
+   */
+  const openButton = configured ? (
+    <button
+      type="button"
+      className="orb-workspace-open"
+      aria-label={t("workspace.action.open")}
+      onClick={handleOpenDir}
+      disabled={busy || missing || !conversationId}
+    >
+      <ExportOutlined />
+    </button>
+  ) : null;
+
+  return (
+    <span className="orb-workspace-chip-wrap">
+      {disabled ? (
+        <Tooltip title={t("workspace.error.busy")}>
+          <span className="orb-workspace-chip-host">{chip}</span>
+        </Tooltip>
+      ) : (
+        chip
+      )}
+      {openButton ? (
+        <Tooltip
+          title={
+            missing ? t("workspace.chip.missing") : t("workspace.action.open")
+          }
+        >
+          {openButton}
+        </Tooltip>
+      ) : null}
+    </span>
+  );
 };

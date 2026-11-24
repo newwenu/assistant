@@ -135,6 +135,7 @@ export function ConversationFrame(props: ConversationFrameProps) {
         />
         {agentProps ? (
           <WorkspaceSelector
+            conversationId={conversationId}
             workspaceRoot={agentProps.workspace.root}
             disabled={agentProps.workspace.disabled}
             openRef={agentProps.workspace.openRef}

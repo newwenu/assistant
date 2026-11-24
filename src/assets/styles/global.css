@@ -572,6 +572,43 @@ div[data-orb-window].orb-expanded .orb-hitbox {
 
 .orb-workspace-chip-wrap {
   display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/* busy tooltip 的宿主：只负责给禁用态 chip 提供 hover 命中区，不参与布局尺寸。 */
+.orb-workspace-chip-host {
+  display: inline-flex;
+  align-items: center;
+}
+
+/* 工作区右侧的「在资源管理器打开」：与 chip 同高、无底色，只在 hover 时浮现。 */
+.orb-workspace-open {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  color: var(--color-text-tertiary);
+  background: transparent;
+  font-size: 12px;
+  cursor: pointer;
+  transition:
+    background 150ms ease-in-out,
+    color 150ms ease-in-out;
+}
+
+.orb-workspace-open:hover:not(:disabled) {
+  color: var(--color-text-secondary);
+  background: var(--color-border-secondary);
+}
+
+.orb-workspace-open:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 
 .orb-workspace-chip {

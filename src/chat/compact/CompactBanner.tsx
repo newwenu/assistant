@@ -26,7 +26,9 @@ export const CompactBanner: React.FC = () => {
     modal.confirm({
       title: t("chat.compact.unlock"),
       content: t("chat.compact.unlock_confirm"),
-      onOk: () => chat.unlockConversation(),
+      onOk: () => {
+        void chat.unlockConversation();
+      },
     });
   };
 
