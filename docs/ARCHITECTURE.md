@@ -186,7 +186,7 @@ interface ToolDefinition {
 ### 4.3 设置
 
 - **通用设置**：语言（zh-CN / en-US）/ 开机自启 / 关闭到托盘 / 置顶主窗口 / 上下文压缩阈值与模型 / **Agent 工具**（审批等待上限、提问等待上限）
-- **外观设置**：主题（亮/暗/跟随系统）+ Orb 悬浮球外观（透明度/缩放/圆角/鼠标穿透/悬停隐藏/悬停延迟）+ Orb 悬浮窗（始终置顶）+ Mascot 外观
+- **外观设置**：主题（亮/暗/跟随系统）+ Orb 悬浮球外观（透明度/圆角/鼠标穿透/悬停隐藏/悬停淡入淡出时长）+ Orb 悬浮窗（始终置顶）+ Mascot 外观
 - **快捷键**：全局快捷键（toggle_orb / toggle_main / new_chat）+ 应用内快捷键（command_palette），分组展示 + 录制 + 冲突检测 + 重置
 - **Provider 管理**：添加/编辑/删除 AI Provider（名称 + API Key + Base URL + 模型列表），密钥经后端加密存储
 - **Agent 模式**：内置三行（`builtin-default` / `builtin-translate` 为 `chat` 形态，`builtin-agent` 为 `agent` 形态）+ 自定义模式，支持 system_prompt / temperature / max_tokens / model / 推理开关与强度；**工具装配为两级**：设置页模式抽屉（`ToolAssemblySection`）编辑模式级初始值（只影响新建会话），对话内 `ToolConfigPanel` 编辑会话级实际值并落会话；本页另含「已授权操作」撤销与作用域互转
@@ -414,88 +414,9 @@ retryable 错误**不做自动重试**——重试由用户点击触发（`retry
 
 ## 7. 项目目录
 
-> Rust 后端结构择优参考 BongoCat 的 workspace 多 crate 架构（编译隔离 + API 边界强制 + 独立测试），按我们的领域划分为 1 个根包 + 13 个 workspace crate，远少于 BongoCat 的 20 个。ChatGPT 的 core 模块组织（cmd/conf/constant/setup/window）融入 `assistant-app` 根包。Tauri 2 CLI 要求二进制包位于 `src-tauri/` 根目录（`Cargo.toml` 同时包含 `[package]` 和 `[workspace]`），因此 `assistant-app` 作为根包而非子 crate。
-
-```
-assistant/
-├── src-tauri/                     # Rust 后端（Cargo workspace，根包 assistant-app + 13 个成员 crate）
-│   ├── src/                       # 根包（Tauri 集成层）
-│   │   ├── main.rs                # 入口（windows_subsystem → assistant_app::run()）
-│   │   ├── lib.rs                 # Builder + plugins + setup + invoke_handler
-│   │   ├── ipc.rs                 # 基础命令注册（invoke_handler）
-│   │   ├── vault_plugin.rs        # 保险库命令插件（`#[cfg(feature = "vault")]`）
-│   │   ├── cmd/                   # Tauri commands（按域拆分）
-│   │   │   ├── mod.rs
-│   │   │   ├── app.rs             # 应用级（窗口/配置/快捷键）
-│   │   │   ├── chat/              # chat 链路发送（`send_chat_message` + `TurnSpec::chat`）与消息插入
-│   │   │   ├── clock.rs           # 时钟工具后端
-│   │   │   ├── compaction.rs      # 上下文压缩命令
-│   │   │   ├── conversation.rs    # 会话/消息 CRUD、搜索、导出
-│   │   │   ├── conversation_utils.rs
-│   │   │   ├── token_usage_record.rs  # token_usage_records 写入
-│   │   │   ├── agent/             # Agent 运行命令（提问作答 resolve_agent_question）
-│   │   │   ├── agent_mode.rs
-│   │   │   ├── permission.rs      # 审批授权（permission_grants）与审计查询
-│   │   │   ├── provider.rs
-│   │   │   ├── storage.rs         # 附件统计 / 孤儿附件清理
-│   │   │   ├── mascot_asset.rs
-│   │   │   ├── orb.rs
-│   │   │   ├── os_tool_exec.rs
-│   │   │   ├── tool.rs
-│   │   │   ├── config.rs
-│   │   │   └── vault/             # 保险库命令（解锁/CRUD/同步/SSH/恢复密钥）
-│   │   ├── protocol/              # 协议垫片：`pub use assistant_protocol as dto` + events.rs（事件名与 Tauri 窗口常量）
-│   │   ├── clock.rs               # 时钟后端状态
-│   │   ├── lifecycle.rs           # 应用生命周期
-│   │   ├── menu.rs                # 原生菜单
-│   │   ├── plugins.rs             # Tauri 插件注册
-│   │   ├── setup.rs               # 应用初始化（配置 + 数据库 + 窗口 + 托盘）
-│   │   ├── tool_setup.rs          # 工具基础设施装配（注册表/网关/流水线/执行器端口）
-│   │   ├── tray.rs                # 系统托盘
-│   │   └── window.rs              # 窗口管理（创建/展开/收起/设置）
-│   ├── crates/
-│   │   ├── assistant-config/      # AppConf / OrbConf / MascotConf / VaultConf + 原子写
-│   │   ├── assistant-protocol/    # 前后端 wire 契约叶子 crate：165 个 DTO + `ts-rs` 生成；依赖白名单仅 serde / serde_json / ts-rs
-│   │   ├── assistant-orb/         # hover.rs（悬停隐藏）/ placement.rs（多屏约束）
-│   │   ├── assistant-providers/   # openai（Chat + Responses）/ anthropic / gemini（含 Code Assist）
-│   │   ├── assistant-agent/       # kernel（turn 状态机 / 端口 / 流消费）+ agent（RoundExecutor / tool_call 累积器 / 阶梯 / 中间件）+ chat 侧（compaction / prompt_builder / multimodal）
-│   │   ├── assistant-storage/     # db / conversations / providers / agent_modes / attachments / token_usage / tool_* / permission_*
-│   │   ├── assistant-i18n/        # 后端文案（zh-CN / en-US）
-│   │   ├── assistant-tools/       # 工具控制层（trait / registry / policy / gateway / pipeline / exec / question）+ os 工具实现（read/ls/glob/grep/write/edit/mkdir/move/delete/ask_user/fs_link）+ 结果信封（compact / storage 落盘与清理）+ os/output 采集与截断三态
-│   │   ├── assistant-crypto/      # 加密原语（KDF / AEAD）与 API Key 加密
-│   │   ├── assistant-security/    # unlock_dialog（Win32 / macOS / Linux 原生）/ hibp / ssh_agent / screen_lock / clipboard_guard / reveal_guard
-│   │   ├── assistant-sync/        # git_sync（git / ssh）+ types
-│   │   ├── assistant-vault/       # 保险库领域实现（security_db / sync_engine / biometric / audit / recovery_key / password_strength / vault_file）
-│   │   └── assistant-crash/       # panic hook + 崩溃转储
-│   ├── Cargo.toml                 # [package] 根包 + [workspace] members
-│   └── tauri.conf.json
-│
-├── src/                           # React 前端
-│   ├── main.tsx                   # 入口（Provider 包裹 + 主题 + StrictMode）
-│   ├── App.tsx                    # 多窗口分流（webview.label → 组件映射）
-│   ├── config/constants.ts        # 窗口标签/尺寸/阈值（与 Rust constant.rs 对齐）
-│   ├── features/                  # 特性模块注册（registry / aggregate / nav + vault 模块）
-│   ├── layouts/                   # 各窗口布局（AppShell / MainLayout / NormalLayout / MiniLayout / OrbWindow）
-│   ├── orb/                       # OrbBall / OrbPanel / OrbDrag / OrbExpand / OrbCoord / OrbContextMenu / useOrbConfSync
-│   ├── mascot/                    # core（types / expressionPolicy / registry / resolve）+ renderers（rive / svg / gif）+ MascotRenderer / mascotStore / useMascotChatSync
-│   ├── chat/                      # ConversationView（共同视图）/ ConversationFrame 单骨架（按 link 挂载工具区域）/ ToolRegion / message（含 scrollIntent / scrollPositionMemory）/ tool（ToolCallBubble / ApprovalCard / QuestionCard / ToolConfigPanel / useToolRegionState）/ compact / selectors
-│   ├── tools/                     # ToolBox / MiniToolBox / ToolPage / registry.ts + 23 个工具实现
-│   ├── history/                   # 历史管理（列表 / 详情 / 分支 / 批量操作 / 导出）
-│   ├── settings/                  # 设置（core 字段与页面注册 / pages 各设置页 / provider / agentMode / overview）
-│   ├── components/                # Titlebar / Sidebar / CommandPalette / 错误边界等共享组件
-│   ├── stores/                    # Zustand（theme / orb / chat / settings / provider / tool / history 等）
-│   ├── services/                  # Provider 前端适配 / 设置事件消费
-│   ├── hooks/                     # 主题、附件、快捷键等 hooks
-│   ├── i18n/                      # i18next（zh-CN / en-US）
-│   ├── types/                     # protocol.contract.ts（contract:gen 生成）
-│   ├── utils/
-│   └── assets/                    # styles（global.css + theme.ts）/ react.svg
-│
-├── public/                        # mascot.riv / mascot.gif / rive.wasm / app-icon.svg
-├── package.json
-├── tsconfig.json
-└── vite.config.ts
-```
+> **架构决策**：Rust 后端择优参考 BongoCat 的 workspace 多 crate 架构（编译隔离 + API 边界强制 + 独立测试）；ChatGPT 的 core 模块组织（cmd / conf / constant / setup / window）融入 `assistant-app` 根包。Tauri 2 CLI 要求二进制包位于 `src-tauri/` 根目录（`Cargo.toml` 同时含 `[package]` 与 `[workspace]`），因此 `assistant-app` 是根包而非子 crate。
+>
+> **目录事实不在此维护**（易过期）：顶层布局见 `CODE-STRUCTURE.md` §1；crate 依赖图、分层与边界见 `CODE-STRUCTURE.md` §4.5；逐文件路径 / 角色 / 导出 / 行数见 `CODE-INDEX.md`（脚本生成，勿手改）。
 
 ---
 
