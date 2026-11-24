@@ -179,7 +179,7 @@
 | 模板详情（只读） | 节点与边的结构化列表（非画布） | `get_workflow_template` |
 | run 详情 | run 状态 / 节点状态 / 预算 / 结果跳转 | `get_workflow_run` + `list_workflow_node_runs` |
 | run 列表 | 选叠加对象（模板 / 来源会话过滤） | `list_workflow_runs` |
-| 运行入口 | 选模板 + 选会话 + 发起 | `start_workflow_run` |
+| 运行入口 | 选模板 + 选会话 + 发起 | `start_workflow_run`；**表单形态以 [I69c §4.5](./I69c-agent-orchestration-canvas-spec.md) 为准**，本文只定数据来源与字段规则 |
 | gate 操作 | proceed / reject + 备注 | `resolve_workflow_gate` |
 
 > **现状（2026-11-22）**：`src/features/orchestration/` 已存在并注册为独立页面（路由 `/agent-orchestration`，侧栏键 `common.navigation.agent_orchestration`），当前是**画布占位**——渲染内置 Agent 预设、可拖动放置示例卡片、可缩放平移；数据全部来自前端示例（`canvasContentOf(null, …)` + `exampleCardOf`），不接任何后端命令、不持久化。编排已从观测页移除，观测页回到「只读观测」职责。R5 只在此占位之上补命令封装、事件订阅与键控投影。
@@ -197,7 +197,7 @@
 | **K5** | `NodeRunState`（L2，7 值）与 `NodeState`（L1，7 值）**各自独立类型**，不互借、不互相转换 | [I69a §1.3](./I69a-agent-orchestration-base-spec.md) |
 | **K6** | `skipped` 在编排语境必须带「调度阻断」限定语；不得与观测面的「报告未执行」混用 | [I69a §2.2](./I69a-agent-orchestration-base-spec.md) |
 | **K7** | 前端**不做**就绪集合计算、并行判定、冲突域判定——这些只在 `schedule.rs` | [I69a §9.1](./I69a-agent-orchestration-base-spec.md) |
-| **K8** | 除 `resolve_workflow_gate` 外，前端不发起任何 run 级控制；不自动 resolve、不代填 `note` | [I69a §9.5](./I69a-agent-orchestration-base-spec.md) |
+| **K8** | 前端只允许两类 run 级控制：`resolve_workflow_gate` 与**用户显式发起**的 `cancel_workflow_run`；不自动 resolve、不代填 `note`、不自动取消、不自动 `reconcile` | [I69a §9.5](./I69a-agent-orchestration-base-spec.md)；形态见 [I69c §4.6](./I69c-agent-orchestration-canvas-spec.md) |
 | **K9** | 运行入口只有一个：`start_workflow_run`；不得在前端拼装 turn 请求或调用会话发送命令来「模拟」节点 | INV1 |
 | **K10** | 不实现节点结果缓存、不做「已完成节点跳过重跑」 | D3 / D15 |
 | **K11** | 模板编辑器与运行态叠加的形态不在本波；本波只交付只读详情与 run 面板 | §3.1 |
@@ -212,7 +212,7 @@
 | 落库 | 事件不写任何前端持久化（localStorage / IndexedDB） |
 | 一致性 | 收到事件后只更新对应节点与 run 概览；**不**用事件序列重建 run 状态 |
 | 重连 | 重连或页面恢复 → 调 `get_workflow_run` + `list_workflow_node_runs` 拉全量，丢弃本地增量 |
-| 缺事件 | 视图与台账不一致时以台账为准；可提示调 `reconcile_workflow_run`，但**不得**前端自行修补状态 |
+| 缺事件 | 视图与台账不一致时以台账为准；可提示调 `reconcile_workflow_run`，但**不得**前端自行修补状态。提示与入口的呈现归 [I69c §4.6](./I69c-agent-orchestration-canvas-spec.md)，且只由用户显式触发（K8） |
 
 ---
 
@@ -221,7 +221,7 @@
 | # | 判据 | 检查方式 |
 |---|---|---|
 | **A25** | 两个 run 并行时事件不串台（按 `(runId, nodeId)` 键控） | 集成测试（O12） |
-| **A27** | `src/features/orchestration/` 出现且只出现：模板列表 / 模板详情（只读）/ run 列表 / run 详情 / 运行入口；K1–K12 逐条可核。**豁免**：R5 之前的独立编排页（`OrchestrationPage.tsx`，路由 `/agent-orchestration`）当前为画布占位——纯前端示例数据、不接后端命令、不持久化，不计入；R5 落地时该占位须下线或收敛为上述五项之一 | 目录审查 + 单测（K1–K12） |
+| **A27** | **仅约束 R5 交付时的目录形态**：`src/features/orchestration/` 出现且只出现：模板列表 / 模板详情（只读）/ run 列表 / run 详情 / 运行入口；K1–K12 逐条可核。**豁免**：R5 之前的独立编排页（`OrchestrationPage.tsx`，路由 `/agent-orchestration`）当前为画布占位——纯前端示例数据、不接后端命令、不持久化，不计入；R5 落地时该占位须下线或收敛为上述五项之一。**不约束 W3 / W4**：模板编辑器与运行态叠加在同一 feature 内落地时，其形态与判据由 [I69c §6](./I69c-agent-orchestration-canvas-spec.md) 的 UI1–UI15 接管，本条不再作为审查依据 | 目录审查 + 单测（K1–K12） |
 
 > 其余判据 A1–A24、A26、A28–A32 在 [I69a §13](./I69a-agent-orchestration-base-spec.md)。
 

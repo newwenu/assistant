@@ -45,7 +45,7 @@
 
 **交付什么、按什么顺序交付、每波怎么验收、哪一波可回退，全部见 [I69](./I69-agent-orchestration-roadmap.md)**。需要知道某条约束落在哪一波，查 I69 §4 的交付物表。
 
-约束的作用域到「编排层 + 它的前端接缝」为止。模板编辑器与运行态叠加除 [I69b §3.2](./I69b-agent-orchestration-contract-spec.md) 的读取纪律外，不受本规格约束。
+约束的作用域到「编排层 + 它的前端接缝」为止。模板编辑器与运行态叠加的**交互形态**不受本规格约束（形态见 [I69c](./I69c-agent-orchestration-canvas-spec.md)），但**保存期校验语义（§6.3）**、**台账与调度事实（§8–§9）**与 [I69b §3.2](./I69b-agent-orchestration-contract-spec.md) 的读取纪律**仍然适用**——编辑器不得另行判定校验、不得自行修补 run 状态。
 
 ### 1.2 边界：不做的语义
 
@@ -62,10 +62,11 @@
 | 9 | 队列（pending / running / history） | 分析 §12.3 第 3 项；`TurnTasks` 是互斥表 |
 | 10 | 运行时注入节点（运行时生长子图） | INV7；静态模板 + 版本化，运行时增删节点会让校验无法静态化 |
 | 11 | 节点级续跑 | D15 |
-| 12 | 画布基础设施改造（补边 / 视口 / 预设 / 布局算法） | W1 / W2 已交付（I66 / I68，已归档）：视口、几何（`anchorOf`）、布局（`layoutPreset`）、卡片、边（`CanvasEdge`）、预设与放置栏均已落地（`src/features/canvas/`）。**未交付**：节点选择原语（`selectedNodeId` 级状态）与出口锚点 `exitAnchorOf`——二者属画布侧待建，P18 不实现，见 [I69c](./I69c-agent-orchestration-canvas-spec.md)；P18 只在其上叠加，不改设施 |
+| 12 | 画布基础设施改造（补边 / 视口 / 预设 / 布局算法） | W1 / W2 已交付（I66 / I68，已归档）：视口、几何（`anchorOf`）、卡片、边（`CanvasEdge`）、预设、放置栏、网格摆放（`layoutTemplate`，**行列号网格**，供观测栅格与预设摆放，不是任意图的自动布局）与选择原语（`selectedId` / `onSelect`）均已落地（`src/features/canvas/`）。**未交付且不立项**：出口锚点 `exitAnchorOf`——W3 / W4 不需要它（出口角标用 `CanvasCardView.exit` 现有呈现），故不登记为待建项；见 [I69c §2.1](./I69c-agent-orchestration-canvas-spec.md)。P18 只在其上叠加，不改设施 |
 | 13 | 后台任务（应用关闭后继续跑） | P9 / I52-Ext |
 | 14 | 原始事件落库 | D5；事件是广播，不入台账 |
 | 15 | 运行时节点类型注册表（`NODE_CLASS_MAPPINGS` 类） | 节点类别是编译期闭集枚举（§6.1），不做运行时注册；分析 §12.2 #2 的缺口以闭集收口 |
+| 16 | 模板删除命令 | `CONST-CMD-10` 已冻结、无删除命令；删除会让引用它的 run 台账失去模板定位（§8.1 的 `template_version`），需单独裁定。v1 不提供删除界面，也不以 `save` 变相清空（清空只产生「空模板」，不产生删除语义）；重命名不另立命令，走 `save` 改 `name` |
 
 ### 1.3 与观测面的分界
 
@@ -338,6 +339,7 @@ pub struct ValidateError {
 | 本文产出 | 只有 crate 内模型与校验，**无 DTO、无命令、无事件**（INV12：冻结前零契约 diff） |
 | wire 形态 | 模板 DTO 在 R4 一次性出齐，见 [I69b §2.1](./I69b-agent-orchestration-contract-spec.md) |
 | 版本与快照 | 模板 `version` 的语义、run 对模板内容的引用方式属台账结构，见 §8.1；版本不等即拒绝加载（§6.2 第 8 条 / D22），发起 run 时同样适用 |
+| 保存语义 | `save_workflow_template` 按 `id` 是否已存在决定行为：**已存在 → 整模板替换；不存在 → 创建**（`workflow_templates` 的 `id` 是主键，无 upsert 之外的语义）。不新增命令、不改 wire 形态（INV12）；删除模板无命令（§1.2 第 16 条） |
 | 下游承诺 | 模板 schema 是画布模板编辑器（W3，[I69c](./I69c-agent-orchestration-canvas-spec.md)）的输入契约；schema 变更只在本波内发生，之后走新波次（[I69 §2](./I69-agent-orchestration-roadmap.md) C8） |
 
 ---
@@ -817,7 +819,8 @@ token 不做实时闸门的原因：实时闸门需要内核回传 turn 级用�
 | [I69b](./I69b-agent-orchestration-contract-spec.md) | `CONST-NODE-KIND-2` / `CONST-EDGE-COND-3` / `CONST-INVALID-GRAPH-10` / `CONST-RUN-STATE-7` / `CONST-NODERUN-STATE-7` / `CONST-CMD-10` / `CONST-EVENT-1` / `CONST-BUDGET-4` | §2 wire 与 §2.4 错误闭集 | 常量表逐项核对 |
 | [I69c](./I69c-agent-orchestration-canvas-spec.md) | `INV5` / `INV7` / `INV13` | UI2 / UI4 / UI5 / UI6 | §6 判据 |
 | [I69c](./I69c-agent-orchestration-canvas-spec.md) | `D3` / `D4` / `D9` / `D11` / `D13` / `D18` / `D20` / `D21` | UI2–UI9 | 同上 |
-| [I69c](./I69c-agent-orchestration-canvas-spec.md) | `CONST-NODE-KIND-2` / `CONST-EDGE-COND-3` / `CONST-EDGE-COND-HITL-2` / `CONST-INVALID-GRAPH-10` / `CONST-NODERUN-STATE-7` / `CONST-KEY-2` / `CONST-CMD-10` | §2 / §4 / §6 | 同上 |
+| [I69c](./I69c-agent-orchestration-canvas-spec.md) | `CONST-NODE-KIND-2` / `CONST-EDGE-COND-3` / `CONST-EDGE-COND-HITL-2` / `CONST-INVALID-GRAPH-10` / `CONST-NODERUN-STATE-7` / `CONST-KEY-2` / `CONST-CMD-10` / `CONST-EVENT-1` / `CONST-BUDGET-4` | §1.4 归属矩阵 / §2 / §4 / §6 | 同上 |
+| [I69d](./I69d-agent-orchestration-card-spec.md) | `INV5` / `INV11` / `INV13` / `D3` / `D11` / `D13` / `D18` / `D21` / `D22` | §2 / §3 / §4 / §5 / §7（见其 §13 承接清单） | OC1–OC14 |
 
 > **不承接即失效**：表中任一 ID 在下游卷找不到落点，视为**上游成果丢失**，该卷不得标记为可实施。
 

@@ -42,7 +42,7 @@
 | **P15 Turn 观测面** | 一轮 agent turn 的 12 个既有节点出声（单一 `agent-node-event` + 7 值节点状态闭集 + 三投影），供主窗口按 `(conversationId, turnId)` 渲染 orb agent 的完整执行过程；**只读事实、不参与控制**（观测 sink 不作控制通道；将来的编排器经独立控制端口接入，见 I55 §11）、不改既有事件语义 | I55（已归档） | ✅ 已完成（2026-11-19）：V0–V2 全部交付（后端 12 节点出声 + 前端投影与渲染），V3 回放受闸未开工；观测轴只读既有事实、不参与控制，不阻塞任何在途阶段；规格与任务清单已归档 | P4（`TurnObserver` 已存在）、P6（`transport` 已接线） |
 | **P16 长行读取（有界水平窗口）** | 把 `read` 的「无界」收口成「有界 + 如实报告」，**不新增任何读取侧状态**：扫描宽限改字节口径 `EOF_GRACE_BYTES`（8 MiB）+ **整行计费**（预算耗尽时即使窗口未满也停）；超长行带截断标记、`data` 增 `truncatedLines`；footer 增 `[long-lines]`；`ReadReceipt` 增 `truncated_lines` / `line_window_max_chars` 并驱动 `edit` fail-closed 闸门；**不做**行内水平窗口（`column` / `maxLineChars` 已移交 P17，I57 §0.1）、行索引 / seek / 精确 `totalLines`（I57 §9 L1 / L3 / L6 / L7 是边界，不是缺陷） | I57（已归档） | ✅ 已完成（2026-11-18；T1–T4 全部勾选，G1–G8 / G10–G12 有测试映射，`cargo test -p assistant-tools` 全绿、clippy 无警告、fmt 无 diff；P17 的 T2–T6 前置解除；任务级进度见 I57 tasklist（已归档）） | P5、P13 |
 | **P17 超级工具（能力发现与索引型读取）** | 新增三个工具：`request_tool`（`Tool::manual()` + 本轮可用集透传，按需返回清单与手册，**不改变本轮工具集**）、`super_read`（落盘行索引 + 按行 `seek` + 精确 `totalLines` + `unit: char\|byte`）、`super_edit`（行地址区间替换 + `expected` 校验，不做子串匹配）；索引目录 / revision 失效 / 单飞 / 容量淘汰；**契约对齐、实现独立**（I58 §0.3）：B 自写扫描 / 渲染 / 索引，只对齐 P16 的行格式字面量、footer 标记集、`data` 键名与回执字段，`data` 只增 `index` 一项并回写 I57 §3.3 | I58（已归档） | ✅ 已完成（2026-11-19；T1–T8 全部勾选，G1–G23 逐条有测试映射：G20 渲染层门禁落在**源码结构 + CSS 声明**层（`chat/tool/__tests__/panelStructure.test.ts` 11 条，仓库无 jsdom / testing-library，不为此引入新依赖），失败矩阵 F1–F14 逐条映射（F1 / F2 / F3 走公开入口、F4 文案在判据层钉住，其余在对应工具或判据层断言）；升级通道 G4·G21·G22·G23 由 `src-tauri/tests/tool_escalation.rs` 11 用例 + `assistant-agent` 循环侧 3 用例 + `request_tool` 工具侧 10 用例覆盖；`cargo test --workspace` / `clippy` / `fmt --check` / `vitest` / `tsc --noEmit` 全绿，`npm run contract:gen` 对两个生成文件零 diff（本阶段未改 DTO）；任务级进度与验收记录见 I58 tasklist（已归档）） | P2、P4、P5、P13（格式字面量对齐 I57，非实现依赖） |
-| **P18 编排层（L2）** | 在 turn 之间编排：`assistant-orchestrator` 独立 crate（内核的客户端）+ run 级键与取消树 + run 台账 + 控制端口；工作流模板（数据）与 turn 模板（常量）分离；图保持 DAG、保存期校验、不做结果缓存；**不新增执行语义**（执行节点只有 `turn` 一类，`hitl` 只等待、`group` 只分组） | [I69](./I69-agent-orchestration-roadmap.md)（波次路线图；下级规格由 I69 登记） | 📋 规格已就绪，未开工（2026-11-22；波次与门禁归 [I69](./I69-agent-orchestration-roadmap.md)） | P4、P5、P12、P15 |
+| **P18 编排层（L2）** | 在 turn 之间编排：`assistant-orchestrator` 独立 crate（内核的客户端）+ run 级键与取消树 + run 台账 + 控制端口；工作流模板（数据）与 turn 模板（常量）分离；图保持 DAG、保存期校验、不做结果缓存；**不新增执行语义**（执行节点只有 `turn` 一类，`hitl` 只等待、`group` 只分组） | [I69](./I69-agent-orchestration-roadmap.md)（波次路线图；下级规格由 I69 登记） | 📋 规格已就绪，未开工（2026-11-22；波次、门禁与阶段判定归 [I69](./I69-agent-orchestration-roadmap.md)，I69 整体完成时只回写本行状态一条） | P4、P5、P12、P15 |
 
 **P0 的完成判据**（P0 时点复核；后续 P5/P6 新增工具不改变该判据的时点含义）：`assistant-agent` 与前端不再持有 chat tool call 累积器与渲染组件；`ToolRegistry` 具备 `<=` 语义与受众过滤；`os_tool_exec` 已走 `exec::invoke`；P0 时点生产注册表只有 `fs_link`（`TOOLBOX_ONLY`）。
 
@@ -211,13 +211,15 @@ P8.1 规格已留档但**暂缓接入**（可选备选，见本表末行）；P8
 | P6 | 五态渲染与审批闭环可用；`ConversationToolConfig` 前端内存态初始化与传递；跨窗口 phase 不漂移（**推迟验证**，2026-11-09，见 I38d tasklist C2.4 / C9.6b（已归档））；链路按 `mode.kind` 每次发送分流、**会话内可切换**（turn 进行中禁止）；共同视图 + 双布局，默认 chat |
 | P7 | MCP server 启停/重连；工具命名与安全标记推断符合 I18 design §3.8；External 工具的 Policy 生效 |
 
+**P18 不设行**：P18 的退出条件（DoD1–DoD7）与波次门禁（R0–R5 / W3–W4）**全部由 [I69](./I69-agent-orchestration-roadmap.md) 自行管理**（DoD 见 I69 §1.1，波次退出条件见 §4，门禁汇总见 §6），本表不登记 P18 的退出条件，也不登记任何 DU 明细。I69 **整体完成**时只回写本文 §2 的 P18 行状态一条（一句话结论 + 日期），不改本文其它任何位置。
+
 ---
 
 ## 7 状态维护规则
 
 **唯一台账**：agent 各阶段的实施状态**只在本文 §2 阶段表的「状态」列维护**。其他文档一律不设「实施状态 / 现状 / 进度」列或段。
 
-1. 阶段级进度：只改 §2 阶段表；写「阶段名 + 一句话结论 + 日期」，不写任务明细。
+1. 阶段级进度：只改 §2 阶段表；写「阶段名 + 一句话结论 + 日期」，不写任务明细。**P18 例外**：其门禁与阶段判定由 [I69](./I69-agent-orchestration-roadmap.md) 自行管理，本表只在 I69 整体完成时回写 §2 的 P18 行状态一条，不收任何 DU / 波次明细（见 §6）。
 2. 任务级进度：只在对应阶段 tasklist 勾选（如 I36 tasklist C1–C11、I38c 工具清单）。tasklist 随阶段关闭而冻结，不再回写正文。
    - tasklist **不管理提交**：不写「单独提交 / 提交拆分 / 提交信息标注 / 回滚批次」这类条目。提交粒度由开发者按代码依赖与可编译性现场决定，属工程操作，不进入文档台账；tasklist 只回答「代码改没改、验收跑没跑」。
 3. spec / design / 基线 / 验证文档**不记录进度**：
