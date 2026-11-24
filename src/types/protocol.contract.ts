@@ -52,9 +52,11 @@ auditRetentionDays: number, };
 export type ApprovalContextDto = { tier: ToolTierDto, behavior: ToolBehaviorDto, reasons: Array<ApprovalReasonDto>, preview: ApprovalPreviewDto | null, extensions: Array<ApprovalExtensionDto>, };
 export type ApprovalExtensionDto = { kind: string, label: string, value: string, severity: ApprovalExtensionSeverityDto, };
 export type ApprovalExtensionSeverityDto = "info" | "caution" | "danger";
-export type ApprovalLevelDto = "none" | "dangerous_only" | "all_os_tools";
+export type ApprovalLevelDto = "none" | "workspace_write" | "dangerous_only" | "all_os_tools";
 export type ApprovalPreviewDto = { summary: string, truncated: boolean, estimated: boolean, };
-export type ApprovalReasonDto = { "kind": "defaultPolicy", rule: string, } | { "kind": "approvalLevel", level: ApprovalLevelDto, } | { "kind": "projectRule", action: string, resource: string, } | { "kind": "tierCeiling", tier: ToolTierDto, } | { "kind": "advisor", rationale: string, };
+export type ApprovalReasonDto = { "kind": "defaultPolicy", rule: string, } | { "kind": "approvalLevel", level: ApprovalLevelDto, } | { "kind": "projectRule", action: string, resource: string, } | { "kind": "userRule", action: string, resource: string, } | { "kind": "tierCeiling", tier: ToolTierDto, } | { "kind": "advisor", rationale: string, };
+export type ApprovalRuleDto = { action: string, resource: string, effect: ApprovalRuleEffectDto, };
+export type ApprovalRuleEffectDto = "allow" | "ask" | "deny";
 export type AssetDirsDto = { attachmentsDir: string, mascotAssetsDir: string, };
 export type AttachmentDeleteResultDto = { removedCount: number, 
 /**
@@ -168,7 +170,11 @@ beforeTurnIndex?: number | null,
  */
 includeRecords: boolean, };
 export type ConversationTerminatedPayloadDto = { conversationId: string, isFull: boolean, };
-export type ConversationToolConfigDto = { maxToolTier: ToolTierDto, approvalLevel: ApprovalLevelDto, enabledTools: Array<string>, disabledTools: Array<string>, };
+export type ConversationToolConfigDto = { maxToolTier: ToolTierDto, approvalLevel: ApprovalLevelDto, enabledTools: Array<string>, disabledTools: Array<string>, 
+/**
+ * 用户规则层（I70 §3.2）：空列表 = 不额外干预；旧 JSON 无此键时按 `[]` 解析。
+ */
+approvalRules: Array<ApprovalRuleDto>, };
 export type ConversationUnlockedPayloadDto = { conversationId: string, };
 export type DocAnchorDto = { path: string, ranges: Array<DocLineRangeDto>, };
 export type DocLineRangeDto = { start: number, end: number, };
@@ -277,13 +283,26 @@ export type OrbConfDto = { clickThrough: boolean, alwaysOnTop: boolean, scalePer
 export type OsToolExecRequestDto = { tool: string, action: string, params: unknown, };
 export type OsToolResultDto = { ok: boolean, data: unknown, resultForAssistant: string | null, error: string | null, errorKind: ToolErrorKindDto | null, };
 export type PermissionGrantDto = { grantKey: string, tool: string, scope: GrantScopeDto, conversationId: string | null, scopeSummary: string, createdAt: number, };
-export type PermissionAuditEntryDto = { tool: string, action: string, resource: string, outcome: string, atMillis: number, conversationId: string | null, turnId: string | null, iteration: number | null, };
+export type PermissionAuditEntryDto = { tool: string, action: string, resource: string, outcome: string, atMillis: number, conversationId: string | null, turnId: string | null, iteration: number | null, source: string | null, };
 export type PermissionAuditPageDto = { entries: Array<PermissionAuditEntryDto>, hasMore: boolean, };
 export type PermissionIntentDto = { action: string, resources: Array<string>, };
 export type PersistDetailDto = { rows: number, messageIds: Array<string>, };
 export type PersistedResultDto = { path: string, bytes: number | null, };
 export type PipelineDetailDto = { stage: PipelineStageDto | null, index: number | null, total: number | null, toolName: string | null, toolCallId: string | null, };
 export type PipelineStageDto = "find" | "validate" | "gateway" | "execute" | "persist";
+export type ProjectPermissionStatusDto = { 
+/**
+ * `permissions.json` 的绝对路径；仅展示，前端不据此读写。
+ */
+path: string, exists: boolean, valid: boolean, 
+/**
+ * 文件原文；缺失或不可读为 `null`。非法时用它展示用户自己写下的内容以便定位。
+ */
+content: string | null, 
+/**
+ * 解析成功的规则；缺失或非法时为空列表（前端从空规则开始编辑并覆盖保存）。
+ */
+rules: Array<ApprovalRuleDto>, };
 export type ProviderErrorPayloadDto = { code: CommandErrorCodeDto, message: string, retryAfterMs: number | null, retryable: boolean, httpStatus: number | null, provider: string | null, providerCode: string | null, };
 export type ProviderInputDto = { id: string, name: string, type: string, baseUrl: string, apiKey: string, apiKeyChanged?: boolean | null, models: Array<ModelConfigDto>, defaultModel: string, };
 export type ProviderListDto = { id: string, name: string, type: string, baseUrl: string, apiKeyMasked: string, models: Array<ModelConfigDto>, defaultModel: string, updatedAt: number, 

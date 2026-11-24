@@ -189,6 +189,63 @@ fn init_db_creates_permission_tables() {
 }
 
 #[test]
+fn init_db_adds_audit_source_column_to_legacy_table_without_backfill() {
+    let dir = tempfile::tempdir().unwrap();
+    let db_path = dir.path().join("legacy_audit_source.db");
+    {
+        let conn = rusqlite::Connection::open(&db_path).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+             INSERT INTO app_settings (key, value) VALUES ('schema_version', '1');
+             CREATE TABLE permission_audit (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                tool            TEXT NOT NULL,
+                action          TEXT NOT NULL,
+                resource        TEXT NOT NULL,
+                outcome         TEXT NOT NULL,
+                at_millis       INTEGER NOT NULL
+             );
+             INSERT INTO permission_audit (tool, action, resource, outcome, at_millis)
+                 VALUES ('agent_write','exec','/ws/a.txt','allowed',100);",
+        )
+        .unwrap();
+    }
+
+    let conn = db::init_db(&db_path).unwrap();
+    assert!(
+        has_column(&conn, "permission_audit", "source"),
+        "legacy db must gain permission_audit.source"
+    );
+
+    let legacy_source: Option<String> = conn
+        .query_row(
+            "SELECT source FROM permission_audit WHERE at_millis = 100",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert!(legacy_source.is_none(), "存量行不得被回填归属，保持 NULL");
+
+    conn.execute(
+        "INSERT INTO permission_audit (tool, action, resource, outcome, at_millis, source)
+         VALUES ('agent_write','exec','/ws/b.txt','allowed',200,'agent')",
+        [],
+    )
+    .unwrap();
+    let new_source: Option<String> = conn
+        .query_row(
+            "SELECT source FROM permission_audit WHERE at_millis = 200",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(new_source.as_deref(), Some("agent"), "新写入行带来源归属");
+
+    drop(conn);
+    db::init_db(&db_path).expect("补列必须可重复执行");
+}
+
+#[test]
 fn init_db_adds_tool_columns_to_legacy_messages_table() {
     let dir = tempfile::tempdir().unwrap();
     let db_path = dir.path().join("legacy_tool.db");

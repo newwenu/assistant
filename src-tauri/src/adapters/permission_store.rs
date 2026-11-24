@@ -151,11 +151,12 @@ impl DbPermissionAuditStore {
 impl PermissionAuditStore for DbPermissionAuditStore {
     async fn log_decision(&self, entry: AuditEntry) -> Result<(), String> {
         let outcome = outcome_str(entry.outcome);
+        let source = entry.source.map(|value| value.as_str());
         with_conn(&self.app, |conn| {
             conn.execute(
                 "INSERT INTO permission_audit
-                   (tool, action, resource, outcome, at_millis, conversation_id, turn_id, iteration)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                   (tool, action, resource, outcome, at_millis, conversation_id, turn_id, iteration, source)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
                 params![
                     entry.tool,
                     entry.action,
@@ -164,7 +165,8 @@ impl PermissionAuditStore for DbPermissionAuditStore {
                     entry.at_millis,
                     entry.conversation_id,
                     entry.turn_id,
-                    entry.iteration.map(i64::from)
+                    entry.iteration.map(i64::from),
+                    source
                 ],
             )
             .map_err(|e| e.to_string())?;

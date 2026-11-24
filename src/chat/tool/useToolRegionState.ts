@@ -46,7 +46,14 @@ const noop = () => {};
 export function useToolRegionState(
   input: ToolRegionInput & { enabled: boolean },
 ): ToolRegionView {
-  const { enabled, conversationId, config, onChange, onSetDefault } = input;
+  const {
+    enabled,
+    conversationId,
+    config,
+    onChange,
+    onSetDefault,
+    onEditRules,
+  } = input;
   const { t } = useTranslation();
   const { tools, loading } = useToolCatalog(enabled);
   const [open, setOpen] = useState(false);
@@ -156,6 +163,9 @@ export function useToolRegionState(
             }),
           );
         }
+        if (diff.rulesChanged) {
+          parts.push(t("chat.tool.notice.rules"));
+        }
         showNotice(parts.join(t("chat.tool.notice.separator")));
       }
       onChange(next);
@@ -188,6 +198,7 @@ export function useToolRegionState(
         settingDefault: false,
         onChange: noop,
         onSetDefault: noop,
+        onEditRules,
       },
       notice: null,
     };
@@ -209,6 +220,7 @@ export function useToolRegionState(
       settingDefault,
       onChange: applyChange,
       onSetDefault: handleSetDefault,
+      onEditRules,
     },
     notice,
   };

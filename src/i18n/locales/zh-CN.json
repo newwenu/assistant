@@ -56,6 +56,44 @@
     "next": "下一步",
     "done": "完成",
     "back": "返回",
+    "approval_rules": {
+      "title": "审批规则",
+      "hint": "规则按顺序生效，后写的覆盖先写的；规则可以放宽或收紧档位，但改不了硬保护底线。",
+      "empty": "暂无规则，按档位默认行为执行。",
+      "row_index": "#{{index}}",
+      "order_hint": "后写覆盖先写",
+      "none": "无规则",
+      "count": "{{count}} 条",
+      "edit_in_settings": "去设置编辑",
+      "action_label": "动作",
+      "resource_label": "资源",
+      "effect_label": "效果",
+      "add": "新增规则",
+      "remove": "删除",
+      "action_placeholder": "选择或输入动作",
+      "resource_placeholder": "路径 / 命令 / mcp:{server}:{tool} / *",
+      "resource_placeholder_path": "绝对路径，* 表示全部",
+      "delete_purge_hint": "「delete」不含永久删除（purge），需另写规则。",
+      "shortcuts": {
+        "execute": "执行免确认",
+        "edit": "写入免确认",
+        "read": "读取确认",
+        "mcp": "MCP 确认",
+        "readOutput": "回读确认"
+      },
+      "effect": {
+        "allow": "自动执行",
+        "ask": "每次询问",
+        "deny": "直接拒绝"
+      },
+      "errors": {
+        "tooMany": "规则最多 {{limit}} 条，当前 {{len}} 条",
+        "actionLength": "第 {{index}} 行动作需为 1–{{limit}} 个字符",
+        "resourceLength": "第 {{index}} 行资源需为 1–{{limit}} 个字符",
+        "allowBottomLine": "第 {{index}} 行不能把「{{action}}」设为自动执行：该动作永远需要确认",
+        "reservedTier": "第 {{index}} 行资源不能以 tier: 开头，层级上限请用上方的层级设置"
+      }
+    },
     "time": {
       "just_now": "刚刚",
       "minutes_ago": "{{count}} 分钟前",
@@ -615,7 +653,8 @@
         "approval_level": {
           "options": {
             "none": "直接运行",
-            "dangerous_only": "默认",
+            "workspace_write": "工作区写入",
+            "dangerous_only": "谨慎",
             "all_os_tools": "手动审批"
           }
         }
@@ -659,6 +698,39 @@
         "set_session_placeholder": "选择会话",
         "scope_changed": "已更新授权作用域",
         "scope_failed": "更新作用域失败: {{error}}"
+      },
+      "project_rules": {
+        "title": "项目规则",
+        "description": "项目规则保存在工作区内的 .assistant/permissions.json，与模式级审批规则共用同一套编辑器和校验；文件不存在时保存会自动创建。项目规则只能收紧审批：合并时取最严，allow 不会放宽任何调用。",
+        "refresh": "重新读取",
+        "save": "保存",
+        "revert": "撤销修改",
+        "unsaved": "未保存",
+        "save_ok_title": "项目规则已保存",
+        "save_ok_desc": "已写入 .assistant/permissions.json，下一轮对话立即生效。",
+        "save_failed_title": "保存项目规则失败",
+        "save_failed_desc": "规则未写入磁盘，请检查规则内容与工作区是否仍可写。",
+        "content_empty": "（未读取到文件内容）",
+        "no_workspace": "还没有登记工作区，项目规则只在绑定工作区的会话里生效。",
+        "workspace_placeholder": "选择工作区",
+        "path_unknown": "（未读取到路径）",
+        "load_failed": "读取项目规则失败，请稍后重试。",
+        "state": {
+          "unbound": "未绑定工作区",
+          "missing": "文件不存在",
+          "valid": "已生效",
+          "invalid": "内容非法"
+        },
+        "note": {
+          "unbound": "未绑定工作区时不存在项目规则。",
+          "missing": "该工作区还没有项目规则文件，编辑后点「保存」即会创建。",
+          "valid": "项目规则已生效：它只会收紧审批，不会放宽档位或模式里的审批规则。",
+          "invalid": "文件存在但无法解析，运行时会把该工作区的工具调用全部拒绝；下方原文供定位，改好后点「保存」覆盖。"
+        },
+        "overwrite_invalid": {
+          "title": "覆盖无法解析的项目规则文件？",
+          "content": "原文件无法解析，运行时会把该工作区的工具调用全部拒绝。保存会用当前编辑内容整体覆盖原文件，覆盖后无法恢复原内容。"
+        }
       },
       "audit": {
         "title": "权限决策追溯",
@@ -1166,18 +1238,21 @@
         },
         "level": {
           "none": "直接运行",
-          "dangerous_only": "默认",
+          "workspace_write": "工作区写入",
+          "dangerous_only": "谨慎",
           "all_os_tools": "手动审批"
         },
         "level_hint": {
-          "none": "所有工具直接执行，不弹审批卡片",
-          "dangerous_only": "读取自动放行，修改和执行需确认",
-          "all_os_tools": "所有工具都需确认，包括读取"
+          "none": "全部自动执行（工具输出回读除外）",
+          "workspace_write": "读取与工作区写入自动执行；.env*、.git/** 与执行/删除需确认",
+          "dangerous_only": "读取自动执行；写入、执行、删除需确认",
+          "all_os_tools": "所有工具调用都需确认"
         },
         "reason": {
           "default_policy": "默认策略：{{rule}}",
           "approval_level": "审批级别：{{level}}",
           "project_rule": "项目规则：{{action}} {{resource}}",
+          "user_rule": "审批规则：{{action}} {{resource}}",
           "tier_ceiling": "层级上限：{{tier}}",
           "advisor": "AI 顾问：{{rationale}}"
         }
@@ -1202,6 +1277,7 @@
         "disabled": "已停用 {{names}}",
         "tier": "层级上限调整为 {{tier}}",
         "level": "审批级别调整为 {{level}}",
+        "rules": "审批规则已更新",
         "separator": "；"
       },
       "panel": {
@@ -1212,7 +1288,6 @@
         "set_default": "设为该模式默认",
         "set_default_hint": "把当前配置写回模式的初始值，仅影响之后新建的会话",
         "out_of_tier": "超出上限，将被忽略",
-        "group_empty": "该层级暂无工具",
         "companion_of": "跟随 {{base}} 可用，模型按需启用",
         "companion_blocked": "需先启用 {{base}}",
         "meta_badge": "申请入口",
@@ -1413,12 +1488,17 @@
     },
     "action": {
       "choose": "选择文件夹…",
-      "clear": "清除绑定（未配置）"
+      "clear": "清除绑定（未配置）",
+      "open": "在资源管理器打开"
     },
     "error": {
       "invalid": {
         "title": "工作区路径无效",
         "description": "所选文件夹无法登记为工作区，请重新选择"
+      },
+      "open": {
+        "title": "无法打开工作区",
+        "description": "工作区未绑定或目录已失效，请重新选择"
       },
       "busy": "会话正在生成回复，暂不可切换工作区"
     },

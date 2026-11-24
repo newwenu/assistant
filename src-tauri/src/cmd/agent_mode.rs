@@ -56,6 +56,8 @@ pub fn save_agent_mode(app: AppHandle, mode: AgentModeInputDto) -> Result<(), St
             .map(|m| AgentModeDto::from(m).tool_config)
             .unwrap_or_default(),
     };
+    // 规则在落库前校验（I70 §6.2 / A11）：失败即拒绝保存，不留半份写入。
+    crate::adapters::validate_tool_config_rules(&tool_config)?;
     let tool_config_json = Some(serde_json::to_string(&tool_config).map_err(|e| e.to_string())?);
 
     // 头像三态（I43 §3.5）：缺省 / `null` 沿用现值；`""` 清除为 `NULL`；非空覆盖。
@@ -154,5 +156,75 @@ mod tests {
             resolve_avatar(Some("builtin:agent".to_string()), Some(&row)),
             Some("builtin:agent".to_string())
         );
+    }
+
+    #[test]
+    fn a11_over_limit_or_over_length_rules_are_rejected_before_persisting() {
+        fn config(
+            rules: Vec<crate::protocol::ApprovalRuleDto>,
+        ) -> crate::protocol::ConversationToolConfigDto {
+            crate::protocol::ConversationToolConfigDto {
+                max_tool_tier: crate::protocol::ToolTierDto::Sandbox,
+                approval_level: crate::protocol::ApprovalLevelDto::None,
+                enabled_tools: Vec::new(),
+                disabled_tools: Vec::new(),
+                approval_rules: rules,
+            }
+        }
+
+        fn rule(
+            action: String,
+            resource: String,
+            effect: crate::protocol::ApprovalRuleEffectDto,
+        ) -> crate::protocol::ApprovalRuleDto {
+            crate::protocol::ApprovalRuleDto {
+                action,
+                resource,
+                effect,
+            }
+        }
+
+        // `save_agent_mode` 在 `serde_json::to_string` 与 `insert/update` 之前调用本校验：
+        // 返回 Err 时命令立即退出，不存在部分写入（A11）。
+        let over_limit = config(vec![
+            rule(
+                "read".to_string(),
+                "*".to_string(),
+                crate::protocol::ApprovalRuleEffectDto::Allow,
+            );
+            65
+        ]);
+        assert!(crate::adapters::validate_tool_config_rules(&over_limit).is_err());
+
+        let long_action = config(vec![rule(
+            "a".repeat(33),
+            "*".to_string(),
+            crate::protocol::ApprovalRuleEffectDto::Ask,
+        )]);
+        assert!(crate::adapters::validate_tool_config_rules(&long_action).is_err());
+
+        let long_resource = config(vec![rule(
+            "read".to_string(),
+            "r".repeat(257),
+            crate::protocol::ApprovalRuleEffectDto::Ask,
+        )]);
+        assert!(crate::adapters::validate_tool_config_rules(&long_resource).is_err());
+
+        // 边界值通过：64 条、action 32 字符、resource 256 字符。
+        let boundary = config(vec![
+            rule(
+                "read".to_string(),
+                "*".to_string(),
+                crate::protocol::ApprovalRuleEffectDto::Allow,
+            );
+            64
+        ]);
+        assert!(crate::adapters::validate_tool_config_rules(&boundary).is_ok());
+        let max_lengths = config(vec![rule(
+            "a".repeat(32),
+            "r".repeat(256),
+            crate::protocol::ApprovalRuleEffectDto::Ask,
+        )]);
+        assert!(crate::adapters::validate_tool_config_rules(&max_lengths).is_ok());
     }
 }

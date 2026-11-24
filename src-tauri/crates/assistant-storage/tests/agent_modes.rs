@@ -136,8 +136,64 @@ fn builtin_seed_tool_config_matches_defaults() {
     )
     .unwrap();
     assert_eq!(agent_config, BUILTIN_AGENT_TOOL_CONFIG);
-    assert_eq!(agent_config.approval_level, ApprovalLevel::DangerousOnly);
+    assert_eq!(agent_config.approval_level, ApprovalLevel::WorkspaceWrite);
     assert!(agent_config.enabled_tools.is_empty());
+    assert!(
+        agent_config.approval_rules.is_empty(),
+        "用户规则层出厂为空（I70 §3.2）"
+    );
+}
+
+#[test]
+fn a15_existing_dangerous_only_row_is_not_rewritten_on_reopen() {
+    let dir = tempfile::tempdir().unwrap();
+    let db_path = dir.path().join("a15.db");
+    let conn = db::init_db(&db_path).unwrap();
+    let mut agent = agent_modes::get_by_id(&conn, "builtin-agent")
+        .unwrap()
+        .unwrap();
+    agent.tool_config_json = Some(
+        r#"{"maxToolTier":"sandbox","approvalLevel":"dangerous_only","enabledTools":[],"disabledTools":[]}"#
+            .to_string(),
+    );
+    agent_modes::update_mode(&conn, &agent).unwrap();
+    drop(conn);
+
+    let conn = db::init_db(&db_path).unwrap();
+    let reread = agent_modes::get_by_id(&conn, "builtin-agent")
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        reread.tool_config_json, agent.tool_config_json,
+        "A15: 存量档位不被种子静默改写"
+    );
+    let config: ModeToolConfig =
+        serde_json::from_str(reread.tool_config_json.as_deref().unwrap()).unwrap();
+    assert_eq!(config.approval_level, ApprovalLevel::DangerousOnly);
+}
+
+#[test]
+fn a6_invalid_rule_effect_decodes_to_the_default_tool_config() {
+    let conn = init_db();
+    let mut row = agent_modes::get_by_id(&conn, "builtin-agent")
+        .unwrap()
+        .unwrap();
+    row.tool_config_json = Some(
+        r#"{"maxToolTier":"external","approvalLevel":"none","enabledTools":[],"disabledTools":[],"approvalRules":[{"action":"edit","resource":"**","effect":"always"}]}"#
+            .to_string(),
+    );
+    agent_modes::update_mode(&conn, &row).unwrap();
+
+    let dto = assistant_protocol::AgentModeDto::from(
+        &agent_modes::get_by_id(&conn, "builtin-agent")
+            .unwrap()
+            .unwrap(),
+    );
+    assert_eq!(
+        dto.tool_config,
+        assistant_protocol::ConversationToolConfigDto::default(),
+        "A6: 非法 effect 使整体解析失败，回落到缺省装配"
+    );
 }
 
 #[test]

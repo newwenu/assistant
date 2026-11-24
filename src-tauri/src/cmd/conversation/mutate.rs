@@ -87,6 +87,8 @@ fn patch_conversation_blocking(
     }
 
     if let Some(ref tool_config) = patch.tool_config {
+        // 规则在落库前校验（I70 §6.2 / A11）：失败即拒绝保存，不留半份写入。
+        crate::adapters::validate_tool_config_rules(tool_config)?;
         let now = Utc::now().timestamp_millis();
         let mut conv = conversations::get_conversation_by_id(&conn, &id)?
             .ok_or_else(|| assistant_i18n::t("error.conversation_not_found"))?;

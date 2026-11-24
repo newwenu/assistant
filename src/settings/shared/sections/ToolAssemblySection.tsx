@@ -21,6 +21,7 @@ import {
   stripCompanionIds,
 } from "@/chat/core/toolConfig";
 import css from "./ToolAssemblySection.module.css";
+import { ApprovalRulesEditor } from "@/chat/tool/ApprovalRulesEditor";
 
 const log = createLogger("ToolAssemblySection");
 
@@ -50,8 +51,9 @@ interface ToolAssemblySectionProps {
 
 /**
  * 模式级工具装配（I38d §4.4 / §4.7）：写入 `agent_modes.tool_config_json`，
- * 只影响之后新建的会话。与会话级 `ToolConfigPanel` 不复用视图——
- * 这里是抽屉内的纵向表单，可用高度充足，工具项带说明文字。
+ * 只影响之后新建的会话。工具清单视图与会话级 `ToolConfigPanel` 不复用——
+ * 这里是抽屉内的纵向表单，可用高度充足，工具项带说明文字；
+ * 但审批规则编辑器复用同一个 `ApprovalRulesEditor`（I70 §7.3），保证两处语义一致。
  */
 export const ToolAssemblySection: React.FC<ToolAssemblySectionProps> = ({
   config,
@@ -275,6 +277,14 @@ export const ToolAssemblySection: React.FC<ToolAssemblySectionProps> = ({
           })}
         </div>
       )}
+
+      <div data-approval-rules>
+        <ApprovalRulesEditor
+          rules={config.approvalRules}
+          onChange={(approvalRules) => emit({ ...config, approvalRules })}
+          disabled={disabled}
+        />
+      </div>
 
       <Typography.Text type="secondary" className={css.hint}>
         {t("settings.agent_mode.tool_assembly.hint")}

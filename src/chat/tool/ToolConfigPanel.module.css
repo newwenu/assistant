@@ -2,14 +2,18 @@
   border: 1px solid var(--color-border-secondary);
   border-radius: 10px;
   background: var(--color-bg-elevated);
-  padding: 8px 10px;
+  padding: 6px 8px;
   margin: 0 8px 6px;
   font-size: 12px;
   line-height: 1.5;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
+  /* 面板挂在输入区上方，高度不受控会把消息区顶走：超出部分内部滚动。 */
+  max-height: min(60vh, 560px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .header {
@@ -27,7 +31,7 @@
 .controls {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
   flex-wrap: wrap;
 }
 
@@ -43,7 +47,7 @@
 }
 
 .select {
-  min-width: 132px;
+  min-width: 104px;
 }
 
 .levelOption {
@@ -56,7 +60,8 @@
   font-size: 12px;
   line-height: 1.4;
   color: var(--color-text-secondary);
-  white-space: nowrap;
+  max-width: 240px;
+  white-space: normal;
 }
 
 .loading {
@@ -68,12 +73,12 @@
 .groups {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
 .group {
   border-top: 1px dashed var(--color-border-secondary);
-  padding-top: 6px;
+  padding-top: 4px;
 }
 
 .groupDimmed {
@@ -84,7 +89,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  margin-bottom: 4px;
+  margin-bottom: 2px;
 }
 
 .groupTitle {
@@ -96,10 +101,6 @@
   margin-inline-end: 0;
   font-size: 11px;
   line-height: 16px;
-}
-
-.empty {
-  font-size: 12px;
 }
 
 /* 普通工具横排换行；每个单元 = 一个条目 + 跟随它的伴随条目。 */

@@ -125,6 +125,13 @@ impl Tool for AgentReadTool {
         }
     }
 
+    /// 单次读取上限 2000 行 / 1MB（`DEFAULT_MAX_LINES` / `DEFAULT_MAX_BYTES`），
+    /// 常见源文件一次读满就超 50k 字符 → 被迫落盘 → 模型再 `read` 落盘文件又要一次审批。
+    /// 抬到两倍全局阈值：仍在单轮预算内，且超限仍走落盘 + 预览（I71 §4.3 W3.3）。
+    fn inline_output_limit(&self) -> Option<usize> {
+        Some(crate::storage::PER_TOOL_LIMIT_CHARS * 2)
+    }
+
     fn validate_input(&self, input: &Value, context: &ToolUseContext) -> ValidationResult {
         match ReadRequest::parse(input) {
             Ok(request) => match path::resolve_readable(&request.path, context) {

@@ -13,6 +13,7 @@ function mode(partial: Partial<ModeLinkFields> & { id: string }) {
       approvalLevel: "dangerous_only" as const,
       enabledTools: ["read"],
       disabledTools: [],
+      approvalRules: [],
     },
     ...partial,
   };
@@ -62,6 +63,7 @@ describe("resolveConversationRoute", () => {
           approvalLevel: "dangerous_only",
           enabledTools: ["read"],
           disabledTools: [],
+          approvalRules: [],
         },
       }),
     ]);
@@ -79,6 +81,7 @@ describe("resolveConversationRoute", () => {
           approvalLevel: "dangerous_only",
           enabledTools: ["read", "write"],
           disabledTools: [],
+          approvalRules: [],
         },
       }),
     ]);
@@ -95,6 +98,7 @@ describe("resolveConversationRoute", () => {
           approvalLevel: "dangerous_only",
           enabledTools: ["read", "write"],
           disabledTools: [],
+          approvalRules: [],
         },
       }),
     ]);
@@ -104,6 +108,7 @@ describe("resolveConversationRoute", () => {
       approvalLevel: "dangerous_only",
       enabledTools: ["read", "write"],
       disabledTools: [],
+      approvalRules: [],
     });
   });
 
@@ -118,6 +123,7 @@ describe("resolveConversationRoute", () => {
             approvalLevel: "none",
             enabledTools: [],
             disabledTools: [],
+            approvalRules: [],
           },
         }),
       ],
@@ -126,6 +132,7 @@ describe("resolveConversationRoute", () => {
         approvalLevel: "all_os_tools",
         enabledTools: ["read"],
         disabledTools: ["write"],
+        approvalRules: [],
       },
     );
     expect(route.link).toBe("agent");
@@ -134,6 +141,7 @@ describe("resolveConversationRoute", () => {
       approvalLevel: "all_os_tools",
       enabledTools: ["read"],
       disabledTools: ["write"],
+      approvalRules: [],
     });
   });
 
@@ -148,6 +156,7 @@ describe("resolveConversationRoute", () => {
             approvalLevel: "none",
             enabledTools: [],
             disabledTools: [],
+            approvalRules: [],
           },
         }),
       ],
@@ -158,6 +167,7 @@ describe("resolveConversationRoute", () => {
       approvalLevel: "none",
       enabledTools: [],
       disabledTools: [],
+      approvalRules: [],
     });
   });
 
@@ -170,6 +180,7 @@ describe("resolveConversationRoute", () => {
         approvalLevel: "all_os_tools",
         enabledTools: ["read"],
         disabledTools: [],
+        approvalRules: [],
       },
     );
     expect(route.link).toBe("chat");

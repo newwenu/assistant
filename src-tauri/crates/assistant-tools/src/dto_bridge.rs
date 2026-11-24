@@ -31,8 +31,48 @@ impl From<ApprovalLevelDto> for crate::ApprovalLevel {
     fn from(level: ApprovalLevelDto) -> Self {
         match level {
             ApprovalLevelDto::None => Self::None,
+            ApprovalLevelDto::WorkspaceWrite => Self::WorkspaceWrite,
             ApprovalLevelDto::DangerousOnly => Self::DangerousOnly,
             ApprovalLevelDto::AllOsTools => Self::AllOsTools,
+        }
+    }
+}
+
+impl From<ApprovalRuleEffectDto> for crate::PermissionEffect {
+    fn from(effect: ApprovalRuleEffectDto) -> Self {
+        match effect {
+            ApprovalRuleEffectDto::Allow => Self::Allow,
+            ApprovalRuleEffectDto::Ask => Self::Ask,
+            ApprovalRuleEffectDto::Deny => Self::Deny,
+        }
+    }
+}
+
+impl From<ApprovalRuleDto> for crate::PermissionRule {
+    /// 用户规则恒标 `UserRule` 来源：解释链据此投影成 `userRule` 而非 `projectRule`（I70 §7.1）。
+    fn from(rule: ApprovalRuleDto) -> Self {
+        Self::new(rule.action, rule.resource, rule.effect.into())
+            .with_origin(crate::RuleOrigin::UserRule)
+    }
+}
+
+impl From<crate::PermissionEffect> for ApprovalRuleEffectDto {
+    fn from(effect: crate::PermissionEffect) -> Self {
+        match effect {
+            crate::PermissionEffect::Allow => Self::Allow,
+            crate::PermissionEffect::Ask => Self::Ask,
+            crate::PermissionEffect::Deny => Self::Deny,
+        }
+    }
+}
+
+impl From<&crate::PermissionRule> for ApprovalRuleDto {
+    /// 只投影 `action` / `resource` / `effect`：`origin` 不参与 wire（I70 §7.5 的项目规则回显）。
+    fn from(rule: &crate::PermissionRule) -> Self {
+        Self {
+            action: rule.action.clone(),
+            resource: rule.resource.clone(),
+            effect: rule.effect.into(),
         }
     }
 }
@@ -149,6 +189,7 @@ impl From<ApprovalReason> for ApprovalReasonDto {
             ApprovalReason::ProjectRule { action, resource } => {
                 Self::ProjectRule { action, resource }
             }
+            ApprovalReason::UserRule { action, resource } => Self::UserRule { action, resource },
             ApprovalReason::TierCeiling { tier } => Self::TierCeiling { tier: tier.into() },
             ApprovalReason::Advisor { rationale } => Self::Advisor { rationale },
         }

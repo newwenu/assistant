@@ -2,11 +2,12 @@ use std::path::Path;
 
 use assistant_tools::storage::{
     cleanup_expired_results, collect_expired, delete_candidates, persisted_reference,
-    persisted_reference_from_tail, result_stats, select_persist_targets, session_namespace,
-    CleanupReport, FileToolResultStorage, InMemoryReadReceiptStore, OutputStream,
-    PersistToolResult, ReadReceipt, ReadReceiptKey, ReadReceiptStore, ToolResultStorage,
-    MAX_SPILL_BYTES, PER_ROUND_LIMIT_CHARS, PER_TOOL_LIMIT_CHARS, PREVIEW_CHARS,
-    PREVIEW_HEAD_CHARS, PREVIEW_TAIL_CHARS, SPILL_TRUNCATED_MARKER, STDERR_RING_CHARS,
+    persisted_reference_from_tail, result_stats, select_persist_targets,
+    select_persist_targets_with_limits, session_namespace, CleanupReport, FileToolResultStorage,
+    InMemoryReadReceiptStore, OutputStream, PersistToolResult, ReadReceipt, ReadReceiptKey,
+    ReadReceiptStore, ToolResultStorage, MAX_SPILL_BYTES, PER_ROUND_LIMIT_CHARS,
+    PER_TOOL_LIMIT_CHARS, PREVIEW_CHARS, PREVIEW_HEAD_CHARS, PREVIEW_TAIL_CHARS,
+    SPILL_TRUNCATED_MARKER, STDERR_RING_CHARS,
 };
 
 #[test]
@@ -56,6 +57,57 @@ fn equal_sizes_evict_in_stable_order() {
 }
 
 const _: () = assert!(45_000 * 5 > PER_ROUND_LIMIT_CHARS);
+
+/// I71 §4.4 C1：工具自述更高阈值时，60k 结果不落盘（旧行为是落盘）。
+#[test]
+fn tool_limit_override_keeps_a_large_result_inline() {
+    let size = 60_000;
+    let limits = [Some(PER_TOOL_LIMIT_CHARS * 2)];
+    assert_eq!(
+        select_persist_targets_with_limits(&[size], &limits),
+        vec![false],
+        "override raises the per-result threshold"
+    );
+    assert_eq!(
+        select_persist_targets(&[size]),
+        vec![true],
+        "the global default still evicts it"
+    );
+}
+
+/// I71 §4.4 C2：覆盖只抬单结果阈值，超阈值仍落盘。
+#[test]
+fn tool_limit_override_still_evicts_beyond_its_own_threshold() {
+    let size = 120_000;
+    let limits = [Some(PER_TOOL_LIMIT_CHARS * 2)];
+    assert_eq!(
+        select_persist_targets_with_limits(&[size], &limits),
+        vec![true]
+    );
+}
+
+/// I71 §4.4 C4：覆盖不得绕过单轮预算。
+#[test]
+fn tool_limit_override_never_bypasses_the_round_budget() {
+    let sizes = [60_000, 60_000, 60_000, 60_000];
+    let limits = [Some(PER_TOOL_LIMIT_CHARS * 2); 4];
+    let targets = select_persist_targets_with_limits(&sizes, &limits);
+    assert!(
+        targets.iter().any(|flag| *flag),
+        "four 60k results exceed the 200k round budget"
+    );
+}
+
+/// I71 §4.3 T3：`limits` 缺位 / 缺项按全局默认处理，不 panic、不跳过判定。
+#[test]
+fn missing_limit_falls_back_to_the_global_threshold() {
+    let size = PER_TOOL_LIMIT_CHARS + 1;
+    assert_eq!(
+        select_persist_targets_with_limits(&[size, size], &[None]),
+        vec![true, true],
+        "a short or empty limits slice must not change the outcome"
+    );
+}
 
 #[test]
 fn preview_keeps_head_and_tail_with_omission_marker() {

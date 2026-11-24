@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use super::approval_key::ApprovalKey;
 use super::decision::AuditOutcome;
+use crate::context::ToolCallSource;
 
 /// 授权作用域：与 [`ApprovalKey`] 正交，只回答「这份批准对谁有效」。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -122,6 +123,12 @@ pub struct AuditEntry {
     /// 归属迭代序号：同一轮内的第几次工具调用。
     #[serde(default)]
     pub iteration: Option<u32>,
+    /// 调用来源（`agent` / `toolbox` / `orchestration`）。
+    ///
+    /// `None` = 不是工具调用写入的行（授权管理动作、工作区切换）。
+    /// 来源只用于归因，**不参与**任何决策判定。
+    #[serde(default)]
+    pub source: Option<ToolCallSource>,
 }
 
 impl AuditEntry {
@@ -140,6 +147,8 @@ impl AuditEntry {
             conversation_id: None,
             turn_id: None,
             iteration: None,
+            // 管理动作不是工具调用，没有调用来源可归。
+            source: None,
         }
     }
 
@@ -156,6 +165,7 @@ impl AuditEntry {
             conversation_id: None,
             turn_id: None,
             iteration: None,
+            source: Some(ToolCallSource::Toolbox),
         }
     }
 }

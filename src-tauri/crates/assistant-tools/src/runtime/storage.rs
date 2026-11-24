@@ -613,11 +613,24 @@ fn sweep_directory(dir: &Path, cutoff: SystemTime, report: &mut CleanupReport) {
 ///
 /// 入参与返回都按原始顺序，调用方无需重排。
 pub fn select_persist_targets(sizes: &[usize]) -> Vec<bool> {
+    select_persist_targets_with_limits(sizes, &[])
+}
+
+/// 同上，但允许逐条覆盖单结果阈值（`None` = 用全局 `PER_TOOL_LIMIT_CHARS`）。
+///
+/// `limits` 短于 `sizes` 时缺位按 `None` 处理：调用方少给一条不该 panic，
+/// 也不该跳过落盘判定。单轮预算不受覆盖影响，仍是硬上限。
+pub fn select_persist_targets_with_limits(sizes: &[usize], limits: &[Option<usize>]) -> Vec<bool> {
     let mut persist = vec![false; sizes.len()];
     let mut candidates: Vec<usize> = Vec::new();
 
     for (index, &size) in sizes.iter().enumerate() {
-        if size > PER_TOOL_LIMIT_CHARS {
+        let limit = limits
+            .get(index)
+            .copied()
+            .flatten()
+            .unwrap_or(PER_TOOL_LIMIT_CHARS);
+        if size > limit {
             persist[index] = true;
         } else {
             candidates.push(index);
@@ -751,6 +764,9 @@ struct FileSpillSink {
     stderr_truncated: bool,
     file_chars: usize,
     file_ends_with_newline: bool,
+    /// `finish` 是否已接手收尾。`false` 且 sink 被 drop = 调用方在收尾前放弃
+    /// （turn 取消丢弃 future），此时落盘文件是无人引用的半成品，必须删除。
+    finished: bool,
 }
 
 /// 单路输出编解码器：`Raw` 直写原始字节、字符由增量 UTF-8 解码器推进；
@@ -795,6 +811,7 @@ impl FileSpillSink {
             stderr_truncated: false,
             file_chars: 0,
             file_ends_with_newline: false,
+            finished: false,
         }
     }
 
@@ -1023,6 +1040,30 @@ impl FileSpillSink {
     }
 }
 
+/// 未收尾即被 drop 的兜底：删除落盘文件。
+///
+/// 触发路径是「调用方放弃」——turn 取消时 agent 侧丢弃 future，`finish` 永不执行，
+/// 而文件里只有半截输出且无任何引用指向它，留着就是无主残留。
+/// 正常路径 `finish` 已置 `finished`，此处直接返回，行为逐字节不变。
+impl Drop for FileSpillSink {
+    fn drop(&mut self) {
+        if self.finished {
+            return;
+        }
+        // 先关句柄再删：Windows 下打开的文件不能被删除。
+        self.file = None;
+        match std::fs::remove_file(&self.path) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => log::debug!(
+                "abandoned result spill cleanup skipped ({}): {}",
+                self.path.display(),
+                error
+            ),
+        }
+    }
+}
+
 impl ToolResultSink for FileSpillSink {
     fn write(&mut self, stream: OutputStream, chunk: &[u8]) -> Result<(), String> {
         match stream {
@@ -1032,6 +1073,9 @@ impl ToolResultSink for FileSpillSink {
     }
 
     fn finish(mut self: Box<Self>) -> Result<SpilledOutput, String> {
+        // 收尾职责已交给本函数：之后的 `Box` drop 不得再删文件（含早退分支，
+        // 与收尾前放弃的路径分开——那条由 `Drop` 负责）。
+        self.finished = true;
         // 流提前 EOF 时在这里做唯一一次判定（不足 4 KiB 的样本也用），
         // 保证「判定只做一次、结论只由 sink 产出」（I56 §8.3）。
         self.maybe_decide_encoding()?;

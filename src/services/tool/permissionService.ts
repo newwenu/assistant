@@ -1,14 +1,17 @@
 import { tauriInvoke as invoke } from "../system/tauriInvoke";
 import type {
+  ApprovalRuleDto,
   GrantScopeDto,
   PermissionAuditEntryDto,
   PermissionAuditPageDto,
   PermissionGrantDto,
+  ProjectPermissionStatusDto,
 } from "../../types/protocol.contract";
 
 export type PermissionGrant = PermissionGrantDto;
 export type PermissionAuditEntry = PermissionAuditEntryDto;
 export type PermissionAuditPage = PermissionAuditPageDto;
+export type ProjectPermissionStatus = ProjectPermissionStatusDto;
 
 /**
  * 「已授权操作」查询、撤销与作用域修改（I38d §3.3）。
@@ -24,6 +27,34 @@ export const permissionService = {
     invoke<boolean>("revoke_permission_grant", { grantKey }),
 
   clear: (): Promise<void> => invoke("clear_permission_grants"),
+
+  /**
+   * 项目规则状态（I70 §7.5）：路径、解析结果、原文与已解析规则。
+   *
+   * `workspaceRoot` 为空表示未绑定工作区，后端返回 `null`；
+   * 前端据此把「未绑定工作区」与「文件缺失」分成两种展示。
+   */
+  projectStatus: (
+    workspaceRoot: string | null,
+  ): Promise<ProjectPermissionStatus | null> =>
+    invoke<ProjectPermissionStatus | null>("project_permission_status_cmd", {
+      workspaceRoot: workspaceRoot || null,
+    }).then((r) => r ?? null),
+
+  /**
+   * 保存项目规则：整体写入 `.assistant/permissions.json`，文件不存在时新建。
+   *
+   * 规则与模式级用户规则同一份校验；非法时后端返回 `Err` 且不写盘。
+   * 返回写入后的最新状态（含重新解析出的规则），调用方据此对齐草稿。
+   */
+  saveProjectRules: (
+    workspaceRoot: string,
+    rules: ApprovalRuleDto[],
+  ): Promise<ProjectPermissionStatus> =>
+    invoke<ProjectPermissionStatus>("project_rule_save_cmd", {
+      workspaceRoot,
+      rules,
+    }),
 
   /**
    * 修改授权作用域（会话级 ⇄ 全局）。

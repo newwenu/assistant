@@ -1,5 +1,7 @@
 import type {
   ApprovalLevelDto,
+  ApprovalRuleDto,
+  ApprovalRuleEffectDto,
   ConversationToolConfigDto,
   ToolDescriptorDto,
   ToolTierDto,
@@ -15,9 +17,10 @@ export const TIER_RANK: Record<ToolTierDto, number> = {
   external: 2,
 };
 
-/** 审批级别的完整取值集合（顺序即 UI 展示顺序）。 */
+/** 审批级别的完整取值集合（顺序即 UI 展示顺序，按由宽到严排列）。 */
 export const APPROVAL_LEVELS: ApprovalLevelDto[] = [
   "none",
+  "workspace_write",
   "dangerous_only",
   "all_os_tools",
 ];
@@ -32,6 +35,7 @@ export const DEFAULT_TOOL_CONFIG: ConversationToolConfigDto = {
   approvalLevel: "none",
   enabledTools: [],
   disabledTools: [],
+  approvalRules: [],
 };
 
 /**
@@ -49,6 +53,7 @@ export function resolveEffectiveToolConfig(
     approvalLevel: source.approvalLevel,
     enabledTools: [...source.enabledTools],
     disabledTools: [...source.disabledTools],
+    approvalRules: [...source.approvalRules],
   };
 }
 
@@ -60,6 +65,8 @@ export interface ToolConfigDiff {
   tierChanged: ToolTierDto | null;
   /** 变更后的审批级别；未变更时为 `null`。 */
   levelChanged: ApprovalLevelDto | null;
+  /** 审批规则是否变化（按三元组序列逐项相等比较，顺序即生效顺序）。 */
+  rulesChanged: boolean;
 }
 
 /** 比较两次有效配置；只报告事实，文案由调用方组装。 */
@@ -76,7 +83,32 @@ export function diffToolConfig(
       prev.maxToolTier === next.maxToolTier ? null : next.maxToolTier,
     levelChanged:
       prev.approvalLevel === next.approvalLevel ? null : next.approvalLevel,
+    rulesChanged: !areApprovalRulesEqual(
+      prev.approvalRules,
+      next.approvalRules,
+    ),
   };
+}
+
+/**
+ * 规则集合是否等价：条数、顺序、三元组逐项相等。
+ *
+ * 顺序即生效顺序（last-match-wins），因此不能用「集合相等」代替；
+ * 也不能只比条数——改一行 `effect` 同样改变行为。
+ */
+export function areApprovalRulesEqual(
+  prev: ApprovalRuleDto[],
+  next: ApprovalRuleDto[],
+): boolean {
+  if (prev.length !== next.length) return false;
+  return prev.every((rule, index) => {
+    const other = next[index];
+    return (
+      rule.action === other.action &&
+      rule.resource === other.resource &&
+      rule.effect === other.effect
+    );
+  });
 }
 
 /** 差异是否为空（无任何可用性变化）。 */
@@ -85,7 +117,8 @@ export function isEmptyToolConfigDiff(diff: ToolConfigDiff): boolean {
     diff.addedTools.length === 0 &&
     diff.removedTools.length === 0 &&
     diff.tierChanged === null &&
-    diff.levelChanged === null
+    diff.levelChanged === null &&
+    !diff.rulesChanged
   );
 }
 
@@ -246,4 +279,165 @@ export function setTierSelection(
     (id) => !tools.some((tool) => tool.id === id && tool.tier === tier),
   );
   return { ...config, enabledTools: [...others, ...ids] };
+}
+
+/** 规则条数上限，与 Rust `APPROVAL_RULES_MAX` 同值（I70 §6.1 E1）。 */
+export const APPROVAL_RULES_MAX = 64;
+
+/** `action` 长度上限（E2）。 */
+export const APPROVAL_RULE_ACTION_MAX = 32;
+
+/** `resource` 长度上限（E3）。 */
+export const APPROVAL_RULE_RESOURCE_MAX = 256;
+
+/**
+ * 动作词汇的生产集（I70 §3.4）：`action` 本身是开放字符串，
+ * 未知动作不匹配任何意图（等于无效果，天然 fail-safe），因此下拉只做提示。
+ *
+ * `delete` 与 `purge` 是两个动作：`delete` 规则不覆盖永久删除。
+ */
+export const APPROVAL_ACTION_OPTIONS: string[] = [
+  "read",
+  "edit",
+  "delete",
+  "purge",
+  "execute",
+  "mcp",
+  "readToolOutput",
+];
+
+/**
+ * 快捷规则（I70 §3.3）：一键追加一条标准用户规则，**不维护开关状态**。
+ *
+ * `mcp` 与 `readToolOutput` 不提供 `allow`——放宽底线会被 §6 E4 拒绝，
+ * 这里直接不给出该选项，让底线在 UI 上可见。
+ */
+export interface ApprovalRuleShortcut {
+  key: "execute" | "edit" | "read" | "mcp" | "readOutput";
+  action: string;
+  effects: ApprovalRuleEffectDto[];
+}
+
+export const APPROVAL_RULE_SHORTCUTS: ApprovalRuleShortcut[] = [
+  { key: "execute", action: "execute", effects: ["allow", "ask", "deny"] },
+  { key: "edit", action: "edit", effects: ["allow", "ask", "deny"] },
+  { key: "read", action: "read", effects: ["ask", "deny"] },
+  { key: "mcp", action: "mcp", effects: ["ask", "deny"] },
+  { key: "readOutput", action: "readToolOutput", effects: ["ask", "deny"] },
+];
+
+/** 校验失败原因（与 Rust `RuleValidationError` 一一对应，I70 §6.1 E1–E5）。 */
+export type ApprovalRuleErrorCode =
+  | "tooMany"
+  | "actionLength"
+  | "resourceLength"
+  | "allowBottomLine"
+  | "reservedTier";
+
+export interface ApprovalRuleError {
+  code: ApprovalRuleErrorCode;
+  /** 1-based 行号；条数超限这类整体错误为 `null`。 */
+  index: number | null;
+  /** 触发错误的 `action`（E4 用于错误文案）。 */
+  action: string;
+  /** 实际长度或上限，由文案按 `code` 选用。 */
+  len: number;
+  limit: number;
+}
+
+/**
+ * 动作模式的 glob 匹配：`*` 不跨 `/`，`**` 可跨，与 Rust `pattern_matches` 同语义。
+ *
+ * 比较一律按大小写不敏感：后端只在 Windows 上不敏感，这里更保守——
+ * 只会多拒绝，不会放过底线动作。
+ */
+export function approvalActionMatches(pattern: string, value: string): boolean {
+  if (pattern === "*" || pattern === "**") return true;
+  return globMatches(
+    Array.from(pattern.replace(/\\/g, "/")),
+    Array.from(value.replace(/\\/g, "/")),
+  );
+}
+
+function globMatches(pattern: string[], value: string[]): boolean {
+  if (pattern.length === 0) return value.length === 0;
+  if (pattern[0] === "*") {
+    const double = pattern.length > 1 && pattern[1] === "*";
+    const rest = pattern.slice(double ? 2 : 1);
+    if (rest.length === 0) return double || !value.includes("/");
+    for (let index = 0; index <= value.length; index += 1) {
+      if (globMatches(rest, value.slice(index))) return true;
+      if (index < value.length && !double && value[index] === "/") return false;
+    }
+    return false;
+  }
+  if (value.length === 0) return false;
+  if (pattern[0].toLowerCase() !== value[0].toLowerCase()) return false;
+  return globMatches(pattern.slice(1), value.slice(1));
+}
+
+/**
+ * 提交前预校验（I70 §6.1 E1–E5），与 Rust `validate_rules` 同规则。
+ *
+ * 后端仍会复校验并以其结果为准；这里只负责让错误在本地即时可见。
+ * E6（未知 `effect`）由封闭联合类型挡住，前端不提供第四种取值。
+ */
+export function validateApprovalRules(
+  rules: ApprovalRuleDto[],
+): ApprovalRuleError | null {
+  if (rules.length > APPROVAL_RULES_MAX) {
+    return {
+      code: "tooMany",
+      index: null,
+      action: "",
+      len: rules.length,
+      limit: APPROVAL_RULES_MAX,
+    };
+  }
+  for (const [offset, rule] of rules.entries()) {
+    const index = offset + 1;
+    const actionLength = Array.from(rule.action).length;
+    if (actionLength === 0 || actionLength > APPROVAL_RULE_ACTION_MAX) {
+      return {
+        code: "actionLength",
+        index,
+        action: rule.action,
+        len: actionLength,
+        limit: APPROVAL_RULE_ACTION_MAX,
+      };
+    }
+    const resourceLength = Array.from(rule.resource).length;
+    if (resourceLength === 0 || resourceLength > APPROVAL_RULE_RESOURCE_MAX) {
+      return {
+        code: "resourceLength",
+        index,
+        action: rule.action,
+        len: resourceLength,
+        limit: APPROVAL_RULE_RESOURCE_MAX,
+      };
+    }
+    if (rule.resource.startsWith("tier:")) {
+      return {
+        code: "reservedTier",
+        index,
+        action: rule.action,
+        len: resourceLength,
+        limit: APPROVAL_RULE_RESOURCE_MAX,
+      };
+    }
+    if (
+      rule.effect === "allow" &&
+      (approvalActionMatches(rule.action, "readToolOutput") ||
+        approvalActionMatches(rule.action, "mcp"))
+    ) {
+      return {
+        code: "allowBottomLine",
+        index,
+        action: rule.action,
+        len: actionLength,
+        limit: APPROVAL_RULE_ACTION_MAX,
+      };
+    }
+  }
+  return null;
 }

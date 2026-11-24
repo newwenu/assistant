@@ -14,7 +14,8 @@ use crate::registry::ToolRegistry;
 use crate::result::{ToolErrorKind, ToolResult};
 use crate::runtime::args;
 use crate::storage::{
-    persisted_reference, select_persist_targets, PersistToolResult, PersistedRef, ToolResultStorage,
+    persisted_reference, select_persist_targets_with_limits, PersistToolResult, PersistedRef,
+    ToolResultStorage,
 };
 
 /// 一次工具调用请求。内部类型，不承载 UI 状态，映射到 wire DTO 由适配层完成。
@@ -271,7 +272,16 @@ impl ToolPipeline {
                 }
             })
             .collect();
-        let targets = select_persist_targets(&sizes);
+        // 单结果阈值可被工具覆写（I71 §4.3 W3.3）：回查失败（工具已注销）按 `None` 处理。
+        let limits: Vec<Option<usize>> = outcomes
+            .iter()
+            .map(|outcome| {
+                self.registry
+                    .find_by_name(&outcome.tool_name)
+                    .and_then(|registered| registered.tool.inline_output_limit())
+            })
+            .collect();
+        let targets = select_persist_targets_with_limits(&sizes, &limits);
 
         for (index, (outcome, persist)) in outcomes.iter_mut().zip(targets).enumerate() {
             if persist {

@@ -310,13 +310,18 @@ fn prepare_scratch(scratch: &Path) -> Result<(), String> {
 }
 
 /// 删除调用级临时目录（尽力而为：子进程刚退出时句柄可能未释放，失败只记日志）。
+///
+/// `NotFound` 静默：`RunGuard` 在正常路径上也会调用一次，此时目录已被
+/// `finish_sink` 删掉，不算异常。
 pub fn cleanup_scratch(scratch: &Path) {
-    if let Err(error) = std::fs::remove_dir_all(scratch) {
-        log::debug!(
+    match std::fs::remove_dir_all(scratch) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => log::debug!(
             "shell scratch cleanup skipped ({}): {}",
             scratch.display(),
             error
-        );
+        ),
     }
 }
 

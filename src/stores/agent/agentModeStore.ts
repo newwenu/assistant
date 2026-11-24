@@ -1,6 +1,8 @@
 import { create } from "zustand";
 import { agentModeService } from "../../services/agentModeService";
 import { createLogger } from "@/services/system/logger";
+import { emitSettingEventToPeers } from "@/services/system/crossWindowEvent";
+import { SettingAction, SettingEvent } from "@/types/events";
 import type {
   AgentModeDto,
   AgentModeInputDto,
@@ -47,6 +49,18 @@ interface AgentModeState {
 
 const log = createLogger("agentModeStore");
 
+/**
+ * 模式库变更的跨窗口广播：模式是 DB 表而非配置组，`dispatchConfPatch` 的
+ * `ConfPatched` 事件覆盖不到，因此必须单独广播，否则另一个窗口（orb）
+ * 会一直持着启动时加载的 `modes` 快照（`loadModes` 只在 `modes.length === 0` 时触发）。
+ */
+function notifyModesChanged(id?: string) {
+  void emitSettingEventToPeers(SettingEvent.AgentModesChanged, {
+    action: SettingAction.AgentModesChanged,
+    id,
+  }).catch((e: unknown) => log.debug("emit agent modes changed failed", e));
+}
+
 export const useAgentModeStore = create<AgentModeState>((set, get) => ({
   modes: [],
   selectedModeId: "builtin-default",
@@ -77,6 +91,7 @@ export const useAgentModeStore = create<AgentModeState>((set, get) => ({
   saveMode: async (mode: Partial<AgentMode> & { id?: string }) => {
     await agentModeService.saveMode(toModeInput(mode));
     await get().loadModes();
+    notifyModesChanged(mode.id || undefined);
   },
 
   deleteMode: async (id: string) => {
@@ -86,10 +101,12 @@ export const useAgentModeStore = create<AgentModeState>((set, get) => ({
       set({ selectedModeId: "builtin-default" });
     }
     await get().loadModes();
+    notifyModesChanged(id);
   },
 
   resetBuiltinMode: async (id: string) => {
     await agentModeService.resetBuiltinMode(id);
     await get().loadModes();
+    notifyModesChanged(id);
   },
 }));

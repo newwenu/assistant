@@ -1,0 +1,36 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px 8px;
+  border: 1px solid var(--color-border-secondary);
+  border-radius: 8px;
+  background: var(--color-bg-elevated);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.title {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 600;
+  cursor: help;
+}
+
+.titleIcon {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+}
+
+/* 「去设置编辑」靠右：面板里只读，写入入口只有一个方向。 */
+.edit {
+  margin-left: auto;
+  padding: 0;
+  height: auto;
+  font-size: 11px;
+}

@@ -12,11 +12,14 @@ pub enum ToolTierDto {
     External,
 }
 
-/// 取值与 I38d §4.2 的 `'none' | 'dangerous_only' | 'all_os_tools'` 对齐；级别 → Policy 规则的映射不在本 DTO 承担。
+/// 取值与 I70 §3.1 的 `'none' | 'workspace_write' | 'dangerous_only' | 'all_os_tools'` 对齐；
+/// 级别 → Policy 规则的映射不在本 DTO 承担。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 pub enum ApprovalLevelDto {
     None,
+    /// 读取与工作区写入自动执行；执行 / 删除 / MCP / 工具输出回读仍需确认（I70 §3.1）。
+    WorkspaceWrite,
     DangerousOnly,
     AllOsTools,
 }
@@ -26,10 +29,32 @@ impl From<&str> for ApprovalLevelDto {
     fn from(value: &str) -> Self {
         match value {
             "none" => Self::None,
+            "workspace_write" => Self::WorkspaceWrite,
             "dangerous_only" => Self::DangerousOnly,
             _ => Self::AllOsTools,
         }
     }
+}
+
+/// 用户规则效果（I70 §3.2）：`allow` 自动执行、`ask` 每次询问、`deny` 直接拒绝。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub enum ApprovalRuleEffectDto {
+    Allow,
+    Ask,
+    Deny,
+}
+
+/// 单条用户规则（I70 §3.2）：`action` 与 `resource` 用与内部规则同一套 glob 语义。
+///
+/// 输入 DTO：随 `ConversationToolConfigDto` 落库并回传，故 `deny_unknown_fields`
+/// 只拦真正的多余键；`effect` 为封闭集合，未知值反序列化即失败（E6）。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ApprovalRuleDto {
+    pub action: String,
+    pub resource: String,
+    pub effect: ApprovalRuleEffectDto,
 }
 
 /// 空白名单即 deny-by-default：模型看不到任何工具。
@@ -40,6 +65,9 @@ pub struct ConversationToolConfigDto {
     pub approval_level: ApprovalLevelDto,
     pub enabled_tools: Vec<String>,
     pub disabled_tools: Vec<String>,
+    /// 用户规则层（I70 §3.2）：空列表 = 不额外干预；旧 JSON 无此键时按 `[]` 解析。
+    #[serde(default)]
+    pub approval_rules: Vec<ApprovalRuleDto>,
 }
 
 impl Default for ConversationToolConfigDto {
@@ -50,6 +78,7 @@ impl Default for ConversationToolConfigDto {
             approval_level: ApprovalLevelDto::None,
             enabled_tools: Vec::new(),
             disabled_tools: Vec::new(),
+            approval_rules: Vec::new(),
         }
     }
 }
@@ -195,15 +224,49 @@ pub struct ApprovalContextDto {
     pub extensions: Vec<ApprovalExtensionDto>,
 }
 
+/// 项目规则视图（I70 §7.5）：报告文件路径、解析结果与原文，并回传解析出的规则，
+/// 供设置页用与模式级相同的 `ApprovalRulesEditor` 直接编辑后整体写回。
+///
+/// 三态由两个布尔合成：`exists = false` → 缺失；`exists && valid` → 存在且合法；
+/// `exists && !valid` → 存在但非法（此时运行时整层退化为全拒绝，见 INV-4）。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProjectPermissionStatusDto {
+    /// `permissions.json` 的绝对路径；仅展示，前端不据此读写。
+    pub path: String,
+    pub exists: bool,
+    pub valid: bool,
+    /// 文件原文；缺失或不可读为 `null`。非法时用它展示用户自己写下的内容以便定位。
+    pub content: Option<String>,
+    /// 解析成功的规则；缺失或非法时为空列表（前端从空规则开始编辑并覆盖保存）。
+    pub rules: Vec<ApprovalRuleDto>,
+}
+
 /// 「为什么问我」。封闭枚举：前端不得窄化，未知分支须能通用降级（`advisor` P6 恒不出现）。
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum ApprovalReasonDto {
-    DefaultPolicy { rule: String },
-    ApprovalLevel { level: ApprovalLevelDto },
-    ProjectRule { action: String, resource: String },
-    TierCeiling { tier: ToolTierDto },
-    Advisor { rationale: String },
+    DefaultPolicy {
+        rule: String,
+    },
+    ApprovalLevel {
+        level: ApprovalLevelDto,
+    },
+    ProjectRule {
+        action: String,
+        resource: String,
+    },
+    /// 用户规则命中（I70 §7.1）：与 `ProjectRule` 分开，用户规则不得伪装成项目规则。
+    UserRule {
+        action: String,
+        resource: String,
+    },
+    TierCeiling {
+        tier: ToolTierDto,
+    },
+    Advisor {
+        rationale: String,
+    },
 }
 
 /// 整体为 `null` 表示「未知」，与「零」可区分。
@@ -293,6 +356,8 @@ pub struct PermissionGrantDto {
 /// 只承载决策事实：四个串字段是后端落库的原始串，前端按封闭词表映射、未命中原样展示
 /// （I50 §6）。`id` 与自增序不外发（追溯面板按 `atMillis` 倒序）。`conversationId` /
 /// `turnId` / `iteration` 为归属坐标，`null` = 不属于任何会话（ToolBox 直调、授权管理）。
+/// `source` 为调用来源（`agent` / `toolbox` / `orchestration`），`null` = 非工具调用写入的行
+/// （授权管理动作、工作区切换）；来源只用于归因，不参与任何决策判定。
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct PermissionAuditEntryDto {
@@ -304,6 +369,7 @@ pub struct PermissionAuditEntryDto {
     pub conversation_id: Option<String>,
     pub turn_id: Option<String>,
     pub iteration: Option<u32>,
+    pub source: Option<String>,
 }
 
 /// 权限审计的一页（`list_permission_audit` 的返回体）。

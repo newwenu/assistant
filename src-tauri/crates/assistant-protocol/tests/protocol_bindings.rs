@@ -8,13 +8,13 @@ use assistant_protocol::{
     AgentQuestionAnswerItemDto, AgentQuestionDto, AgentQuestionOptionDto, AgentQuestionRequestDto,
     AgentToolCallDto, AgentToolCallPayloadDto, AppConfDto, ApprovalContextDto,
     ApprovalExtensionDto, ApprovalExtensionSeverityDto, ApprovalLevelDto, ApprovalPreviewDto,
-    ApprovalReasonDto, AssetDirsDto, AttachmentDeleteResultDto, AttachmentImportDto,
-    AttachmentLimitsDto, AttachmentSummary, BrakeDetailDto, BrakeVerdictDto, BranchDetailDto,
-    BudgetRemainingDto, BudgetSplitDetailDto, CapabilitySourceDto, CapabilitySupportDto,
-    ChatDeltaPayloadDto, ChatMessagesChangedPayloadDto, ChatRegeneratePayloadDto,
-    ChatStreamStartPayloadDto, ChatUserMessageConfirmedPayloadDto, ClockModeDto, ClockSnapshotDto,
-    ClockStatusDto, CommandErrorCodeDto, CommandErrorDto, ContentBlockDto,
-    ConversationAttachmentSummary, ConversationDetailDto, ConversationDto,
+    ApprovalReasonDto, ApprovalRuleDto, ApprovalRuleEffectDto, AssetDirsDto,
+    AttachmentDeleteResultDto, AttachmentImportDto, AttachmentLimitsDto, AttachmentSummary,
+    BrakeDetailDto, BrakeVerdictDto, BranchDetailDto, BudgetRemainingDto, BudgetSplitDetailDto,
+    CapabilitySourceDto, CapabilitySupportDto, ChatDeltaPayloadDto, ChatMessagesChangedPayloadDto,
+    ChatRegeneratePayloadDto, ChatStreamStartPayloadDto, ChatUserMessageConfirmedPayloadDto,
+    ClockModeDto, ClockSnapshotDto, ClockStatusDto, CommandErrorCodeDto, CommandErrorDto,
+    ContentBlockDto, ConversationAttachmentSummary, ConversationDetailDto, ConversationDto,
     ConversationListChangeKindDto, ConversationListChangedPayloadDto, ConversationPatchDto,
     ConversationQueryModeDto, ConversationQueryOptsDto, ConversationTerminatedPayloadDto,
     ConversationToolConfigDto, ConversationUnlockedPayloadDto, DocAnchorDto, DocLineRangeDto,
@@ -26,10 +26,10 @@ use assistant_protocol::{
     ModelEffortSupportDto, MousePositionDto, NodeStateDto, OrbConfDto, OsToolExecRequestDto,
     OsToolResultDto, PermissionAuditEntryDto, PermissionAuditPageDto, PermissionGrantDto,
     PermissionIntentDto, PersistDetailDto, PersistedResultDto, PipelineDetailDto, PipelineStageDto,
-    ProviderErrorPayloadDto, ProviderInputDto, ProviderListDto, ReasoningLevelsDto,
-    ReclaimPolicyDto, ReclaimViewDto, ResolvedThemeDto, RetryNotificationDto, RiveManifestDto,
-    RiveManifestPropertiesDto, ScreenRectDto, ScreenSizeDto, ScreenshotCropArgsDto,
-    ScreenshotCropResultDto, ScreenshotSessionDto, SendChatMessageArgsDto,
+    ProjectPermissionStatusDto, ProviderErrorPayloadDto, ProviderInputDto, ProviderListDto,
+    ReasoningLevelsDto, ReclaimPolicyDto, ReclaimViewDto, ResolvedThemeDto, RetryNotificationDto,
+    RiveManifestDto, RiveManifestPropertiesDto, ScreenRectDto, ScreenSizeDto,
+    ScreenshotCropArgsDto, ScreenshotCropResultDto, ScreenshotSessionDto, SendChatMessageArgsDto,
     SessionStateChangedPayloadDto, SessionStateDto, SetGrantScopeArgsDto,
     SettingProviderChangedActionDto, SettingProviderChangedPayloadDto, ShortcutWarningPayloadDto,
     SiblingInfoDto, StorageAvailabilityDto, StorageBreakdownDto, StorageByteBasisDto,
@@ -142,6 +142,8 @@ fn export_protocol_contract() {
         ApprovalLevelDto::decl(&cfg),
         ApprovalPreviewDto::decl(&cfg),
         ApprovalReasonDto::decl(&cfg),
+        ApprovalRuleDto::decl(&cfg),
+        ApprovalRuleEffectDto::decl(&cfg),
         AssetDirsDto::decl(&cfg),
         AttachmentDeleteResultDto::decl(&cfg),
         AttachmentImportDto::decl(&cfg),
@@ -214,6 +216,7 @@ fn export_protocol_contract() {
         PersistedResultDto::decl(&cfg),
         PipelineDetailDto::decl(&cfg),
         PipelineStageDto::decl(&cfg),
+        ProjectPermissionStatusDto::decl(&cfg),
         ProviderErrorPayloadDto::decl(&cfg),
         ProviderInputDto::decl(&cfg),
         ProviderListDto::decl(&cfg),
@@ -317,4 +320,52 @@ fn export_protocol_contract() {
         "declarations 与 crate 源码根的 TS 派生类型不一致：漏注册 {missing:?}，多注册 {stale:?}"
     );
     fs::write(&out_path, output).expect("write protocol contract");
+}
+
+#[test]
+fn legacy_tool_config_without_approval_rules_still_decodes_and_reemits_the_key() {
+    let legacy = r#"{"maxToolTier":"external","approvalLevel":"dangerous_only","enabledTools":[],"disabledTools":[]}"#;
+    let config: ConversationToolConfigDto =
+        serde_json::from_str(legacy).expect("legacy json without approvalRules decodes");
+    assert!(
+        config.approval_rules.is_empty(),
+        "A9: missing key defaults to []"
+    );
+
+    let encoded = serde_json::to_value(&config).expect("tool config is serializable");
+    assert_eq!(
+        encoded.get("approvalRules"),
+        Some(&serde_json::json!([])),
+        "A9: output always contains approvalRules"
+    );
+}
+
+#[test]
+fn unknown_rule_effect_fails_decoding_instead_of_defaulting() {
+    let raw = r#"{"maxToolTier":"external","approvalLevel":"none","enabledTools":[],"disabledTools":[],"approvalRules":[{"action":"edit","resource":"**","effect":"always"}]}"#;
+    assert!(
+        serde_json::from_str::<ConversationToolConfigDto>(raw).is_err(),
+        "E6: unknown effect must fail closed"
+    );
+}
+
+#[test]
+fn approval_rules_round_trip_in_camel_case() {
+    let config = ConversationToolConfigDto {
+        max_tool_tier: ToolTierDto::External,
+        approval_level: ApprovalLevelDto::WorkspaceWrite,
+        enabled_tools: Vec::new(),
+        disabled_tools: Vec::new(),
+        approval_rules: vec![ApprovalRuleDto {
+            action: "execute".to_string(),
+            resource: "**".to_string(),
+            effect: ApprovalRuleEffectDto::Ask,
+        }],
+    };
+
+    let encoded = serde_json::to_string(&config).expect("tool config is serializable");
+    assert!(encoded.contains("\"approvalRules\""));
+    assert!(encoded.contains("\"effect\":\"ask\""));
+    let decoded: ConversationToolConfigDto = serde_json::from_str(&encoded).expect("round trip");
+    assert_eq!(decoded, config);
 }

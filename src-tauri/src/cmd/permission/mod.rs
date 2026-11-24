@@ -2,9 +2,11 @@ use assistant_tools::ToolTier;
 
 mod audit;
 mod grants;
+mod project_rules;
 
 pub use audit::*;
 pub use grants::*;
+pub use project_rules::*;
 
 /// 沙箱档位展示标签：列表作用域摘要与审计摘要共用同一词表。
 fn tier_label(tier: ToolTier) -> &'static str {

@@ -23,12 +23,14 @@ pub const APPROVAL_PREVIEW_BUDGET: Duration = Duration::from_secs(2);
 ///
 /// 封闭枚举：前端不得窄化，未知分支须能通用降级。P6 产出
 /// `DefaultPolicy` / `ApprovalLevel` / `ProjectRule`（层级越界是硬 `Deny`，
-/// 不进「为什么问我」，故 `TierCeiling` 暂不产出）；`Advisor` 归 P10。
+/// 不进「为什么问我」，故 `TierCeiling` 暂不产出）；`UserRule` 归用户规则层（I70 §7.1），
+/// `Advisor` 归 P10。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ApprovalReason {
     DefaultPolicy { rule: String },
     ApprovalLevel { level: String },
     ProjectRule { action: String, resource: String },
+    UserRule { action: String, resource: String },
     TierCeiling { tier: ToolTier },
     Advisor { rationale: String },
 }
@@ -346,6 +348,10 @@ fn reason_from_rule(rule: &PermissionRule) -> ApprovalReason {
         RuleOrigin::ApprovalLevel { level } => ApprovalReason::ApprovalLevel {
             level: level.as_str().to_string(),
         },
+        RuleOrigin::UserRule => ApprovalReason::UserRule {
+            action: rule.action.clone(),
+            resource: rule.resource.clone(),
+        },
         RuleOrigin::Config => {
             if rule.action == "*" && rule.resource == "*" {
                 ApprovalReason::DefaultPolicy {
@@ -358,5 +364,75 @@ fn reason_from_rule(rule: &PermissionRule) -> ApprovalReason {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::policy::{
+        policy_from_agent_mode_with_rules, ApprovalLevel, PermissionConstraintLayer,
+    };
+
+    fn pending(action: &str, resource: &str) -> PendingApproval {
+        PendingApproval {
+            key: None,
+            action: action.to_string(),
+            resource: resource.to_string(),
+        }
+    }
+
+    fn user_rule(action: &str, resource: &str) -> PermissionRule {
+        PermissionRule::new(action, resource, PermissionEffect::Ask)
+            .with_origin(RuleOrigin::UserRule)
+    }
+
+    #[test]
+    fn a_user_rule_ask_is_explained_as_user_rule() {
+        let policy = policy_from_agent_mode_with_rules(
+            ToolTier::External,
+            ApprovalLevel::DangerousOnly,
+            &[user_rule("execute", "**")],
+        );
+
+        let reasons = ask_reasons(&policy, &[pending("execute", "ls -la")]);
+        assert_eq!(
+            reasons,
+            vec![ApprovalReason::UserRule {
+                action: "execute".to_string(),
+                resource: "**".to_string(),
+            }]
+        );
+    }
+
+    #[test]
+    fn user_and_project_reasons_coexist_without_merging() {
+        let policy =
+            policy_from_agent_mode_with_rules(
+                ToolTier::External,
+                ApprovalLevel::DangerousOnly,
+                &[user_rule("execute", "**")],
+            )
+            .with_constraint_layer(PermissionConstraintLayer::new(vec![
+                PermissionRule::new("execute", "*", PermissionEffect::Ask),
+            ]));
+
+        // 主规则集先于约束层：用户规则不得伪装成项目规则，两条原因并存。
+        let reasons = ask_reasons(&policy, &[pending("execute", "ls -la")]);
+        assert_eq!(reasons.len(), 2, "主规则集与约束层各保留一条");
+        assert_eq!(
+            reasons[0],
+            ApprovalReason::UserRule {
+                action: "execute".to_string(),
+                resource: "**".to_string(),
+            }
+        );
+        assert_eq!(
+            reasons[1],
+            ApprovalReason::ProjectRule {
+                action: "execute".to_string(),
+                resource: "*".to_string(),
+            }
+        );
     }
 }

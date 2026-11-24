@@ -256,6 +256,7 @@ describe("turnOrchestrator", () => {
         approvalLevel: "dangerous_only" as const,
         enabledTools: ["read", "write"],
         disabledTools: [],
+        approvalRules: [],
       };
       vi.mocked(mockDeps.env.getConversationRoute).mockReturnValue({
         link: "agent",

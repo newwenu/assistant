@@ -7,6 +7,7 @@ import {
 import { useProviderStore } from "../stores/providerStore";
 import { useThemeStore } from "../stores/system/themeStore";
 import { useSettingsStore } from "../stores/settingsStore";
+import { useAgentModeStore } from "../stores/agent/agentModeStore";
 import { createLogger } from "./system/logger";
 import { isConfGroupAvailable } from "@/settings/core/runtime/confRuntime";
 
@@ -60,6 +61,17 @@ export function subscribeSettingEvents(): () => void {
       if (!isConfGroupAvailable(group)) return;
       void useSettingsStore.getState().loadConf(group);
     }),
+  );
+
+  track(
+    listen<SettingEventPayload>(
+      SettingEvent.AgentModesChanged,
+      ({ payload }) => {
+        if (disposed) return;
+        if (payload.action !== SettingAction.AgentModesChanged) return;
+        void useAgentModeStore.getState().loadModes();
+      },
+    ),
   );
 
   return () => {

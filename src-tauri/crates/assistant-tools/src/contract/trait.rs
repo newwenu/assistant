@@ -210,6 +210,14 @@ pub trait Tool: Send + Sync {
         self.is_readonly()
     }
 
+    /// 本工具单条结果的「内联上限」（字符数）；`None` = 用全局默认（I71 §4.3 W3.1）。
+    ///
+    /// 只抬**单结果**阈值，不改单轮预算：超阈值仍走落盘 + 预览，不新增截断语义。
+    /// 覆写的理由是「我的结果天然该比 50k 大 / 小」，不是「我想让模型看到更多」。
+    fn inline_output_limit(&self) -> Option<usize> {
+        None
+    }
+
     /// 是否自管执行超时（I38c §11 OQ5）。
     ///
     /// 返回 `true` 时 `exec::invoke` **不套**统一 deadline（`ask_user` 要等用户作答）；

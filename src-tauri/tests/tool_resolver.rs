@@ -273,6 +273,7 @@ fn the_tool_config_dto_round_trips_through_json() {
         approval_level: ApprovalLevelDto::AllOsTools,
         enabled_tools: vec!["read".to_string()],
         disabled_tools: vec!["delete".to_string()],
+        approval_rules: Vec::new(),
     };
     let json = serde_json::to_value(&config).unwrap();
     assert_eq!(json["maxToolTier"], serde_json::json!("os"));

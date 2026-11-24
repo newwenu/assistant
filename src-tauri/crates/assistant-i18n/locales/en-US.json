@@ -53,7 +53,8 @@
     "workspace_invalid": "Invalid workspace path: an existing directory is required (relative paths are not supported)",
     "workspace_empty": "Workspace path cannot be empty; use the clear action to unbind",
     "workspace_patch_conflict": "Setting and clearing the workspace binding at the same time is not allowed",
-    "path_not_utf8": "This path contains characters that cannot be represented (non-UTF-8); choose another directory"
+    "path_not_utf8": "This path contains characters that cannot be represented (non-UTF-8); choose another directory",
+    "approval_rules_invalid": "Invalid approval rule: %{reason}"
   },
   "agent": {
     "no_pending_interaction": "This submission is no longer valid: it may have timed out, been decided already, or belong to another conversation"

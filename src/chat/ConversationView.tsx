@@ -10,6 +10,7 @@ import { Modal } from "antd";
 import { useTranslation } from "react-i18next";
 import { chatService } from "../services/chat/chatService";
 import { openFromPanel } from "@/orb/panelActions";
+import { AGENT_SETTINGS_PAGE_ID } from "@/settings/core/registry/builtinRegistry";
 import { resolveOverlayContainer } from "@/orb/orbOverlays";
 import { useChatStore } from "../stores/chat/chatStore";
 import { useChatStreamStore } from "../stores/chat/chatStreamStore";
@@ -164,6 +165,22 @@ export const ConversationView: React.FC<ConversationViewProps> = ({
     [currentMode],
   );
 
+  /**
+   * 「去设置编辑」：规则只在设置页可写（I70 §7.3）。
+   *
+   * 必须走 `openFromPanel`：本视图同时挂在主窗口与 orb 窗口，
+   * 直接用 `navigate` 只作用于当前窗口自己的 router，orb 里点了没有设置路由。
+   * 该入口统一开主窗并带上模式 id 与 `focus=rules`，让设置页直接打开对应模式的抽屉。
+   */
+  const handleEditRules = useCallback(() => {
+    const query = new URLSearchParams({ focus: "rules" });
+    if (conversation?.modeId) query.set("mode", conversation.modeId);
+    void openFromPanel({
+      kind: "main",
+      route: `/settings/${AGENT_SETTINGS_PAGE_ID}?${query.toString()}`,
+    });
+  }, [conversation?.modeId]);
+
   /** 工具区域（面板 / 概览条 / 变更提示）状态的唯一持有者（I48 §5）。 */
   const toolRegion = useToolRegionState({
     enabled: route.link === "agent",
@@ -171,6 +188,7 @@ export const ConversationView: React.FC<ConversationViewProps> = ({
     config: effectiveToolConfig,
     onChange: handleToolConfigChange,
     onSetDefault: handleSetModeDefault,
+    onEditRules: handleEditRules,
   });
 
   const handleSend = useCallback(
@@ -214,6 +232,14 @@ export const ConversationView: React.FC<ConversationViewProps> = ({
     [provider.providers, chat, setSelectedProviderModel, clearContextWindow],
   );
 
+  /**
+   * 新建会话继承当前会话的模式与工作区绑定。
+   *
+   * 不继承会让新会话落到 `builtin-default`（chat 链路）且 `workspace_root` 为空，
+   * 后端 `resolve_workspace` 因此取不到根目录，工作区 `.assistant/permissions.json`
+   * 整层项目规则静默失效。orb 是「随手开新对话」的主入口，不继承就等于在 orb 里
+   * 永远用不上项目规则。
+   */
   const handleNewConversation = useCallback(() => {
     if (provider.providers.length === 0) {
       modal.warning({
@@ -226,8 +252,22 @@ export const ConversationView: React.FC<ConversationViewProps> = ({
     const pid = currentProviderId || provider.providers[0].id;
     const p = provider.providers.find((pr) => pr.id === pid);
     const modelId = p ? resolveDefaultModel(p) : "";
-    void chat.createConversation(pid, modelId, "builtin-default");
-  }, [provider.providers, currentProviderId, chat, modal, t]);
+    const inheritedModeId = conversation?.modeId ?? "builtin-default";
+    const inheritedRoot = chat.workspaceRoot;
+    void chat
+      .createConversation(pid, modelId, inheritedModeId)
+      .then(async (id) => {
+        if (!id || !inheritedRoot) return;
+        await chat.setConversationWorkspace(id, inheritedRoot);
+      });
+  }, [
+    provider.providers,
+    currentProviderId,
+    chat,
+    modal,
+    t,
+    conversation?.modeId,
+  ]);
 
   useEffect(() => {
     const handler = () => handleNewConversation();
@@ -417,7 +457,9 @@ export const ConversationView: React.FC<ConversationViewProps> = ({
       title: t("chat.compact.generate_summary"),
       content: t("chat.compact.generate_confirm"),
       getContainer: resolveOverlayContainer,
-      onOk: () => chat.manualCompact(),
+      onOk: () => {
+        void chat.manualCompact();
+      },
     });
   }, [modal, t, chat]);
 

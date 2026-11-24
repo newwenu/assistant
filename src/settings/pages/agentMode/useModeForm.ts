@@ -7,7 +7,12 @@ import {
   type AgentMode,
 } from "@/stores/agent/agentModeStore";
 import type { ConversationToolConfig } from "@/chat/core/chatTypes";
-import { DEFAULT_TOOL_CONFIG, stripCompanionIds } from "@/chat/core/toolConfig";
+import {
+  DEFAULT_TOOL_CONFIG,
+  stripCompanionIds,
+  validateApprovalRules,
+} from "@/chat/core/toolConfig";
+import { approvalRuleErrorText } from "@/chat/tool/ApprovalRulesEditor";
 import { useSettingMessage } from "../../shared/useSettingMessage";
 import { loadToolDescriptors } from "../../shared/sections/ToolAssemblySection";
 import type { FieldSchema } from "../../core/types/fieldSchema";
@@ -95,6 +100,16 @@ export function useModeForm() {
       kind === "agent"
         ? stripCompanionIds(toolConfigDraft, await loadToolDescriptors())
         : (editingMode?.toolConfig ?? DEFAULT_TOOL_CONFIG);
+    if (kind === "agent") {
+      const ruleError = validateApprovalRules(toolConfig.approvalRules);
+      if (ruleError) {
+        msg.error(
+          "settings.agent_mode.save_failed",
+          approvalRuleErrorText(ruleError),
+        );
+        return;
+      }
+    }
     try {
       if (editingMode) {
         await store.saveMode({

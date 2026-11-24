@@ -102,6 +102,11 @@ export const ApprovalCard: React.FC<ApprovalCardProps> = ({
           action: reason.action,
           resource: reason.resource,
         });
+      case "userRule":
+        return t("chat.tool.approval.reason.user_rule", {
+          action: reason.action,
+          resource: reason.resource,
+        });
       case "tierCeiling":
         return t("chat.tool.approval.reason.tier_ceiling", {
           tier: t(`chat.tool.approval.tier.${reason.tier}`),

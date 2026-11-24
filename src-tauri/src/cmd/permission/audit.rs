@@ -77,8 +77,8 @@ pub(super) fn write_grant_audit(conn: &Connection, action: &str, resource: &str)
     let entry = AuditEntry::allowed(GRANT_AUDIT_TOOL, action, resource);
     if let Err(err) = conn.execute(
         "INSERT INTO permission_audit
-           (tool, action, resource, outcome, at_millis, conversation_id, turn_id, iteration)
-         VALUES (?1, ?2, ?3, ?4, ?5, NULL, NULL, NULL)",
+           (tool, action, resource, outcome, at_millis, conversation_id, turn_id, iteration, source)
+         VALUES (?1, ?2, ?3, ?4, ?5, NULL, NULL, NULL, NULL)",
         params![
             entry.tool,
             entry.action,
@@ -127,7 +127,7 @@ pub fn query_permission_audit(
     offset: i64,
 ) -> Result<PermissionAuditPageDto, String> {
     let mut sql = String::from(
-        "SELECT tool, action, resource, outcome, at_millis, conversation_id, turn_id, iteration \
+        "SELECT tool, action, resource, outcome, at_millis, conversation_id, turn_id, iteration, source \
          FROM permission_audit",
     );
     let mut bounds: Vec<&str> = Vec::new();
@@ -165,6 +165,7 @@ pub fn query_permission_audit(
                 conversation_id: row.get(5)?,
                 turn_id: row.get(6)?,
                 iteration: row.get(7)?,
+                source: row.get(8)?,
             })
         })
         .map_err(|e| e.to_string())?;
@@ -230,6 +231,24 @@ mod audit_tests {
             clamp_audit_limit(Some(AUDIT_LIMIT_MAX + 1)),
             AUDIT_LIMIT_MAX
         );
+    }
+
+    /// 来源列只做归因投影：存量行（无来源）读出 `None`，新行原样透出。
+    #[test]
+    fn source_is_projected_without_backfilling_legacy_rows() {
+        let (conn, _dir) = temp_conn();
+        insert(&conn, "agent_write", "allowed", 100);
+        conn.execute(
+            "INSERT INTO permission_audit (tool, action, resource, outcome, at_millis, source)
+             VALUES ('agent_write', 'exec', '/ws/b.txt', 'allowed', 200, 'toolbox')",
+            [],
+        )
+        .unwrap();
+
+        let page = query_permission_audit(&conn, 100, None, None, 0).unwrap();
+        assert_eq!(page.entries.len(), 2);
+        assert_eq!(page.entries[0].source.as_deref(), Some("toolbox"));
+        assert!(page.entries[1].source.is_none(), "存量行不得伪造归属");
     }
 
     /// 规格 §3.7：`since` 为闭区间下界，结果恒按 `at_millis` 倒序。

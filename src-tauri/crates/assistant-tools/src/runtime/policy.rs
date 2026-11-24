@@ -73,8 +73,10 @@ impl PermissionRule {
 pub enum RuleOrigin {
     #[default]
     Config,
-    /// 由审批级别追加的规则（`none` 的 `Allow` / `all_os_tools` 的 `Ask`）。
+    /// 由审批级别追加的规则（`none` 的 `Allow` / `all_os_tools` 的 `Ask` / `workspace_write` 的 W1–W5）。
     ApprovalLevel { level: ApprovalLevel },
+    /// 用户规则（`approvalRules`）：解释链必须与 `Config` 区分（I70 §7.1）。
+    UserRule,
 }
 
 /// 审批级别（`tool_config.approvalLevel` 的内部形态）。
@@ -87,7 +89,9 @@ pub enum ApprovalLevel {
     /// 全部自动执行（仍受 tier 与工具白名单约束）。
     #[default]
     None,
-    /// 仅 `destructive` / `open_world` 需审批。
+    /// 读取与工作区写入自动执行，其余需审批（I70 §3.1）。
+    WorkspaceWrite,
+    /// 读取放行、其余确认（写入 / 执行 / 删除 / MCP / 工具输出回读）。
     DangerousOnly,
     /// 所有非 Sandbox 工具需审批。
     AllOsTools,
@@ -97,6 +101,7 @@ impl ApprovalLevel {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::None => "none",
+            Self::WorkspaceWrite => "workspace_write",
             Self::DangerousOnly => "dangerous_only",
             Self::AllOsTools => "all_os_tools",
         }
@@ -192,14 +197,11 @@ impl ResolvedPermissionPolicy {
     }
 }
 
-/// Agent 模式（或会话有效工具配置）→ 权限策略（I38d §4.6）。
+/// 预设档规则集（I70 §3.1 / §3.1.1）：基础规则 + 档位改写 / 追加，**不含**硬保护规则。
 ///
-/// 主规则集 = 基础规则（审批级别可改写）+ 硬保护规则；约束层承载 tier 上限。
-/// 项目级 `permissions.json` 作为额外约束层由调用方追加（只能收紧，不能放宽）。
-pub fn policy_from_agent_mode(
-    max_tier: ToolTier,
-    approval_level: ApprovalLevel,
-) -> ResolvedPermissionPolicy {
+/// 独立成函数是为了让用户规则层能插在「预设档」与「硬保护」之间（I70 §4.1）：
+/// 用户规则可放宽应用默认，但不可放宽底线。
+fn preset_rules(approval_level: ApprovalLevel) -> Vec<PermissionRule> {
     let mut base = base_rules();
 
     match approval_level {
@@ -212,6 +214,22 @@ pub fn policy_from_agent_mode(
                     level: approval_level,
                 },
             );
+        }
+        // `workspace_write`：读取已放行，这里追加「工作区写入放行 + 敏感文件例外」。
+        // W1 的宽泛 `edit **` 必须排在例外之前：单层 last-match-wins 让 W2–W5 覆盖它。
+        ApprovalLevel::WorkspaceWrite => {
+            let origin = RuleOrigin::ApprovalLevel {
+                level: approval_level,
+            };
+            for (action, resource, effect) in [
+                ("edit", "**", PermissionEffect::Allow),
+                ("edit", "**/.env", PermissionEffect::Ask),
+                ("edit", "**/.env.*", PermissionEffect::Ask),
+                ("edit", "**/.env.example", PermissionEffect::Allow),
+                ("edit", "**/.git/**", PermissionEffect::Ask),
+            ] {
+                base.push(PermissionRule::new(action, resource, effect).with_origin(origin));
+            }
         }
         // `dangerous_only`：保持默认（`read` 允许，`edit` / `execute` 需审批）。
         ApprovalLevel::DangerousOnly => {}
@@ -226,7 +244,31 @@ pub fn policy_from_agent_mode(
         ),
     }
 
-    let mut global_rules = base;
+    base
+}
+
+/// Agent 模式（或会话有效工具配置）→ 权限策略（I38d §4.6）。
+///
+/// 主规则集 = 基础规则（审批级别可改写）+ 硬保护规则；约束层承载 tier 上限。
+/// 项目级 `permissions.json` 作为额外约束层由调用方追加（只能收紧，不能放宽）。
+pub fn policy_from_agent_mode(
+    max_tier: ToolTier,
+    approval_level: ApprovalLevel,
+) -> ResolvedPermissionPolicy {
+    policy_from_agent_mode_with_rules(max_tier, approval_level, &[])
+}
+
+/// 同 [`policy_from_agent_mode`]，但插入用户规则层（I70 §4.1）。
+///
+/// 顺序固定为：预设档规则 → 用户规则 → 硬保护规则。
+/// 用户规则因此可以放宽预设档的 `Ask`，但永远压不过末段的硬保护 `Deny`。
+pub fn policy_from_agent_mode_with_rules(
+    max_tier: ToolTier,
+    approval_level: ApprovalLevel,
+    user_rules: &[PermissionRule],
+) -> ResolvedPermissionPolicy {
+    let mut global_rules = preset_rules(approval_level);
+    global_rules.extend(user_rules.iter().cloned());
     global_rules.extend(hard_deny_rules());
 
     let tier_rules = match max_tier {
@@ -246,6 +288,100 @@ pub fn policy_from_agent_mode(
         global_rules,
         vec![PermissionConstraintLayer::new(tier_rules)],
     )
+}
+
+/// 用户规则校验失败原因（I70 §6.1 E1–E5）。E6（未知 `effect`）在反序列化阶段即失败。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RuleValidationError {
+    /// E1：条数超限。
+    TooManyRules { count: usize, limit: usize },
+    /// E2：`action` 为空或超长。
+    ActionLength { index: usize, len: usize },
+    /// E3：`resource` 为空或超长。
+    ResourceLength { index: usize, len: usize },
+    /// E4：`allow` 触碰底线动作（`readToolOutput` / `mcp`）。
+    AllowTouchesBottomLine { index: usize, action: String },
+    /// E5：`resource` 使用了约束层专用语法 `tier:`。
+    ReservedTierResource { index: usize, resource: String },
+}
+
+impl fmt::Display for RuleValidationError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::TooManyRules { count, limit } => {
+                write!(formatter, "approval rules exceed limit: {count} > {limit}")
+            }
+            Self::ActionLength { index, len } => write!(
+                formatter,
+                "approval rule #{index} action must be 1..=32 chars, got {len}"
+            ),
+            Self::ResourceLength { index, len } => write!(
+                formatter,
+                "approval rule #{index} resource must be 1..=256 chars, got {len}"
+            ),
+            Self::AllowTouchesBottomLine { index, action } => write!(
+                formatter,
+                "approval rule #{index} must not allow '{action}': it is never relaxable"
+            ),
+            Self::ReservedTierResource { index, resource } => write!(
+                formatter,
+                "approval rule #{index} resource '{resource}' uses reserved 'tier:' syntax"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for RuleValidationError {}
+
+const APPROVAL_RULES_MAX: usize = 64;
+const APPROVAL_RULE_ACTION_MAX: usize = 32;
+const APPROVAL_RULE_RESOURCE_MAX: usize = 256;
+
+/// 用户规则层校验（I70 §6.1）：保存与运行时装配共用同一实现，避免两套真值。
+///
+/// 只校验「结构性不可接受」，不判断规则是否会被命中：
+/// 未知 `action` 天然不匹配任何意图，属 fail-safe，不在此拒绝。
+pub fn validate_rules(rules: &[PermissionRule]) -> Result<(), RuleValidationError> {
+    if rules.len() > APPROVAL_RULES_MAX {
+        return Err(RuleValidationError::TooManyRules {
+            count: rules.len(),
+            limit: APPROVAL_RULES_MAX,
+        });
+    }
+    for (index, rule) in rules.iter().enumerate() {
+        let action_len = rule.action.chars().count();
+        if action_len == 0 || action_len > APPROVAL_RULE_ACTION_MAX {
+            return Err(RuleValidationError::ActionLength {
+                index,
+                len: action_len,
+            });
+        }
+        let resource_len = rule.resource.chars().count();
+        if resource_len == 0 || resource_len > APPROVAL_RULE_RESOURCE_MAX {
+            return Err(RuleValidationError::ResourceLength {
+                index,
+                len: resource_len,
+            });
+        }
+        if rule.resource.starts_with("tier:") {
+            return Err(RuleValidationError::ReservedTierResource {
+                index,
+                resource: rule.resource.clone(),
+            });
+        }
+        // E4：`allow` 不得匹配底线动作。`pattern_matches` 对 `*` / `**` 恒真，
+        // 因此 `("*","*",Allow)` 也会在此被拒（I70 §6.1 的刻意后果）。
+        if rule.effect == PermissionEffect::Allow
+            && (pattern_matches(&rule.action, "readToolOutput")
+                || pattern_matches(&rule.action, "mcp"))
+        {
+            return Err(RuleValidationError::AllowTouchesBottomLine {
+                index,
+                action: rule.action.clone(),
+            });
+        }
+    }
+    Ok(())
 }
 
 /// 单层内的生效规则（last-match-wins）：解释必须与 [`evaluate_rules`] 同源。
@@ -546,5 +682,197 @@ mod tests {
             glob("C:/Windows/**", "c:/windows/System32"),
             CASE_INSENSITIVE
         );
+    }
+
+    #[test]
+    fn workspace_write_matrix_keeps_workspace_edits_and_sensitive_file_asks() {
+        let policy = policy(ApprovalLevel::WorkspaceWrite, ToolTier::External);
+
+        // W1：工作区写入放行（`edit` 意图恒落在工作区内，越界在解析阶段即失败）。
+        assert_eq!(
+            policy.evaluate("edit", "/ws/a.txt"),
+            PermissionEffect::Allow
+        );
+
+        // W2–W5：敏感文件例外排在 W1 之后，last-match-wins 覆盖宽泛 Allow。
+        assert_eq!(policy.evaluate("edit", "/ws/.env"), PermissionEffect::Ask);
+        assert_eq!(
+            policy.evaluate("edit", "/ws/.env.local"),
+            PermissionEffect::Ask
+        );
+        assert_eq!(
+            policy.evaluate("edit", "/ws/.env.example"),
+            PermissionEffect::Allow
+        );
+        assert_eq!(
+            policy.evaluate("edit", "/ws/.git/config"),
+            PermissionEffect::Ask
+        );
+
+        // W1 只覆盖 `edit`：其余动作落回序 1 的 Ask。
+        assert_eq!(
+            policy.evaluate("delete", "/ws/a.txt"),
+            PermissionEffect::Ask
+        );
+        assert_eq!(policy.evaluate("execute", "ls -la"), PermissionEffect::Ask);
+        assert_eq!(
+            policy.evaluate("mcp", "mcp:srv-a:abc"),
+            PermissionEffect::Ask
+        );
+
+        // 读取放行；工具输出回读恒 Ask。
+        assert_eq!(
+            policy.evaluate("read", "/ws/a.txt"),
+            PermissionEffect::Allow
+        );
+        assert_eq!(
+            policy.evaluate("readToolOutput", "/ws/outputs/a.txt"),
+            PermissionEffect::Ask
+        );
+
+        // 硬保护不受档位影响。
+        assert_eq!(
+            policy.evaluate("edit", "/etc/passwd"),
+            PermissionEffect::Deny
+        );
+    }
+
+    #[test]
+    fn user_rules_are_last_match_wins_within_the_layer() {
+        let allow = PermissionRule::new("execute", "**", PermissionEffect::Allow)
+            .with_origin(RuleOrigin::UserRule);
+        let ask = PermissionRule::new("execute", "**", PermissionEffect::Ask)
+            .with_origin(RuleOrigin::UserRule);
+
+        let policy = policy_from_agent_mode_with_rules(
+            ToolTier::External,
+            ApprovalLevel::DangerousOnly,
+            &[allow.clone(), ask.clone()],
+        );
+        assert_eq!(
+            policy.evaluate("execute", "ls -la"),
+            PermissionEffect::Ask,
+            "后写覆盖先写"
+        );
+
+        let policy = policy_from_agent_mode_with_rules(
+            ToolTier::External,
+            ApprovalLevel::DangerousOnly,
+            &[ask, allow],
+        );
+        assert_eq!(
+            policy.evaluate("execute", "ls -la"),
+            PermissionEffect::Allow
+        );
+    }
+
+    #[test]
+    fn user_rules_relax_or_tighten_the_preset_level() {
+        // `dangerous_only` 的写入 Ask 被用户规则放宽。
+        let relax = vec![PermissionRule::new("edit", "**", PermissionEffect::Allow)
+            .with_origin(RuleOrigin::UserRule)];
+        let policy = policy_from_agent_mode_with_rules(
+            ToolTier::External,
+            ApprovalLevel::DangerousOnly,
+            &relax,
+        );
+        assert_eq!(
+            policy.evaluate("edit", "/ws/a.txt"),
+            PermissionEffect::Allow
+        );
+
+        // `none` 的写入 Allow 被用户规则收紧。
+        let tighten = vec![PermissionRule::new("edit", "**", PermissionEffect::Ask)
+            .with_origin(RuleOrigin::UserRule)];
+        let policy =
+            policy_from_agent_mode_with_rules(ToolTier::External, ApprovalLevel::None, &tighten);
+        assert_eq!(policy.evaluate("edit", "/ws/a.txt"), PermissionEffect::Ask);
+
+        // `workspace_write` 的敏感文件 Ask 被更具体的用户规则放宽，其余例外不受影响。
+        let specific = vec![
+            PermissionRule::new("edit", "**/docs/a.md", PermissionEffect::Allow)
+                .with_origin(RuleOrigin::UserRule),
+        ];
+        let policy = policy_from_agent_mode_with_rules(
+            ToolTier::External,
+            ApprovalLevel::WorkspaceWrite,
+            &specific,
+        );
+        assert_eq!(
+            policy.evaluate("edit", "/ws/docs/a.md"),
+            PermissionEffect::Allow
+        );
+        assert_eq!(policy.evaluate("edit", "/ws/.env"), PermissionEffect::Ask);
+    }
+
+    #[test]
+    fn allow_rules_touching_bottom_line_actions_are_rejected() {
+        for action in ["readToolOutput", "mcp", "*", "**"] {
+            let rules = vec![PermissionRule::new(action, "*", PermissionEffect::Allow)];
+            assert!(
+                matches!(
+                    validate_rules(&rules),
+                    Err(RuleValidationError::AllowTouchesBottomLine { .. })
+                ),
+                "allow must not match bottom-line action {action}"
+            );
+        }
+
+        for effect in [PermissionEffect::Ask, PermissionEffect::Deny] {
+            let rules = vec![PermissionRule::new("*", "*", effect)];
+            assert!(validate_rules(&rules).is_ok(), "non-allow effects pass");
+        }
+    }
+
+    #[test]
+    fn rule_count_and_length_limits_are_rejected() {
+        let too_many: Vec<PermissionRule> = (0..APPROVAL_RULES_MAX + 1)
+            .map(|i| PermissionRule::new("read", format!("r{i}"), PermissionEffect::Allow))
+            .collect();
+        assert_eq!(
+            validate_rules(&too_many),
+            Err(RuleValidationError::TooManyRules {
+                count: 65,
+                limit: APPROVAL_RULES_MAX,
+            })
+        );
+
+        let long_action = vec![PermissionRule::new(
+            "a".repeat(APPROVAL_RULE_ACTION_MAX + 1),
+            "*",
+            PermissionEffect::Ask,
+        )];
+        assert_eq!(
+            validate_rules(&long_action),
+            Err(RuleValidationError::ActionLength { index: 0, len: 33 })
+        );
+
+        let long_resource = vec![PermissionRule::new(
+            "read",
+            "r".repeat(APPROVAL_RULE_RESOURCE_MAX + 1),
+            PermissionEffect::Ask,
+        )];
+        assert_eq!(
+            validate_rules(&long_resource),
+            Err(RuleValidationError::ResourceLength { index: 0, len: 257 })
+        );
+
+        let reserved = vec![PermissionRule::new(
+            "read",
+            "tier:os",
+            PermissionEffect::Deny,
+        )];
+        assert_eq!(
+            validate_rules(&reserved),
+            Err(RuleValidationError::ReservedTierResource {
+                index: 0,
+                resource: "tier:os".to_string(),
+            })
+        );
+
+        let boundary: Vec<PermissionRule> = (0..APPROVAL_RULES_MAX)
+            .map(|i| PermissionRule::new("read", format!("r{i}"), PermissionEffect::Allow))
+            .collect();
+        assert!(validate_rules(&boundary).is_ok(), "boundary count passes");
     }
 }

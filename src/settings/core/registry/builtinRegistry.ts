@@ -24,6 +24,9 @@ import type { ConfSlot } from "../types/confSlot";
 
 export const DEFAULT_SETTINGS_PAGE_ID: SettingsPageId = "overview";
 
+/** 代理模式设置页 id：会话面板的「去设置编辑」按此跳转，避免两处各写一份字面量。 */
+export const AGENT_SETTINGS_PAGE_ID: SettingsPageId = "agents";
+
 const overview = definePage({
   id: "overview",
   categoryId: "general",
@@ -91,7 +94,7 @@ const providers = definePage({
 });
 
 const agents = definePage({
-  id: "agents",
+  id: AGENT_SETTINGS_PAGE_ID,
   categoryId: "provider",
   label: "common.navigation.agents.title",
   keywords: ["agent", "mode", "kind", "quick", "deep"],

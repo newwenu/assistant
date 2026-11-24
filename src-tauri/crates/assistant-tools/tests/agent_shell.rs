@@ -1033,6 +1033,72 @@ async fn a38_shell_flavor_is_diagnostic_only() {
     );
 }
 
+/// A39（放弃 future）：agent 侧取消是「丢弃 future」——`cancellable` 的 `select!`
+/// 先到即丢弃，本工具的终态分支（第 8–10 步）永不执行。
+///
+/// 因此守卫必须在 drop 路径补「杀整棵树 + 删调用级临时目录」，
+/// 落盘文件由 `FileSpillSink::Drop` 在最后一个读取任务释放时删除。
+#[tokio::test]
+async fn a39_abandoned_future_reclaims_tree_scratch_and_spill() {
+    let _guard = EXEC_LOCK.lock().await;
+    let harness = Harness::new();
+    let call_id = "call-a39-abandon";
+    let tool = harness.tool.clone();
+    let context = harness.ctx(call_id);
+    let root = harness.root();
+    // 延迟写：树被杀则永不落地，树存活则 ~5s 后出现（只用来判定「杀没杀」）。
+    let input = json!({
+        "command": script(
+            "ping -n 6 127.0.0.1 >nul & echo LEAKED> leaked.txt",
+            "sleep 5; echo LEAKED > leaked.txt"
+        )
+    });
+
+    let handle = tokio::spawn(async move { tool.execute(&input, &context).await });
+    // 等进程起来、产出首批字节后丢弃 future。
+    tokio::time::sleep(Duration::from_millis(800)).await;
+    handle.abort();
+    let _ = handle.await;
+
+    assert!(
+        !harness.scratch(call_id).exists(),
+        "drop path must remove the call-scoped scratch dir"
+    );
+
+    // 树若没被杀，延迟写会在 ~5s 后落地；同时给读取任务留出释放 sink 的时间。
+    tokio::time::sleep(Duration::from_secs(7)).await;
+    assert!(
+        !root.join("leaked.txt").exists(),
+        "the process tree must be killed when the future is dropped"
+    );
+    assert!(
+        !has_spill_file(&harness.storage_root(), call_id),
+        "drop path must remove the abandoned spill file"
+    );
+}
+
+/// 落盘目录下是否存在文件名含 `call_id` 的条目（文件名以 sanitize 后的调用 id 结尾）。
+fn has_spill_file(root: &std::path::Path, call_id: &str) -> bool {
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+                continue;
+            }
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if name.contains(call_id) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 /// A33（模型侧）：`description()` 必须包含 I56 §11.2 的 6 项约束。
 ///
 /// 模型不读规格，只读这段描述；缺一项就是模型会用错的地方（§11.2 表格右列）。

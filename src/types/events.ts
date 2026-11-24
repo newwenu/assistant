@@ -13,6 +13,7 @@ export enum SettingAction {
   ThemeChanged = "theme-changed",
   ConfPatched = "conf-patched",
   MascotManifestChanged = "mascot-manifest-changed",
+  AgentModesChanged = "agent-modes-changed",
 }
 
 export enum SettingEvent {
@@ -20,6 +21,7 @@ export enum SettingEvent {
   ThemeChanged = "setting:theme-changed",
   ConfPatched = "setting:conf-patched",
   MascotManifestChanged = "setting:mascot-manifest-changed",
+  AgentModesChanged = "setting:agent-modes-changed",
 }
 
 export interface SettingEventPayload {

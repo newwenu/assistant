@@ -18,7 +18,8 @@ use serde_json::{json, Value};
 use crate::context::ToolUseContext;
 use crate::result::{ToolErrorKind, ToolResult};
 use crate::sandbox::{
-    self, SandboxChild, SandboxDimension, SandboxEnforcement, SandboxError, SandboxProbe,
+    self, KillHandle, SandboxChild, SandboxDimension, SandboxEnforcement, SandboxError,
+    SandboxProbe,
 };
 use crate::storage::{
     persisted_reference_from_tail, OutputStream, PersistToolResult, SpilledOutput, ToolResultSink,
@@ -79,6 +80,16 @@ pub async fn execute(
         }
     };
 
+    // 兜底守卫：目录一建好就接管。取消在 agent 侧是「丢弃 future」
+    // （`cancellable` 的 `select!`），本函数体被 drop 时后续所有步骤都不再执行；
+    // 守卫随函数体存活，drop 路径补「删临时目录」（杀树句柄在建进程后填入）。
+    // 正常路径二次调用均幂等（R1 / R3）。sink 不归守卫持有：删除由
+    // `FileSpillSink::Drop` 在最后一个读取任务释放时完成（R2）。
+    let mut run_guard = RunGuard {
+        kill: None,
+        scratch: plan.scratch.clone(),
+    };
+
     // 第 4 步：先建 sink（落盘是执行的前置条件，不是事后收尾）。
     let request = PersistToolResult {
         tool_call_id: call_id.clone(),
@@ -123,7 +134,9 @@ pub async fn execute(
 
     // 第 7 步：`wait()` 丢进 blocking 池，async 侧与 deadline / 取消竞争。
     // 杀树句柄先取出：`wait()` 独占子进程时，超时与取消路径仍要能打断它。
+    // 同时交给守卫：此后任何一步被 drop 都能补杀整棵树。
     let kill = child.kill_handle();
+    run_guard.kill = Some(kill.clone());
     let mut wait_task = tokio::task::spawn_blocking(move || reap(child));
 
     let deadline = tokio::time::sleep(Duration::from_millis(parsed.timeout_ms));
@@ -256,6 +269,26 @@ enum Outcome {
     Exited(Result<std::io::Result<ExitStatus>, tokio::task::JoinError>),
     TimedOut,
     Cancelled,
+}
+
+/// 取消兜底守卫：随 `execute` 的函数体存活，drop 时补「杀整棵树 + 删调用级临时目录」。
+///
+/// 正常路径 drop 时树已收尸、目录已删：`kill()` 与 `cleanup_scratch()` 都幂等，
+/// 因此不需要「是否已收尾」的状态位，也就不会出现「某条早退分支忘了撤销守卫」。
+/// `kill` 为 `None` 表示守卫建于建进程之前（此时只可能泄漏目录，无树可杀）。
+/// `Drop` 内不 `await`：`remove_dir_all` 只作用于重定向输出，量级有界（R3）。
+struct RunGuard {
+    kill: Option<KillHandle>,
+    scratch: std::path::PathBuf,
+}
+
+impl Drop for RunGuard {
+    fn drop(&mut self) {
+        if let Some(kill) = self.kill.take() {
+            kill.kill();
+        }
+        spawn::cleanup_scratch(&self.scratch);
+    }
 }
 
 /// 本次调用的真实边界（§8.4）：三个布尔不是注册期结论的复述，而是「命令实际能否」。

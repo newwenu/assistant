@@ -21,6 +21,7 @@ import {
   setTierSelection,
 } from "../core/toolConfig";
 import css from "./ToolConfigPanel.module.css";
+import { ApprovalRulesSummary } from "./ApprovalRulesSummary";
 
 interface ToolConfigPanelProps {
   config: ConversationToolConfig;
@@ -32,6 +33,8 @@ interface ToolConfigPanelProps {
   settingDefault: boolean;
   onChange: (next: ConversationToolConfig) => void;
   onSetDefault: () => void;
+  /** 「去设置编辑」：导航由视图注入（`openFromPanel`），面板不做路由决策。 */
+  onEditRules: () => void;
 }
 
 /**
@@ -84,6 +87,7 @@ export const ToolConfigPanel: React.FC<ToolConfigPanelProps> = ({
   settingDefault,
   onChange,
   onSetDefault,
+  onEditRules,
 }) => {
   const { t } = useTranslation();
   const ceiling = TIER_RANK[config.maxToolTier];
@@ -283,6 +287,8 @@ export const ToolConfigPanel: React.FC<ToolConfigPanelProps> = ({
         <div className={css.groups}>
           {TOOL_TIERS.map((tier) => {
             const items = grouped.get(tier) ?? [];
+            // 空层级不占位：三档各留一行标题会把消息区顶走（窄面板尤其明显）。
+            if (items.length === 0) return null;
             const beyondCeiling = TIER_RANK[tier] > ceiling;
             const selected = selectedIdsInTier(config, tools, tier);
             return (
@@ -300,27 +306,24 @@ export const ToolConfigPanel: React.FC<ToolConfigPanelProps> = ({
                     </Tag>
                   )}
                 </div>
-                {items.length === 0 ? (
-                  <Typography.Text type="secondary" className={css.empty}>
-                    {t("chat.tool.panel.group_empty")}
-                  </Typography.Text>
-                ) : (
-                  <div className={css.toolList}>
-                    {groupToolUnits(items).map((unit) => (
-                      <div key={unit.head.id} className={css.toolUnit}>
-                        {renderEntry(unit.head, tier, selected, beyondCeiling)}
-                        {unit.companions.map((companion) =>
-                          renderEntry(companion, tier, selected, beyondCeiling),
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
+                <div className={css.toolList}>
+                  {groupToolUnits(items).map((unit) => (
+                    <div key={unit.head.id} className={css.toolUnit}>
+                      {renderEntry(unit.head, tier, selected, beyondCeiling)}
+                      {unit.companions.map((companion) =>
+                        renderEntry(companion, tier, selected, beyondCeiling),
+                      )}
+                    </div>
+                  ))}
+                </div>
               </div>
             );
           })}
         </div>
       )}
+
+      {/* 规则只读：会话面板空间有限，修改统一收在设置页（I70 §7.3）。 */}
+      <ApprovalRulesSummary onEdit={onEditRules} />
     </div>
   );
 };

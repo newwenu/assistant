@@ -173,7 +173,8 @@ pub fn init_db_localized(
             at_millis       INTEGER NOT NULL,
             conversation_id TEXT,
             turn_id         TEXT,
-            iteration       INTEGER
+            iteration       INTEGER,
+            source          TEXT
         );
 
         CREATE TABLE IF NOT EXISTS compression_state (
@@ -297,6 +298,22 @@ pub fn init_db_localized(
         )
         .map_err(|e| e.to_string())?;
         info!("Added workspace_root column to conversations table");
+    }
+
+    // 调用来源列（I71 §3.3 W2.6）：可空，`NULL` = 非工具调用写入的行。
+    // 不回填存量行：来源在当时没有记录，伪造归属比留空更糟。
+    let has_audit_source: bool = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('permission_audit') WHERE name = 'source'",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .map_err(|e| e.to_string())?
+        > 0;
+    if !has_audit_source {
+        conn.execute_batch("ALTER TABLE permission_audit ADD COLUMN source TEXT;")
+            .map_err(|e| e.to_string())?;
+        info!("Added source column to permission_audit table");
     }
 
     // 会话级 turn 取号器（I46 §2.1）：存量会话初始化为 1，不回填历史行的

@@ -17,7 +17,8 @@ use assistant_tools::storage::{
 use assistant_tools::{
     policy_from_agent_mode, ApprovalLevel, ApprovalPreview, BehaviorHints, GatewayDecision,
     PermissionConstraintLayer, PermissionEffect, PermissionIntent, PermissionRule,
-    ResolvedPermissionPolicy, SandboxEnforcement, Tool, ToolResult, ToolTier, ToolUseContext,
+    ResolvedPermissionPolicy, SandboxEnforcement, Tool, ToolCallSource, ToolResult, ToolTier,
+    ToolUseContext,
 };
 use serde_json::{json, Value};
 use tempfile::tempdir;
@@ -535,6 +536,7 @@ async fn in_memory_audit_store_records_entries_in_order() {
         conversation_id: None,
         turn_id: None,
         iteration: None,
+        source: None,
     };
     store.log_decision(entry.clone()).await.unwrap();
 
@@ -751,6 +753,38 @@ async fn gateway_readonly_tool_without_intents_is_audited_as_bypassed() {
     assert_eq!(entries[0].outcome, AuditOutcome::Bypassed);
     assert_eq!(entries[0].action, "none");
     assert_eq!(entries[0].resource, "intent:none");
+    assert_eq!(
+        entries[0].source,
+        Some(ToolCallSource::Agent),
+        "轮内派发要标明来源"
+    );
+}
+
+/// I71 §4.4 W2：来源只做归因，不参与决策——同样的 deny_all 策略下
+/// Agent 与 ToolBox 两个入口得到同一决策，仅审计行来源不同。
+#[tokio::test]
+async fn audit_source_is_attribution_only_and_never_changes_the_decision() {
+    let prompter = Arc::new(ScriptedApprovalPrompter::new(vec![]));
+    let (gateway, _, audit) = gateway_with(prompter.clone());
+    let tool = FakeTool::new(vec![]);
+
+    let agent_decision = gateway
+        .evaluate(&tool, &Value::Null, &ctx(), &deny_all())
+        .await
+        .unwrap();
+    let toolbox_context = ToolUseContext::for_toolbox(None);
+    let toolbox_decision = gateway
+        .evaluate(&tool, &Value::Null, &toolbox_context, &deny_all())
+        .await
+        .unwrap();
+
+    assert_eq!(agent_decision, GatewayDecision::Allowed);
+    assert_eq!(toolbox_decision, agent_decision);
+
+    let entries = audit.entries();
+    assert_eq!(entries.len(), 2);
+    assert_eq!(entries[0].source, Some(ToolCallSource::Agent));
+    assert_eq!(entries[1].source, Some(ToolCallSource::Toolbox));
 }
 
 #[tokio::test]

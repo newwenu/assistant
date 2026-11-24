@@ -56,6 +56,44 @@
     "next": "Next",
     "done": "Done",
     "back": "Back",
+    "approval_rules": {
+      "title": "Approval rules",
+      "hint": "Rules apply in order and the later one wins; they can relax or tighten the level, but never override hard-protected paths.",
+      "empty": "No rules yet; the approval level alone decides.",
+      "row_index": "#{{index}}",
+      "order_hint": "Later rules win",
+      "none": "No rules",
+      "count": "{{count}} rule(s)",
+      "edit_in_settings": "Edit in settings",
+      "action_label": "Action",
+      "resource_label": "Resource",
+      "effect_label": "Effect",
+      "add": "Add rule",
+      "remove": "Remove",
+      "action_placeholder": "Pick or type an action",
+      "resource_placeholder": "Path / command / mcp:{server}:{tool} / *",
+      "resource_placeholder_path": "Absolute path; * means everything",
+      "delete_purge_hint": "A \"delete\" rule excludes permanent deletion (purge); add its own rule.",
+      "shortcuts": {
+        "execute": "Skip: commands",
+        "edit": "Skip: writes",
+        "read": "Confirm reads",
+        "mcp": "Confirm MCP",
+        "readOutput": "Confirm output"
+      },
+      "effect": {
+        "allow": "Run automatically",
+        "ask": "Ask every time",
+        "deny": "Always deny"
+      },
+      "errors": {
+        "tooMany": "At most {{limit}} rules; currently {{len}}",
+        "actionLength": "Rule #{{index}} action must be 1–{{limit}} characters",
+        "resourceLength": "Rule #{{index}} resource must be 1–{{limit}} characters",
+        "allowBottomLine": "Rule #{{index}} cannot run \"{{action}}\" automatically: it always needs approval",
+        "reservedTier": "Rule #{{index}} resource must not start with tier:; use the tier setting above instead"
+      }
+    },
     "time": {
       "just_now": "just now",
       "minutes_ago": "{{count}} min ago",
@@ -639,7 +677,8 @@
         "approval_level": {
           "options": {
             "none": "Run directly",
-            "dangerous_only": "Default",
+            "workspace_write": "Workspace write",
+            "dangerous_only": "Cautious",
             "all_os_tools": "Manual approval"
           }
         }
@@ -683,6 +722,39 @@
         "set_session_placeholder": "Select a conversation",
         "scope_changed": "Grant scope updated",
         "scope_failed": "Failed to update scope: {{error}}"
+      },
+      "project_rules": {
+        "title": "Project rules",
+        "description": "Project rules live in .assistant/permissions.json in the workspace and use the same editor and validation as mode-level approval rules; saving creates the file when it does not exist. Project rules can only tighten approvals: the strictest result wins, so allow never loosens anything.",
+        "refresh": "Reload",
+        "save": "Save",
+        "revert": "Revert",
+        "unsaved": "Unsaved",
+        "save_ok_title": "Project rules saved",
+        "save_ok_desc": "Written to .assistant/permissions.json; it takes effect on the next turn.",
+        "save_failed_title": "Failed to save project rules",
+        "save_failed_desc": "Nothing was written. Check the rule contents and that the workspace is still writable.",
+        "content_empty": "(No file content read)",
+        "no_workspace": "No workspace registered yet; project rules only apply to conversations bound to a workspace.",
+        "workspace_placeholder": "Pick a workspace",
+        "path_unknown": "(path not available)",
+        "load_failed": "Failed to read project rules. Try again later.",
+        "state": {
+          "unbound": "No workspace",
+          "missing": "File missing",
+          "valid": "Active",
+          "invalid": "Invalid content"
+        },
+        "note": {
+          "unbound": "There are no project rules without a bound workspace.",
+          "missing": "This workspace has no project rules file yet; saving the rules below creates it.",
+          "valid": "Project rules are active: they only tighten approvals and never loosen the level or the mode's approval rules.",
+          "invalid": "The file exists but cannot be parsed; tool calls in this workspace will all be denied until it is fixed. The raw text below helps you locate the problem — save to overwrite it."
+        },
+        "overwrite_invalid": {
+          "title": "Overwrite the unparsable project rules file?",
+          "content": "The file cannot be parsed, so tool calls in this workspace are all denied. Saving overwrites the whole file with the current editor contents; the original cannot be recovered."
+        }
       },
       "audit": {
         "title": "Permission decision history",
@@ -1193,18 +1265,21 @@
         },
         "level": {
           "none": "Run directly",
-          "dangerous_only": "Default",
+          "workspace_write": "Workspace write",
+          "dangerous_only": "Cautious",
           "all_os_tools": "Manual approval"
         },
         "level_hint": {
-          "none": "All tools run without asking",
-          "dangerous_only": "Reads run freely; edits and commands need approval",
-          "all_os_tools": "All tools need approval, including reads"
+          "none": "All automatic (except tool output reads)",
+          "workspace_write": "Reads and workspace writes run freely; .env*, .git/** and commands/deletions ask",
+          "dangerous_only": "Reads run freely; writes, commands and deletions ask",
+          "all_os_tools": "Every tool call asks"
         },
         "reason": {
           "default_policy": "Default policy: {{rule}}",
           "approval_level": "Approval level: {{level}}",
           "project_rule": "Project rule: {{action}} {{resource}}",
+          "user_rule": "Approval rule: {{action}} {{resource}}",
           "tier_ceiling": "Tier ceiling: {{tier}}",
           "advisor": "AI advisor: {{rationale}}"
         }
@@ -1229,6 +1304,7 @@
         "disabled": "Disabled {{names}}",
         "tier": "Tier ceiling set to {{tier}}",
         "level": "Approval level set to {{level}}",
+        "rules": "Approval rules updated",
         "separator": "; "
       },
       "panel": {
@@ -1238,8 +1314,7 @@
         "level_label": "Approval level",
         "set_default": "Set as mode default",
         "set_default_hint": "Writes the current configuration back to the mode's initial value for new conversations",
-        "out_of_tier": "Above ceiling, ignored",
-        "group_empty": "No tools in this tier",
+        "out_of_tier": "Beyond the ceiling, ignored",
         "companion_of": "Available with {{base}}; the model enables it on demand",
         "companion_blocked": "Enable {{base}} first",
         "meta_badge": "Escalation",
@@ -1440,12 +1515,17 @@
     },
     "action": {
       "choose": "Choose folder…",
-      "clear": "Clear binding (unconfigured)"
+      "clear": "Clear binding (unconfigured)",
+      "open": "Open in File Explorer"
     },
     "error": {
       "invalid": {
         "title": "Invalid Workspace Path",
         "description": "The selected folder could not be registered as a workspace; please choose again"
+      },
+      "open": {
+        "title": "Cannot Open Workspace",
+        "description": "The workspace is unbound or the folder no longer exists; please choose again"
       },
       "busy": "The conversation is generating a reply; the workspace cannot be changed right now"
     },

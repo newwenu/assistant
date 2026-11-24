@@ -354,6 +354,7 @@ impl ToolGateway {
             conversation_id: context.session_id.clone(),
             turn_id: context.turn_id.clone(),
             iteration: context.iteration,
+            source: Some(context.source),
         };
         if let Err(error) = self.audit_store.log_decision(entry).await {
             log::warn!(

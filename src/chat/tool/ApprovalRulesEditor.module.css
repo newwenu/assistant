@@ -1,0 +1,115 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 6px 8px;
+  border: 1px solid var(--color-border-secondary);
+  border-radius: 8px;
+  background: var(--color-bg-elevated);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.title {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 600;
+  cursor: help;
+}
+
+.titleIcon {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+}
+
+/* 收起 / 展开都显示规则条数，右侧对齐。 */
+.summary {
+  margin-left: auto;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.hint {
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.empty {
+  font-size: 12px;
+}
+
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.columns {
+  display: grid;
+  grid-template-columns: 32px minmax(72px, 1fr) minmax(96px, 2fr) 96px 28px;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 32px minmax(72px, 1fr) minmax(96px, 2fr) 96px 28px;
+  align-items: center;
+  gap: 6px;
+  padding-left: 4px;
+  border-left: 2px solid transparent;
+}
+
+/* `deny` 行用危险色标记：它是最强约束，不能与 `allow` 行视觉相同（I70 §7.3）。 */
+.rowDeny {
+  border-left-color: var(--color-error, #ff4d4f);
+  background: var(--color-error-bg);
+}
+
+.indexCell {
+  font-size: 11px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  color: var(--color-text-tertiary);
+}
+
+.actionInput,
+.resourceInput,
+.effectSelect {
+  width: 100%;
+}
+
+.removeButton {
+  padding: 0;
+}
+
+.error {
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.addButton {
+  align-self: flex-start;
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* 快捷规则：一组「一键追加」按钮，视觉上从属于新增按钮，不构成开关组。 */
+.shortcuts {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding-left: 6px;
+  border-left: 1px solid var(--color-border-secondary);
+}

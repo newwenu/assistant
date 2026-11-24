@@ -82,6 +82,11 @@ export interface ToolRegionInput {
   onChange: (next: ConversationToolConfig) => void;
   /** 写回模式默认值；由视图负责落库与提示，hook 只管理进行态并负责剔除伴随 id。 */
   onSetDefault: (config: ConversationToolConfig) => Promise<void>;
+  /**
+   * 「去设置编辑」：规则只在设置页可写（I70 §7.3）。
+   * 导航属视图职责，hook 只透传；视图侧统一走 `openFromPanel` 开主窗并带定位参数。
+   */
+  onEditRules: () => void;
 }
 
 /** hook 交给骨架的视图数据（展示侧，无状态）。 */
@@ -103,6 +108,7 @@ export interface ToolRegionView {
     settingDefault: boolean;
     onChange: (next: ConversationToolConfig) => void;
     onSetDefault: () => void;
+    onEditRules: () => void;
   };
   notice: string | null;
 }

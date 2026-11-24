@@ -6,6 +6,33 @@ use tokio_util::sync::CancellationToken;
 
 use crate::catalog::ToolCatalog;
 
+/// 一次工具调用的来源：回答「这次调用是谁发起的」，**不参与**任何策略求值。
+///
+/// 与「有无会话」不是一回事：编排节点调用既有会话也有审批，只是不是轮内派发。
+/// 封闭集合：新增变体必须同时补 `as_str()` 与审计词表说明。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ToolCallSource {
+    /// 轮内派发：Agent 的一轮里由模型选择并调用。
+    #[default]
+    Agent,
+    /// ToolBox 直调：用户手动执行，不走网关、无会话边界。
+    Toolbox,
+    /// 编排节点调用：图里的一等执行体（当前未接线）。
+    Orchestration,
+}
+
+impl ToolCallSource {
+    /// 落库串（`permission_audit.source`），与变体一一对应。
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ToolCallSource::Agent => "agent",
+            ToolCallSource::Toolbox => "toolbox",
+            ToolCallSource::Orchestration => "orchestration",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ToolUseContext {
@@ -63,6 +90,11 @@ pub struct ToolUseContext {
     /// `None` = 没有升级通道（ToolBox / 单测），`enable` 分支返回业务错误。
     #[serde(skip)]
     pub escalation: Option<Arc<dyn crate::escalation::ToolEscalationPort>>,
+    /// 调用来源：只用于审计归因（`permission_audit.source`），不进 wire。
+    ///
+    /// 运行时字段；缺省为 `Agent`（轮内派发是默认入口），ToolBox 构造点显式改填。
+    #[serde(skip)]
+    pub source: ToolCallSource,
 }
 
 impl ToolUseContext {
@@ -89,6 +121,8 @@ impl ToolUseContext {
             tool_catalog: None,
             // ToolBox 直调没有本轮工具集，因此没有升级通道。
             escalation: None,
+            // 来源归因：ToolBox 直调不是轮内派发。
+            source: ToolCallSource::Toolbox,
         }
     }
 }

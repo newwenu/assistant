@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button, Drawer, Form, Space, Tag, Typography } from "antd";
 import { DeleteOutlined, EditOutlined, UndoOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
+import { useSearchParams } from "react-router-dom";
 
 import { translateKey } from "@/i18n";
 import type { AgentMode } from "@/stores/agent/agentModeStore";
@@ -18,6 +19,7 @@ import {
 } from "../../core/agentKind/agentModeRegistry";
 import { PermissionAuditSection } from "../../shared/sections/PermissionAuditSection";
 import { PermissionGrantsSection } from "../../shared/sections/PermissionGrantsSection";
+import { ProjectRulesSection } from "../../shared/sections/ProjectRulesSection";
 import { ToolAssemblySection } from "../../shared/sections/ToolAssemblySection";
 
 import { DEFAULT_FORM_DATA, useFieldSchemas } from "./fieldSchemas";
@@ -50,6 +52,57 @@ export const AgentModeSettings: React.FC = () => {
   useEffect(() => {
     void loadModes();
   }, [loadModes]);
+
+  /**
+   * 「去设置编辑」的落点（I70 §7.3）：会话面板只读展示规则，
+   * 点击后带 `?mode=<id>&focus=rules` 打开本页，这里据此自动打开对应模式的抽屉。
+   *
+   * 用 ref 记录已处理过的 id：`handleEdit` 每次渲染都是新函数，
+   * 仅靠依赖去重会让抽屉在关闭后被重新打开。
+   */
+  const [searchParams, setSearchParams] = useSearchParams();
+  const focusModeId = searchParams.get("mode");
+  const handledFocusRef = useRef<string | null>(null);
+  /**
+   * 滚动意图必须存成 state：清掉 query 后参数就没了，
+   * 直接读 `searchParams` 会让滚动 effect 在抽屉真正打开前提前失效。
+   */
+  const [focusRules, setFocusRules] = useState(false);
+
+  useEffect(() => {
+    if (!focusModeId || handledFocusRef.current === focusModeId) return;
+    const mode = modes.find((m) => m.id === focusModeId);
+    if (!mode) return;
+    handledFocusRef.current = focusModeId;
+    if (searchParams.get("focus") === "rules") setFocusRules(true);
+    handleEdit(mode);
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete("mode");
+        next.delete("focus");
+        return next;
+      },
+      { replace: true },
+    );
+  }, [focusModeId, modes, handleEdit, searchParams, setSearchParams]);
+
+  /** 抽屉打开后再滚动到规则编辑器：渲染顺序决定它此刻才存在。 */
+  useEffect(() => {
+    if (!focusRules || !drawerOpen) return;
+    const timer = window.setTimeout(() => {
+      const el = document.querySelector<HTMLElement>("[data-approval-rules]");
+      if (!el) return;
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      el.classList.add("setting-focus-highlight");
+      window.setTimeout(
+        () => el.classList.remove("setting-focus-highlight"),
+        2000,
+      );
+      setFocusRules(false);
+    }, 200);
+    return () => window.clearTimeout(timer);
+  }, [focusRules, drawerOpen, editingMode?.id]);
 
   const builtinModes = modes.filter((m) => m.isBuiltin);
   const customModes = modes.filter((m) => !m.isBuiltin);
@@ -159,6 +212,7 @@ export const AgentModeSettings: React.FC = () => {
         emptyDescription={t("settings.agent_mode.empty")}
       />
       <PermissionGrantsSection />
+      <ProjectRulesSection />
       <PermissionAuditSection />
       <Drawer
         title={
