@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fallbackTitleFromUserMessage } from "../turnOrchestrator";
+import { fallbackTitleFromUserMessage } from "../title";
 
 describe("fallbackTitleFromUserMessage", () => {
   it("derives a non-empty title from an attachment-only message", () => {

@@ -33,6 +33,7 @@ describe("条目区块：行数与分组完全来自 entries 夹具", () => {
     const blocks = buildBlocks(rows);
 
     expect(rows.map((row) => row.key)).toEqual(keys);
+    expect(rows.every((row) => row.name.length > 0)).toBe(true);
     expect(blocks.flatMap((block) => block.rows)).toHaveLength(keys.length);
     expect(blocks.every((block) => block.rows.length > 0)).toBe(true);
 
@@ -61,13 +62,5 @@ describe("条目区块：行数与分组完全来自 entries 夹具", () => {
     const blocks = buildBlocks(rowsOf([]));
 
     expect(blocks).toEqual([]);
-  });
-
-  it("行集合与夹具一一对应：不出现夹具之外的条目", () => {
-    const keys = [...CORE_KEYS, ...SECTION_KEYS];
-    const rows = rowsOf(keys);
-
-    expect(new Set(rows.map((row) => row.key))).toEqual(new Set(keys));
-    expect(rows.every((row) => row.name.length > 0)).toBe(true);
   });
 });

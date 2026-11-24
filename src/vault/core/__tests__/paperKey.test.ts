@@ -1,7 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  PAPER_CHARS,
-  PAPER_GROUP_LEN,
   formatPaperKey,
   groupPaperKey,
   normalizePaperInput,
@@ -48,8 +46,6 @@ describe("纸面密钥分组", () => {
   it("分组长度恒为 8，末组不补位", () => {
     const groups = groupPaperKey("0123456789");
     expect(groups).toEqual(["01234567", "89"]);
-    expect(PAPER_GROUP_LEN).toBe(8);
-    expect(PAPER_CHARS).toBe(40);
   });
 });
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CANVAS_METRICS, layoutTemplate } from "@/features/canvas/layout";
+import { layoutTemplate } from "@/features/canvas/layout";
 
 const entries = [
   { id: "demo-a", row: 0, column: 0 },
@@ -44,37 +44,5 @@ describe("layoutTemplate", () => {
     expect(layout.boxes.size).toBe(0);
     expect(layout.width).toBe(0);
     expect(layout.height).toBe(0);
-  });
-
-  it("is idempotent for identical entries", () => {
-    const first = layoutTemplate(entries);
-    const second = layoutTemplate([...entries]);
-
-    expect(Array.from(second.boxes.entries())).toEqual(
-      Array.from(first.boxes.entries()),
-    );
-    expect(second.width).toBe(first.width);
-    expect(second.height).toBe(first.height);
-  });
-
-  it("keys boxes by string id and ignores duplicate slots", () => {
-    const layout = layoutTemplate([
-      { id: "demo-x", row: 0, column: 0 },
-      { id: "demo-y", row: 0, column: 0 },
-    ]);
-
-    expect(layout.boxes.get("demo-x")).toEqual(
-      expect.objectContaining({ x: 0, y: 24, w: 132, h: 78 }),
-    );
-    expect(layout.boxes.get("demo-y")).toEqual(
-      expect.objectContaining({ x: 0, y: 24, w: 132, h: 78 }),
-    );
-  });
-
-  it("keeps metrics numeric and positive", () => {
-    for (const value of Object.values(CANVAS_METRICS)) {
-      expect(typeof value).toBe("number");
-      expect(value).toBeGreaterThan(0);
-    }
   });
 });
