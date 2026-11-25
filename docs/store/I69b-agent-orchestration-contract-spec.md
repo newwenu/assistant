@@ -127,7 +127,7 @@
 | # | 纪律 | 依据 |
 |---|---|---|
 | 1 | wire 在 R4 一次性冻结；此前各波零 diff | INV12 |
-| 2 | 改 DTO 后必须 `npm run contract:gen` 并提交生成物，禁止手改 | 项目规则 |
+| 2 | 改 DTO 后必须 `npm run contract:gen`，禁止手改 | 项目规则 |
 | 3 | 事件与台账同粒度键控 | O12 |
 | 4 | 命令层只做参数映射与错误转换，业务逻辑全在 crate | [I69a §5.4](./I69a-agent-orchestration-base-spec.md) |
 | 5 | DTO 与 crate 内模型分离：crate 不依赖 `assistant-protocol`；映射在 `src-tauri/src/adapters/orchestration.rs` | [I69a §7.1](./I69a-agent-orchestration-base-spec.md) |

@@ -11,7 +11,7 @@
 | [agent/](./agent/) | Agent 运行时、工具框架与 MCP、Agent Loop、审批、压缩与节点布局、身份与能力事实、运行时审计、沙箱与代码规模审计、Turn 观测面、长行读取与超级工具、工具三阶段状态、审批粒度与卡片决策化 | 76 |
 | [vault/](./vault/) | 密码箱：密钥体系、条目加密、同步、审计、生物识别、恢复与 IPC 契约 | 38 |
 | [chat/](./chat/) | 对话与消息链路：服务拆分、流事件、历史、分支、重试、附件/多模态、截图提问、Token Usage | 35 |
-| [ui/](./ui/) | Orb、主窗口与 mini 模式、设置系统、i18n、Mascot、时钟与布局、观测画布与存储管理器 | 45 |
+| [ui/](./ui/) | Orb、主窗口与 mini 模式、设置系统、i18n、Mascot、时钟与布局、观测画布与存储管理器 | 46 |
 | [infra/](./infra/) | 编译与依赖、crate 架构、DTO 与协议、配置归属、命令层、日志、应用目录、拆分规划、横切分析、错误吞没 | 43 |
 
 ## 文档清单
@@ -180,7 +180,7 @@
 | [`I40-history-message-tree-spec.md`](./chat/I40-history-message-tree-spec.md) | achievement4 | I40 — 主窗口历史消息树渲染规格 |
 | [`I35-screenshot-qa-spec.md`](./chat/I35-screenshot-qa-spec.md) | achievement10 | I35 — 截屏提问规格（rev11 已实现；§11.3 手动验收待执行） |
 
-### ui/ (45)
+### ui/ (46)
 
 | 文档 | 原批次 | 标题 |
 |---|---|---|
@@ -229,6 +229,7 @@
 | [`I67-storage-inventory-totals-spec.md`](./ui/I67-storage-inventory-totals-spec.md) | achievement13 | I67 — 存储管理器对账余量规格（基根分母 / 全类合计 / 受管条目扩至 12 条） |
 | [`I68-agent-canvas-preset-spec.md`](./ui/I68-agent-canvas-preset-spec.md) | achievement13 | I68 — Agent 画布预设与摆放规格（W2） |
 | [`clock-optional-feature-spec.md`](./ui/clock-optional-feature-spec.md) | achievement13 | 时钟工具可选化（clock feature）规格（S1–S8 已实施） |
+| [`STORAGE-MONITOR-ANALYSIS.md`](./ui/STORAGE-MONITOR-ANALYSIS.md) | analysis | 应用存储监视：观测机制合理性分析（时点快照） |
 
 ### infra/ (43)
 

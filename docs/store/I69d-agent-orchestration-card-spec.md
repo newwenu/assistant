@@ -7,14 +7,14 @@
 | 阶段 | P18（编排轴 L2；见 [I38 §2](./I38-agent-roadmap.md) / §3） |
 | 覆盖工作块 | **W3 前置**：编排画布上真实卡片的形态（不含编辑交互、不含运行态叠加的读取路径） |
 | 波次与交付顺序 | [I69](./I69-agent-orchestration-roadmap.md)（**唯一来源**：前置、退出条件、回退点；本文不排波次） |
-| 事实来源 | `src/features/canvas/`（W1 / W2 已交付设施的**现状**，2026-11-24 复核：`types.ts` / `cardKinds.ts` / `metrics.ts` / `CanvasCard.tsx` / `canvas.module.css`） |
+| 事实来源 | `src/features/canvas/`（W1 / W2 已交付设施的**现状**，2026-11-24 复核：`types.ts` / `cardKinds.ts` / `metrics.ts` / `CanvasCard.tsx` / `geometry.ts` / `CanvasEdge.tsx` / `canvas.module.css`） |
 | 术语唯一出处 | `docs/analysis/ORCHESTRATION-CONCEPT-SEMANTIC-TRANSFER.md` §2.5（用户可见词）· §2.6（开发原语）；本文只引用，不复述定义 |
-| 关联 | [I69a](./I69a-agent-orchestration-base-spec.md)（模板 schema / 校验 / 调度）· [I69b](./I69b-agent-orchestration-contract-spec.md)（DTO / 事件 / 读取纪律）· [I69c](./I69c-agent-orchestration-canvas-spec.md)（编辑与叠加语义）· I66 / I68（已归档，画布 W1 / W2） |
-| 影响范围 | 前端：`src/features/orchestration/`（新增编排卡片表与内容构造）；`src/features/canvas/`（**三处增量**，§6，全部可默认关闭）；`src/i18n/locales/{zh-CN,en-US}.json`。后端：**零改动** |
+| 关联 | [I69a](./I69a-agent-orchestration-base-spec.md)（模板 schema / 校验 / 调度）· [I69b](./I69b-agent-orchestration-contract-spec.md)（DTO / 事件 / 读取纪律）· [I69c](./I69c-agent-orchestration-canvas-spec.md)（编辑与叠加语义）· I66 / I68（已归档，画布 W1 / W2）· [dom-identifier-spec](./dom-identifier-spec.md)（DOM 标识的命名 / 取值 / 查找口径） |
+| 影响范围 | 前端：`src/features/orchestration/`（新增编排卡片表与内容构造）；`src/features/canvas/`（**两类改动**：三处可关闭增量（§6）+ **边几何与锚点的必须改造**（§5.1，不可关闭，含 `geometry.ts` / `CanvasEdge.tsx` / 连线提交路径））；`src/i18n/locales/{zh-CN,en-US}.json`。后端：**零改动** |
 | 契约影响 | **零新增**：不新增 DTO / 命令 / 事件；只消费 [I69b §1.1](./I69b-agent-orchestration-contract-spec.md) 的 `workflow-run-event` 与 §2.1 的模板 DTO |
 
-> **本文管理**：编排画布上有哪些卡片（§2）、每张卡逐字段与六件构成（§3）、状态到视觉的映射（§4）、非卡片对象（§5）、对既有设施的三处增量（§6）、派生与数据来源（§7）、交互边界（§8）、对 I69c 的最小修订（§9）、验收 OC1–OC14（§10）、未决 CQ1–CQ8（§11，**已全部定案**）、拒绝方案（§12）、上游承接清单（§13）。
-> **本文不管理**：模板 schema 与校验规则（[I69a §6](./I69a-agent-orchestration-base-spec.md)）、台账与调度语义（[I69a §8–§9](./I69a-agent-orchestration-base-spec.md)）、DTO / 命令 / 事件形态（[I69b](./I69b-agent-orchestration-contract-spec.md)）、编辑语义与草稿状态机、运行态事件消费纪律（[I69c §3–§4](./I69c-agent-orchestration-canvas-spec.md)）、波次与退出条件（[I69](./I69-agent-orchestration-roadmap.md)）。
+> **本文管理**：编排画布上有哪些卡片（§2）、每张卡逐字段与六件构成（§3）、状态到视觉的映射（§4）、非卡片对象（§5，含边几何形状）、对既有设施的改动（§6：三处可关闭增量 + 边几何必须改造）、派生与数据来源（§7）、交互边界（§8）、对 I69c 的最小修订（§9）、验收 OC1–OC14（§10）、未决 CQ1–CQ8（§11，**已全部定案**）、拒绝方案（§12）、上游承接清单（§13）。
+> **本文不管理**：模板 schema 与校验规则（[I69a §6](./I69a-agent-orchestration-base-spec.md)）、台账与调度语义（[I69a §8–§9](./I69a-agent-orchestration-base-spec.md)）、DTO / 命令 / 事件形态（[I69b](./I69b-agent-orchestration-contract-spec.md)）、编辑语义与草稿状态机、运行态事件消费纪律（[I69c §3–§4](./I69c-agent-orchestration-canvas-spec.md)）、波次与退出条件（[I69](./I69-agent-orchestration-roadmap.md)）、DOM 标识的命名 / 取值 / 查找口径（[dom-identifier-spec](./dom-identifier-spec.md)；本卷只写落点，不另立标识规则）。
 > **与 I69c 的关系**：本卷是 I69c 的**前置冻结**（先定「卡片长什么样」，再定「怎么编辑、怎么叠加」）。两卷并列、互不改条款；I69c 需在其 §2.1 的落点处引用本卷（同步清单见 §9）。
 
 ---
@@ -33,7 +33,7 @@ W2（I68，已归档）交付的 5 类卡片是**示例卡片**：内容全是�
 | `exit: "stopped"` 是 L1 出口汇点语义 | 编排画布没有出口汇点，角标语义悬空 |
 | `tone` 是示例色 | 运行态需要按 7 值 `NodeRunState` 取色 |
 
-**结论**：`CARD_KINDS`（示例表）与编排卡片表**分列、不合并、不互相引用**；编排侧另建内容构造器，只在**度量**（`CARD_METRICS` / `PORT_METRICS`）与**渲染壳**（`CanvasCard` / `CanvasEdge` / `CanvasLabel`）上与 W1 / W2 共用。
+**结论**：`CARD_KINDS`（示例表）与编排卡片表**分列、不合并、不互相引用**；编排侧另建内容构造器，只在**度量**（`CARD_METRICS` / `PORT_METRICS`）与**渲染壳**（`CanvasCard` / `CanvasEdge` / `CanvasLabel`）上与 W1 / W2 共用；其中 `CanvasEdge` 只共用组件身份，边几何与渲染原语按 §5.1 **必须改造**（示例实现缺方向判断 / 反向与上行形状 / 相对位置锚点 / 上行箭头 / 相对外轨参考系 / 多段命中区 / path 渲染，是功能缺失必须补齐，不是「不碰设施」）。
 
 ---
 
@@ -49,6 +49,7 @@ W2（I68，已归档）交付的 5 类卡片是**示例卡片**：内容全是�
 | 4 | 非卡片对象（边、条件标签、分组、端口）的形态 | OC13 / OC7（端口只画圆点、无类型标签） |
 | 5 | 对既有画布设施的三处**可关闭增量** | OC12 / OC14 |
 | 6 | 卡片内零交互控件、参数表单与 gate 决策入口的落点 | OC10 |
+| 7 | 边几何、锚点与渲染原语的**必须改造**（斜置 / 回边 / 上行均可渲染，无负段长，边画成 SVG path） | OC13 / [I69c §2.1](./I69c-agent-orchestration-canvas-spec.md) M1–M6 |
 
 ### 1.2 不交付什么
 
@@ -61,7 +62,7 @@ W2（I68，已归档）交付的 5 类卡片是**示例卡片**：内容全是�
 | 3 | 任何新 DTO / 命令 / 事件 | [I69b](./I69b-agent-orchestration-contract-spec.md) 已冻结 | OC11（`contract:verify` 无 diff） |
 | 4 | 就绪集合 / 并行 / 冲突域的前端计算 | [I69b](./I69b-agent-orchestration-contract-spec.md) K7 禁止 | [I69c](./I69c-agent-orchestration-canvas-spec.md) UI8（画布对 run 状态零写入） |
 | 5 | 卡片主体的「概览」态（缩放降级形态） | [I69c WQ5](./I69c-agent-orchestration-canvas-spec.md)：不开放低于 0.5 缩放，不建降级形态 | OC8（7 值药丸在 0.5 下仍可读；无缩放阈值分支） |
-| 6 | 自动布局 / 正交路由 / 边插入节点 | [I69c §1.4](./I69c-agent-orchestration-canvas-spec.md) 第 5 行 / WQ4 | OC13（边 `route` 只取 `horizontal` / `vertical`）+ [I69c](./I69c-agent-orchestration-canvas-spec.md) UI6 |
+| 6 | 自动布局 / **自动**正交路由（求最短路径 / 避障）/ 边上插入节点 | [I69c §1.4](./I69c-agent-orchestration-canvas-spec.md) 第 5 行 / WQ4 | OC13（`route` 由盒子派生、取值域 ⊆ 三值、无图算法）+ [I69c](./I69c-agent-orchestration-canvas-spec.md) UI6。注：`outer-track` 不是「正交路由」，是固定的外轨 16px 三段几何（§5.1，自选差异而非参考项目做法），属**交付项** |
 | 7 | 把示例卡片升级为真实卡片（改 `CARD_KINDS`） | 示例表冻结；真实卡片由本卷另建（§2.1） | OC1（编排侧不调用 `cardViewOf` / `exampleCardOf`）+ OC12（观测零回归） |
 | 8 | 卡片主体内的参数**表单** | 落参数面板（侧栏，§8.2） | OC10（卡片子树内无 `input` / `select` / `textarea` / 内层 `button`） |
 | 9 | 分组虚线框以外的分组能力（折叠 / 嵌套 / 拖入归组动画） | v1 只做组标题标签（§5.3） | OC13（分组只产出 `CanvasLabelView`、不产出卡片） |
@@ -73,7 +74,7 @@ W2（I68，已归档）交付的 5 类卡片是**示例卡片**：内容全是�
 | 项 | 说明 |
 |---|---|
 | 模板 schema | 只读 [I69a §6.1](./I69a-agent-orchestration-base-spec.md) 的 `WorkflowNode` / `NodeKind` / `TurnNodeParams` / `WorkflowEdge` / `EdgeCondition` / `WorkflowGroup` |
-| 卡片壳与度量 | 只读 `src/features/canvas/` 现状，不改既有字段语义 |
+| 卡片壳与度量 | 只读 `src/features/canvas/` 现状，不改既有字段语义；**边几何是例外**：`geometry.ts` / `CanvasEdge.tsx` 属本卷必须改造项（§5.1） |
 | 契约 | 只读 [I69b](./I69b-agent-orchestration-contract-spec.md)，零新增 |
 
 ---
@@ -91,7 +92,7 @@ W2（I68，已归档）交付的 5 类卡片是**示例卡片**：内容全是�
 |---|---|
 | 不合并 | 两表字段形状可相似，但**不得**互相 import；合并会让示例值成为真实卡片的默认值（I68 A1 的反例） |
 | 不共用构造器 | 编排侧**不得**调用 `cardViewOf` / `exampleCardOf` / `paletteItemsOf`（OC1） |
-| 共用度量与壳 | `CARD_METRICS` / `PORT_METRICS` / `CanvasCard` / `CanvasEdge` / `CanvasLabel` 直接使用，不改其数学与字段语义 |
+| 共用度量与壳 | `CARD_METRICS` / `PORT_METRICS` / `CanvasCard` / `CanvasEdge` / `CanvasLabel` 直接使用，不改其字段语义；`CanvasEdge` 依赖的边几何数学与渲染原语按 §5.1 **必须改造**（例外，见 [I69c §2.1](./I69c-agent-orchestration-canvas-spec.md) M1–M6） |
 | 类别 key 闭集 | 编排卡片 key 只有 `turn` / `hitl`（取自 [I69a §6.1](./I69a-agent-orchestration-base-spec.md) `NodeKind`），不提供第四值 |
 
 ### 2.2 编排画布上的对象
@@ -275,9 +276,14 @@ W2（I68，已归档）交付的 5 类卡片是**示例卡片**：内容全是�
 | 项 | 规则 |
 |---|---|
 | 端点 | 节点级：`from` / `to` 直接映射（[I69c WQ3](./I69c-agent-orchestration-canvas-spec.md)），无端口字段 |
-| 路由 | 只产出 `horizontal` / `vertical`：按两端盒子中心 `|dx| ≥ |dy|` 取 horizontal，否则 vertical |
-| 不产出 `outer-track` | 模板是 DAG（[I69a §6.3](./I69a-agent-orchestration-base-spec.md) 第 3 类），无回边；`CARD_METRICS.loopGutter = 0` |
-| 不实现正交路由 | 属自动布局范畴（[I69c §1.4](./I69c-agent-orchestration-canvas-spec.md) 第 5 行） |
+| 路由取值域 | ⊆ 三值 `horizontal` / `vertical` / `outer-track`（`EdgeRoute`，[types.ts](../../src/features/canvas/types.ts)），**由两端盒子相对位置派生**，不存模板（INV13） |
+| 正向（目标在源右 / 下方） | `horizontal` 取 `from.right → to.left`、`vertical` 取 `from.bottom → to.top`；两端**同行 / 同列**时为单段直线，**斜置**时补固定三段（中缝取两端盒子中心的中点），拐角带圆角。与 n8n 的正向做法同构：Vue Flow `getSmoothStepPath` 同样是「中缝落在两端 X 中点」的正交折线，`borderRadius: 16` / `offset: 40` |
+| 反向 / 上行（目标在源左 / 上方） | 取 `outer-track`：锚点取**各自面向对方的侧边**（源取左 / 上、目标取右 / 下，由 [I69c M3](./I69c-agent-orchestration-canvas-spec.md) 按盒子相对位置推导），形状为「出 → 竖 → 入」三段；**外轨参考系是两端盒子的包围盒上沿**（`y = min(from.y, to.y) - gutter`），**不是画布绝对顶端**——现状 `y = gutter` 只是示例卡片恰好贴顶的巧合，编排盒子任意位置，照抄会把线拉到世界顶端并跨过中间卡片；间距取 `CANVAS_METRICS.loopGutter`（16），**不沿用** `CARD_METRICS.loopGutter = 0`（该 0 只是示例「无回边」的预设，见 [I69c §2.1](./I69c-agent-orchestration-canvas-spec.md) `presets/metrics.ts` 行）。**这是自选差异，不是任何参考项目的做法**：n8n 反向特判为「源下方 130px 局部下探」两段，Dify / ComfyUI 不判方向；外轨三段是为适配固定左入右出端口 + 正交走向而取的折中 |
+| 渲染原语 | **SVG path**（[I69c M6](./I69c-agent-orchestration-canvas-spec.md)）：`edgeGeometryOf` 输出单条 `d` + 末端切线角，描边 `<path>`、命中 `<path>`（透明粗描边）、箭头按切线旋转；虚线用 `stroke-dasharray`、流动用 `stroke-dashoffset`，一套样式覆盖任意方向。**不用**绝对定位矩形段——矩形段宽高为负会被 CSS 丢弃，归一化又会抹掉方向符号，虚线 / 流动要按方向枚举翻倍，多段命中区只能退化为覆盖整个画布的包围盒 |
+| 与参考实现的差异 | 走向与渲染原语**都与 n8n 同构**（正交折线 + 圆角 + SVG path）；差异只剩两处：① 反向 / 上行不照 n8n 的「源下方 130px 局部下探」，改走外轨 16px；② n8n 用 `borderRadius: 16` / `offset: 40`，我们按卡片度量另取常量。Dify 恒用 `getBezierPath`（`curvature: 0.16`，不判方向）、ComfyUI / litegraph 每段贝塞尔（控制点沿 slot 方向偏移 `0.25 × 弦长`）——两者都不适用：我们的端口固定左入右出，正交走向更能表达 DAG 方向；ComfyUI 的贝塞尔是被「端口可任意侧边」逼出来的 |
+| DAG ≠ 无反向连线 | 模板无环（[I69a §6.3](./I69a-agent-orchestration-base-spec.md) 第 3 类）只保证拓扑无环，**不保证**目标在视觉上总位于源右侧 / 下方；用户可把后继拖到前驱左侧 / 上方，产生视觉回边 / 上行。示例模板「全部正向」是布局巧合，不是规范 |
+| 不实现正交路由 | 不求和最短路径、不做避障、不引入图算法；三值路由都是「按两端盒子相对位置取固定几何」，属**交付项**（§1.2 第 6 条注） |
+| 必须改造设施 | 示例实现**缺功能，必须补齐**（不是「怕观测回归所以不碰设施」）：缺方向判断（只按 `\|dx\| ≥ \|dy\|` 二选一）、缺反向 / 上行几何（示例只按 `right → left` / `bottom → top` 写死，斜置与回边时段长为负被 CSS 丢弃）、缺相对位置锚点、缺上行箭头取值、缺相对外轨参考系、缺多段命中区归一、渲染原语只有矩形段（虚线 / 流动靠 `data-orientation` 二值切样式，表达不了左 / 上流向）。故 `geometry.ts` / `CanvasEdge.tsx` / `canvas.module.css` 边样式 / 连线提交路径属本卷**必须改造项**，落点与闭合判据见 [I69c §2.1](./I69c-agent-orchestration-canvas-spec.md) M1–M6；观测零回归（OC12 / UI15）只是护栏 |
 | `phase` | 编辑态一律 `idle`；运行态按 [I69c §4.4](./I69c-agent-orchestration-canvas-spec.md)（`untaken` / `active` / `passed`），不新增值 |
 | 自环 / 环 | 不在渲染层拦截，由保存期校验报（[I69c §3.2](./I69c-agent-orchestration-canvas-spec.md)） |
 
@@ -316,23 +322,29 @@ W2（I68，已归档）交付的 5 类卡片是**示例卡片**：内容全是�
 
 ---
 
-## 6 对既有画布设施的增量（全部可关闭）
+## 6 对既有画布设施的改动（三处可关闭增量 + 边几何 / 渲染原语必须改造）
 
-W1 / W2 已归档、设施冻结。本卷只允许三处**纯增量**，缺省不传时行为与现状逐字节一致（OC12）。
+W1 / W2 已归档，但**归档的是前端示例模板的实现，不是编排画布必须照搬的规范**。**「不碰设施」不成立**：示例实现缺功能，必须补齐，不是「怕观测回归所以不动」。缺的是边几何的方向判断与反向 / 上行形状、按盒子相对位置推导的锚点、上行箭头取值、相对两端盒子的外轨参考系、多段命中区归一、SVG path 渲染原语（详见 §5.1 与 [I69c §2.1](./I69c-agent-orchestration-canvas-spec.md) M1–M6）；这些缺失导致「把后继拖到前驱左侧 / 上方就画不出线」，属功能缺失而非风格取舍。观测零回归（OC12 / UI15）是**补功能时的护栏**，约束改动不伤观测侧，**不作为不动设施的理由**。设施改动分两类：
+
+| 类别 | 内容 | 约束 |
+|---|---|---|
+| **三处可关闭纯增量** | INC1–INC3（本节下表） | 缺省不传时行为与现状逐字节一致（OC12）；观测页零回归 |
+| **边几何 / 锚点 / 渲染原语的必须改造** | `geometry.ts` / `CanvasEdge.tsx` / `canvas.module.css` 边样式 / 连线提交路径（形状见 §5.1，落点与闭合判据见 [I69c §2.1](./I69c-agent-orchestration-canvas-spec.md) M1–M6） | **不可关闭**：示例几何按「同行 / 相邻行、全部正向」写死，编排画布自由拖拽的斜置 / 回边 / 上行照原样必然画不出线；且矩形段表达不了左 / 上流向，必须换 SVG path |
 
 | # | 增量 | 位置 | 形态 | 缺省行为 |
 |---|---|---|---|---|
 | **INC1** | `CanvasCardBodyView` 新增通用变体 `detail` | `src/features/canvas/types.ts` + `CanvasCard.tsx` | `{ kind: "detail"; label: string; rows: readonly { label: string; value: string }[]; emptyHint?: string }`；渲染为只读行 + 空提示 | 其他调用方不产出该变体 → 不渲染 |
-| **INC2** | 运行态整卡左缘 3px 色带 | `CanvasCard.tsx`（`status !== undefined` 时加 `data-run="true"`，并在色带元素上带 `data-tone={card.tone ?? "default"}`）+ `canvas.module.css` | 覆盖层，颜色取 `tone` 对应的 CSS 变量；`data-tone` 与既有药丸**同源同值**，不改药丸取值 | 无 `status` 时无 `data-run`，无变化 |
+| **INC2** | 运行态整卡左缘 3px 色带 | `CanvasCard.tsx`（`status !== undefined` 时条件渲染色带元素，色带元素上带 `data-tone={card.tone ?? "default"}`）+ `canvas.module.css` | 覆盖层，颜色取 `tone` 对应的 CSS 变量；`data-tone` 与既有药丸**同源同值**，不改药丸取值；**不新增 `data-run`**——该属性无消费者，属死标识（[dom-identifier-spec](./dom-identifier-spec.md) C21 / N18，按该规范 T6 清理），本增量的开关只由 `status` 判据承担 | 无 `status` 时无色带元素，无变化 |
 | **INC3** | `CanvasLabelView` 可选虚线框 | `types.ts` + `CanvasLabel.tsx` + CSS | `frame?: boolean` → 虚线边框 + 左上标题 | 不传 → 现有纯文字标签 |
 
 | 约束 | 说明 |
 |---|---|
 | 通用而非编排专用 | INC1 的 `detail` 只承载「行列表」这一通用形状，**不带**任何编排语义（字段名不叫 `turnId` / `reason`）；语义由编排侧填文案 |
 | 不改既有字段 | 三处增量都不改 `CanvasCardView` / `CanvasLabelView` 既有字段语义与取值域 |
-| 不改数学与手势 | `viewport.ts`、`geometry.ts`、拖拽 reducer、帧合并调度、选择语义均不改 |
+| 不改数学与手势 | `viewport.ts`、拖拽 reducer、帧合并调度、选择语义均不改；**`geometry.ts` / `CanvasEdge.tsx` / 边样式是例外**——边几何的方向判断、多段形状与 SVG path 渲染原语属必须改造项（§5.1 / [I69c §2.1](./I69c-agent-orchestration-canvas-spec.md) M1–M6），不受本节三处增量的默认关闭约束 |
 | 默认关闭 | 不传即等价现状；观测页零回归（OC12） |
-| 需同步 I69c | **已同步（2026-11-24）**：I69c §2.1 两行已按 §9 改为「以本卷 §3 / §6 为准」 |
+| DOM 标识口径 | 三处增量涉及的 `data-*` 命名、取值与消费者要求以 [dom-identifier-spec](./dom-identifier-spec.md) 为准（C10 布尔恒渲染、C21 每个属性必须有消费者）；本卷不另立标识规则，也不引入无消费者的新属性（`data-run` 已按该规范 T6 移除） |
+| 需同步 I69c | **已同步（2026-11-24 / 2026-11-25）**：I69c §2.1 两行已按 §9 改为「以本卷 §3 / §6 为准」；「不碰设施以免观测回归」口径已全库改为「示例实现缺功能，必须补」，观测零回归降为护栏——同批更新 I69c §1.4 第 4 行、§2.1 引言、§6 UI15，[I69a §1.2](./I69a-agent-orchestration-base-spec.md) 第 12 条，[I69 §1.3](./I69-agent-orchestration-roadmap.md) 设施行；**边渲染原语改 SVG path（M6）同批落进 I69c §2.1 设施表 / 改造清单 / UI15 与本卷 §5.1 / §6**，`data-orientation` 按 C21 同批删除 |
 
 ---
 
@@ -385,7 +397,7 @@ W1 / W2 已归档、设施冻结。本卷只允许三处**纯增量**，缺省�
 
 ## 9 对 I69c 的最小修订与词表同步（同步清单）
 
-本卷先于 I69c 实施，I69c 需在其落点处引用本卷；**不改 I69c 的语义条款**，只补卡片形态的出处。**五处已全部同步（2026-11-24）**，下表保留为同步记录与复核判据。
+本卷先于 I69c 实施，I69c 需在其落点处引用本卷；**不改 I69c 的语义条款**，只补卡片形态的出处。**六处已全部同步（2026-11-24）**，下表保留为同步记录与复核判据。
 
 | # | I69c 位置 | 现文 | 改为 |
 |---|---|---|---|
@@ -394,6 +406,7 @@ W1 / W2 已归档、设施冻结。本卷只允许三处**纯增量**，缺省�
 | 3 | §2.1 `presets/cardKinds.ts` 行「W3 / W4 用法」列 | 「只取 `execution-turn` / `execution-hitl` 两类的形与度量」 | 「只取形与度量；内容由本卷 §3 另建构造器产出，不调用 `cardViewOf`」 |
 | 4 | §4.4 状态 → 视觉 | 自带一张 `NodeRunState` 7 值映射表（`tone` 用中文语义名） | 删表，改为「卡片级映射唯一出处是本卷 §4.2 / §4.3」，只留叠加层纪律（去双权威） |
 | 5 | §1.4 归属矩阵第 4 / 11 行「闭合判据」列 | 「UI15 + §2.1 接缝四规则」「§2.3 第 1 条（只引用不重定义）」 | 前者补 `OC12` / `OC14` 并把「四规则」改为「§2.1 接缝规则全表」，后者换成 `OC13`（元规则不算判据） |
+| 6 | §2.1 设施表与「禁止改造项」行 | 「`geometry.ts` / 连线数学不改；设施冻结」 | 「边几何 / 锚点 / 命中 / 边渲染原语 / 连线提交属必须改造（M1–M6），只有 `viewport.ts` / 手势 reducer / 帧合并 / 选择语义不改」 |
 
 **词表同步（同批，2026-11-24）**：`docs/analysis/ORCHESTRATION-CONCEPT-SEMANTIC-TRANSFER.md` §2.5.2 更新四处——`卡片类别` 由「未定案」改为「定案（W3 收窄，闭集 = `turn` / `hitl`）」；`卡片模式` 去掉「主体」限定并注明宿主不影响模式；`参数表单` 明确「控件集合、宿主可换」；新增 `参数面板`（宿主区域，v1 = 侧栏）。§2.5.4 增「参数面板 ≠ 参数表单」一行。I69c §3.1 同步新增「参数表单与参数面板」一段。
 
@@ -411,11 +424,11 @@ W1 / W2 已归档、设施冻结。本卷只允许三处**纯增量**，缺省�
 | **OC6** | 无出口角标 | 断言编排卡 `exit === undefined` / `null` |
 | **OC7** | 端口只画圆点 | 断言 `ports` 的 `typeLabel` 全为空串、无标签视觉输出（`title` 为空） |
 | **OC8** | 状态映射逐行 | 单测：7 值各一条，断言 `tone` / 药丸 key / 附加区行；`skipped` 文案含「调度阻断」 |
-| **OC9** | 编辑态 / 运行态分界 | 无 run 时无药丸、无 `data-run`；有 run 时色带随 `tone` |
-| **OC10** | 卡内零交互控件 | DOM 断言：卡片子树内无 `input` / `select` / `textarea` / 内层 `button`；参数表单与 gate 表单在侧栏 |
+| **OC9** | 编辑态 / 运行态分界 | 无 run 时无药丸、无色带元素；有 run 时色带随 `tone`（开关只由 `status` 判据承担，不依赖 `data-run`） |
+| **OC10** | 卡内零交互控件 | 源码正则：`CanvasCard.tsx` 中 `<button` 仅 1 处、无 `input` / `select` / `textarea`（仓库无 jsdom，[dom-identifier-spec](./dom-identifier-spec.md) N12 / N14）；参数表单与 gate 表单在侧栏 |
 | **OC11** | 零 wire 变更 | `npm run contract:verify` 无 diff；无新增 DTO / 命令 / 事件 |
 | **OC12** | 设施增量默认关闭 + 观测零回归 | 不传三处增量时快照与现状一致；观测侧投影单测与依赖方向测试全绿 |
-| **OC13** | 分组与非卡片对象 | 分组只产出 `CanvasLabelView`；边 `route` 只取 `horizontal` / `vertical`；条件标签只对 `onSuccess` / `onFailure` 生成 |
+| **OC13** | 分组与非卡片对象 | 分组只产出 `CanvasLabelView`；边 `route` 取值 ⊆ 三值（`horizontal` / `vertical` / `outer-track`），按两端盒子相对位置派生——斜置 / 回边 / 上行均能出线且无负段长（[I69c §2.1](./I69c-agent-orchestration-canvas-spec.md) M1–M6，边渲染为 SVG path）；条件标签只对 `onSuccess` / `onFailure` 生成 |
 | **OC14** | 颜色只来自 CSS 变量 | 编排样式无硬编码色值；`tone` 只经 `data-tone` 消费 |
 
 > OC1–OC14 只提供卡片形态的**验收细则**：本文不判定交付，也不判定任何 DoD 是否被覆盖——交付成立与否只看 [I69 §1.4](./I69-agent-orchestration-roadmap.md) 的自证条件与 [I69 §1.4.6](./I69-agent-orchestration-roadmap.md) 的 DU 台账；本文不新增阶段级判据，不改 I69 的波次与退出条件。
