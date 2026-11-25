@@ -1,6 +1,6 @@
 //! `shell` 工具端到端验收（I52 C5 / I56 §7 / §8）。
 //!
-//! 覆盖条目：A6（回归）/ A9–A13 / A15 / A24 / A25 / A27–A32 / A34–A38。
+//! 覆盖条目：A6（回归）/ A9–A15 / A18–A20 / A23 / A24 / A25 / A27–A32 / A34–A38。
 //! 这些断言**必须**跑真实沙箱与真实 shell：桩掉 `sandbox::spawn` 就失去验收意义，
 //! 因此本文件只做「真实执行 → 结果事实」的比对，不 mock 边界。
 //!
@@ -62,6 +62,8 @@ fn plain_path(path: &std::path::Path) -> String {
 struct Harness {
     workspace: tempfile::TempDir,
     storage: tempfile::TempDir,
+    /// 会话临时区（I73 §3.8：会话级单目录，跨调用复用、随会话删除）。
+    scratch: tempfile::TempDir,
     /// 只靠 `Drop` 保活：路径在构造期被 `detect` 取走，用例本身不读它。
     #[allow(dead_code)]
     sensitive: tempfile::TempDir,
@@ -73,6 +75,7 @@ impl Harness {
     fn new() -> Self {
         let workspace = tempfile::tempdir().expect("workspace tempdir");
         let storage = tempfile::tempdir().expect("storage tempdir");
+        let scratch = tempfile::tempdir().expect("scratch tempdir");
         // 敏感列表必须非空（Unix 后端以空列表判负），且须用兄弟 tempdir：
         // 与可写根不相交，macOS 后置的 `deny file-read*` 也不会罩住 workspace。
         let sensitive = tempfile::tempdir().expect("sensitive tempdir");
@@ -91,6 +94,7 @@ impl Harness {
         Self {
             workspace,
             storage,
+            scratch,
             sensitive,
             probe,
             tool,
@@ -106,14 +110,15 @@ impl Harness {
         self.storage.path().to_path_buf()
     }
 
-    /// 调用级临时目录（`<writable_root>/.assistant-tmp/<call_id>`）。
-    fn scratch(&self, call_id: &str) -> PathBuf {
-        self.root().join(".assistant-tmp").join(call_id)
+    /// 会话临时区根（与可写根并列的第二个沙箱可写根）。
+    fn scratch_root(&self) -> PathBuf {
+        std::fs::canonicalize(self.scratch.path()).expect("canonicalize scratch")
     }
 
     fn ctx(&self, call_id: &str) -> ToolUseContext {
         ToolUseContext {
             workspace_root: Some(self.workspace.path().display().to_string()),
+            tool_scratch_root: Some(self.scratch_root()),
             session_id: Some("shell-e2e".to_string()),
             tool_call_id: Some(call_id.to_string()),
             ..Default::default()
@@ -198,14 +203,19 @@ async fn a10_large_output_spills_and_previews_tail_only() {
     );
 
     let text = result.assistant_text();
-    assert!(text.starts_with("<persisted-output path=\""), "text={text}");
+    // 临时区回填行恒在末尾（A18），断言正文时先切掉它。
+    let body = text
+        .split("\n[scratch root: scratch://]")
+        .next()
+        .expect("assistant text must carry a body");
+    assert!(body.starts_with("<persisted-output path=\""), "text={body}");
     assert!(
-        text.contains("chars omitted; full output in the file above"),
-        "head window must be replaced by an omission marker: {text}"
+        body.contains("chars omitted; full output in the file above"),
+        "head window must be replaced by an omission marker: {body}"
     );
     assert!(
-        !text.contains("HEADMARKER"),
-        "shell preview must not include the head window: {text}"
+        !body.contains("HEADMARKER"),
+        "shell preview must not include the head window: {body}"
     );
 
     let tail: String = file
@@ -216,7 +226,7 @@ async fn a10_large_output_spills_and_previews_tail_only() {
         .into_iter()
         .rev()
         .collect();
-    assert!(text.ends_with(&tail), "text must end with the file tail");
+    assert!(body.ends_with(&tail), "body must end with the file tail");
 
     let compact = build_compact(
         "shell",
@@ -560,7 +570,11 @@ async fn a26_empty_output_leaves_no_file() {
     assert_eq!(data["outputBytes"], json!(0));
     assert_eq!(data["outputLines"], json!(0));
     assert_eq!(data["exitCode"], json!(0));
-    assert_eq!(result.assistant_text(), "(no output)");
+    // 空输出正文之后仍恒有临时区根引用行（A18）。
+    assert_eq!(
+        result.assistant_text(),
+        "(no output)\n[scratch root: scratch://]"
+    );
 
     // `finish` 必须删掉空文件：本用例独占一个落盘根，任何文件都算残留。
     let leftovers: Vec<_> = walk_files(harness.storage_root());
@@ -723,9 +737,9 @@ async fn a29_output_encoding_utf8_and_oem() {
     }
 }
 
-/// A30：临时目录收进可写根、且调用结束即删除。
+/// A30：临时区指向会话级 scratch 根（不在可写根内）、且调用结束**不**删除。
 #[tokio::test]
-async fn a30_scratch_dir_is_inside_root_and_removed() {
+async fn a30_scratch_dir_is_session_scoped_and_survives_the_call() {
     let _guard = EXEC_LOCK.lock().await;
     let harness = Harness::new();
     let call_id = "call-a30";
@@ -737,29 +751,294 @@ async fn a30_scratch_dir_is_inside_root_and_removed() {
         .await;
     assert!(result.ok, "{:?}", result.error);
 
-    let expected = harness.scratch(call_id);
     let file = std::fs::read_to_string(output_path(&result)).expect("read spilled output");
     let reported = file
         .trim()
         .strip_prefix("TMPDIR=")
         .expect("TMPDIR line")
         .to_string();
-    assert!(
-        reported.starts_with(&plain_path(&harness.root())),
-        "scratch dir must live inside the writable root: {reported}"
+    assert_eq!(
+        reported,
+        plain_path(&harness.scratch_root()),
+        "TEMP / TMP / TMPDIR 必须指向会话临时区根（I73 §3.8 W2）"
     );
     assert!(
-        reported.ends_with(&format!(
-            "{}{}{}",
-            ".assistant-tmp",
-            std::path::MAIN_SEPARATOR,
-            call_id
-        )),
-        "scratch dir must be call-scoped: {reported}"
+        !reported.starts_with(&plain_path(&harness.root())),
+        "会话临时区是与可写根并列的独立根，不再嵌在工作区里: {reported}"
+    );
+
+    // 会话级目录：第二次调用复用同一目录，上一次的产物仍可见（W6 handoff）。
+    // `cwd` 仍在工作区内，故用临时区的绝对路径引用该产物。
+    let scratch = harness.scratch_root();
+    let handoff = scratch.join("handoff.txt");
+    std::fs::write(&handoff, b"carried").expect("write handoff");
+    let command = script(
+        &format!("type \"{}\"", plain_path(&handoff)),
+        &format!("cat '{}'", plain_path(&handoff)),
+    );
+    let second = harness.run("call-a30-second", command).await;
+    assert!(second.ok, "{:?}", second.error);
+    let second_text = std::fs::read_to_string(output_path(&second)).expect("read spilled output");
+    assert!(second_text.contains("carried"), "text={second_text}");
+    assert!(
+        scratch.exists(),
+        "调用收尾不得删除会话级临时区（随会话删除）"
+    );
+}
+
+/// A14：通道唯一——子进程的 `TEMP` / `TMP` / `TMPDIR` 三者同值且等于会话临时区根；
+/// 父进程的同名变量被覆盖而非透传（I73 §7 A14 / §3.8 T1 / N13 / N16）。
+#[tokio::test]
+async fn a14_scratch_env_channel_is_single_and_overridden() {
+    let _guard = EXEC_LOCK.lock().await;
+    let harness = Harness::new();
+    let result = harness
+        .run(
+            "call-a14",
+            script(
+                "echo TEMP=%TEMP% & echo TMP=%TMP% & echo TMPDIR=%TMPDIR%",
+                "printf 'TEMP=%s\\nTMP=%s\\nTMPDIR=%s\\n' \"$TEMP\" \"$TMP\" \"$TMPDIR\"",
+            ),
+        )
+        .await;
+    assert!(result.ok, "{:?}", result.error);
+
+    let file = std::fs::read_to_string(output_path(&result)).expect("read spilled output");
+    let mut values = Vec::new();
+    for key in ["TEMP", "TMP", "TMPDIR"] {
+        let prefix = format!("{key}=");
+        let value = file
+            .lines()
+            .find_map(|line| line.trim().strip_prefix(&prefix))
+            .unwrap_or_else(|| panic!("{key} must be echoed: {file}"));
+        values.push(value.to_string());
+    }
+
+    let expected = plain_path(&harness.scratch_root());
+    for (key, value) in ["TEMP", "TMP", "TMPDIR"].into_iter().zip(&values) {
+        assert_eq!(value, &expected, "{key} 必须等于会话临时区根: {file}");
+    }
+    assert_eq!(values[0], values[1], "TEMP 与 TMP 必须同值（单一通道）");
+    assert_eq!(values[0], values[2], "TEMP 与 TMPDIR 必须同值（单一通道）");
+
+    // 父进程的同名变量值不等于会话临时区根，子进程看到的只能是覆盖后的值。
+    if let Ok(parent_temp) = std::env::var("TEMP") {
+        assert_ne!(
+            parent_temp, expected,
+            "父进程 TEMP 与会话临时区根同值，本用例失去区分力"
+        );
+    }
+}
+
+/// A20：幂等创建——同会话连续 N 次 `shell` 既不删除也不重建临时区，
+/// 第 1 次写入的文件在第 2 次调用中仍存在（I73 §7 A20 / §3.8 W6 / D4）。
+#[tokio::test]
+async fn a20_scratch_dir_is_created_idempotently_across_calls() {
+    let _guard = EXEC_LOCK.lock().await;
+    let harness = Harness::new();
+    let scratch = harness.scratch_root();
+    std::fs::write(scratch.join("sentinel.txt"), b"keep").expect("sentinel");
+
+    // 目录创建时间在会话内不得变化：变化即意味着「删了再建」。
+    let created_before = std::fs::metadata(&scratch)
+        .and_then(|meta| meta.created())
+        .ok();
+
+    for round in 0..3 {
+        let result = harness
+            .run(&format!("call-a20-{round}"), script("echo ok", "echo ok"))
+            .await;
+        assert!(result.ok, "{:?}", result.error);
+        assert!(
+            scratch.join("sentinel.txt").exists(),
+            "第 {round} 次调用后临时区产物必须仍在（不得删除目录）"
+        );
+    }
+
+    if let Some(before) = created_before {
+        let after = std::fs::metadata(&scratch)
+            .and_then(|meta| meta.created())
+            .ok();
+        assert_eq!(Some(before), after, "会话临时区不得重建（W6 / D4）");
+    }
+}
+
+/// A15：会话级保留——两次 `shell` 的 `TMPDIR` 相同，产物在调用结束后仍可由
+/// `read` 以 `scratch://<rel>` 读回（I73 §7 A15 / N14 / N16 / R5）。
+#[tokio::test]
+async fn a15_scratch_survives_the_call_and_reads_back_by_reference() {
+    use assistant_tools::os::agent_read::AgentReadTool;
+    use assistant_tools::storage::InMemoryReadReceiptStore;
+
+    let _guard = EXEC_LOCK.lock().await;
+    let harness = Harness::new();
+
+    let first = harness
+        .run(
+            "call-a15-first",
+            script(
+                "echo hello> \"%TEMP%\\handoff.txt\" & echo %TEMP%",
+                "echo hello > \"$TMPDIR/handoff.txt\"; echo \"$TMPDIR\"",
+            ),
+        )
+        .await;
+    assert!(first.ok, "{:?}", first.error);
+    let first_text = std::fs::read_to_string(output_path(&first)).expect("read spilled output");
+    let first_tmp = first_text
+        .lines()
+        .last()
+        .expect("TMPDIR line")
+        .trim()
+        .to_string();
+
+    let second = harness
+        .run("call-a15-second", script("echo %TEMP%", "echo \"$TMPDIR\""))
+        .await;
+    assert!(second.ok, "{:?}", second.error);
+    let second_text = std::fs::read_to_string(output_path(&second)).expect("read spilled output");
+    assert_eq!(
+        second_text.trim(),
+        first_tmp,
+        "会话临时区必须跨调用复用（N14）"
+    );
+    assert_eq!(
+        first_tmp,
+        plain_path(&harness.scratch_root()),
+        "TMPDIR 必须等于会话临时区根"
+    );
+
+    // 调用已结束：目录与产物都还在，`read` 能用回填的引用读回。
+    assert!(
+        harness.scratch_root().join("handoff.txt").exists(),
+        "调用收尾不得删除会话级临时区"
+    );
+    let reader = AgentReadTool::new(Arc::new(InMemoryReadReceiptStore::new()));
+    let read = reader
+        .execute(
+            &json!({ "path": "scratch://handoff.txt" }),
+            &harness.ctx("call-a15-read"),
+        )
+        .await
+        .expect("read executes");
+    assert!(read.ok, "{:?}", read.error);
+    assert!(
+        read.assistant_text().contains("hello"),
+        "text={}",
+        read.assistant_text()
+    );
+}
+
+/// A18：命令未产生任何临时文件时，回填仍有 `scratch://` 根行且不带清单（I73 §7 A18）。
+#[tokio::test]
+async fn a18_scratch_root_line_is_always_backfilled_without_a_listing() {
+    let _guard = EXEC_LOCK.lock().await;
+    let harness = Harness::new();
+    let result = harness
+        .run("call-a18", script("echo plain", "echo plain"))
+        .await;
+    assert!(result.ok, "{:?}", result.error);
+
+    let text = result.assistant_text();
+    assert!(
+        text.contains("[scratch root: scratch://]"),
+        "根引用行必须恒在: {text}"
     );
     assert!(
-        !expected.exists(),
-        "scratch dir must be removed after the call"
+        !text.contains("[scratch entries:"),
+        "空临时区不得输出清单: {text}"
+    );
+}
+
+/// A19：清单与目录一层子项一致，超过 20 项按 `…(+N more)` 截断且 N 正确；
+/// 只给名字，不含大小 / 时间 / 递归项（I73 §7 A19）。
+#[tokio::test]
+async fn a19_scratch_listing_matches_one_level_of_children_and_truncates() {
+    let _guard = EXEC_LOCK.lock().await;
+    let harness = Harness::new();
+    let scratch = harness.scratch_root();
+    std::fs::create_dir(scratch.join("nested")).expect("nested dir");
+    std::fs::write(scratch.join("nested").join("deep.txt"), b"deep").expect("nested file");
+    for index in 0..24 {
+        std::fs::write(scratch.join(format!("item-{index:02}.txt")), b"x").expect("scratch file");
+    }
+
+    let result = harness
+        .run("call-a19", script("echo done", "echo done"))
+        .await;
+    assert!(result.ok, "{:?}", result.error);
+
+    let text = result.assistant_text();
+    let listing = text
+        .lines()
+        .find(|line| line.starts_with("[scratch entries: "))
+        .expect("listing line");
+    let body = listing
+        .strip_prefix("[scratch entries: ")
+        .and_then(|rest| rest.strip_suffix(']'))
+        .expect("listing bounds");
+
+    // 一层子项共 25 个（24 个文件 + 1 个目录），只报 20 个名字 + 剩余个数。
+    assert!(
+        body.ends_with(", …(+5 more)"),
+        "截断标记与 N 必须正确: {body}"
+    );
+    let names: Vec<&str> = body.trim_end_matches(", …(+5 more)").split(", ").collect();
+    assert_eq!(names.len(), 20, "清单上限必须是 20 项: {body}");
+    for name in &names {
+        assert!(
+            scratch.join(name).exists(),
+            "清单项必须是一层实际子项: {name}"
+        );
+    }
+    // 目录也计入子项总数（`+5 more` 已证明 total = 25 = 24 文件 + 1 目录），
+    // 但不递归展开：`deep.txt` 只存在于 `nested/` 里，清单里不能出现。
+    assert!(!body.contains("deep.txt"), "清单不得递归: {body}");
+    assert!(
+        !body.contains("bytes") && !body.contains("2026-"),
+        "清单不得附带大小或时间: {body}"
+    );
+}
+
+/// A23：长路径不回归——scratch 内 ≥260 字符的深层文件仍可 `read`（M1 自动前缀）。
+#[tokio::test]
+async fn a23_long_scratch_path_still_reads() {
+    use assistant_tools::os::agent_read::AgentReadTool;
+    use assistant_tools::storage::InMemoryReadReceiptStore;
+
+    let harness = Harness::new();
+    let scratch = harness.scratch_root();
+    let mut leaf = scratch.clone();
+    let mut segments: Vec<String> = Vec::new();
+    // 每段 40 字符、深度 6：总长必然超过 260 字符，同时留出余量给文件名。
+    for index in 0..6 {
+        let segment = format!("segment-{index}-{}", "d".repeat(31));
+        segments.push(segment.clone());
+        leaf.push(&segment);
+    }
+    std::fs::create_dir_all(&leaf).expect("create deep dirs");
+    let file = leaf.join("deep.txt");
+    std::fs::write(&file, b"long path content").expect("write deep file");
+    let absolute = file.display().to_string();
+    assert!(
+        absolute.chars().count() >= 260,
+        "fixture must exceed the legacy MAX_PATH: {} chars",
+        absolute.chars().count()
+    );
+
+    let relative = segments.join("/");
+    let reader = AgentReadTool::new(Arc::new(InMemoryReadReceiptStore::new()));
+    let read = reader
+        .execute(
+            &json!({ "path": format!("scratch://{relative}/deep.txt") }),
+            &harness.ctx("call-a23"),
+        )
+        .await
+        .expect("read executes");
+    assert!(read.ok, "{:?}", read.error);
+    assert!(
+        read.assistant_text().contains("long path content"),
+        "text={}",
+        read.assistant_text()
     );
 }
 
@@ -1038,10 +1317,10 @@ async fn a38_shell_flavor_is_diagnostic_only() {
 /// A39（放弃 future）：agent 侧取消是「丢弃 future」——`cancellable` 的 `select!`
 /// 先到即丢弃，本工具的终态分支（第 8–10 步）永不执行。
 ///
-/// 因此守卫必须在 drop 路径补「杀整棵树 + 删调用级临时目录」，
-/// 落盘文件由 `FileSpillSink::Drop` 在最后一个读取任务释放时删除。
+/// 因此守卫必须在 drop 路径补「杀整棵树」，落盘文件由 `FileSpillSink::Drop`
+/// 在最后一个读取任务释放时删除；会话临时区归会话所有，drop 路径**不**动它。
 #[tokio::test]
-async fn a39_abandoned_future_reclaims_tree_scratch_and_spill() {
+async fn a39_abandoned_future_reclaims_tree_and_spill() {
     let _guard = EXEC_LOCK.lock().await;
     let harness = Harness::new();
     let call_id = "call-a39-abandon";
@@ -1063,8 +1342,8 @@ async fn a39_abandoned_future_reclaims_tree_scratch_and_spill() {
     let _ = handle.await;
 
     assert!(
-        !harness.scratch(call_id).exists(),
-        "drop path must remove the call-scoped scratch dir"
+        harness.scratch_root().exists(),
+        "drop path must leave the session scratch dir alone"
     );
 
     // 树若没被杀，延迟写会在 ~5s 后落地；同时给读取任务留出释放 sink 的时间。
@@ -1101,9 +1380,11 @@ fn has_spill_file(root: &std::path::Path, call_id: &str) -> bool {
     false
 }
 
-/// A33（模型侧）：`description()` 必须包含 I56 §11.2 的 6 项约束。
+/// A33（模型侧）：模型可见的两处文本——`description()` 与 `input_schema()`——**合计**
+/// 必须覆盖 I56 §11.2 的 6 项约束。
 ///
-/// 模型不读规格，只读这段描述；缺一项就是模型会用错的地方（§11.2 表格右列）。
+/// schema 已经表达的事实（`cwd` 的归属、`timeout_ms` 的默认值与上限）不在描述里重复：
+/// 重复既占上下文，又可能与 schema 的真实值分叉（I56 §11.2「不写的」同理）。
 /// 用户侧短句（`tool_desc.shell` 的 zh / en）是**另一个断言对象**，
 /// 由 `src/chat/tool/__tests__/panelStructure.test.ts` 覆盖——面板悬停放不下这 6 句。
 #[tokio::test]
@@ -1112,17 +1393,16 @@ async fn a33_description_covers_the_six_contracts() {
     let storage_root = tempfile::tempdir().expect("storage tempdir");
     let backend: Arc<dyn ToolResultStorage> =
         Arc::new(FileToolResultStorage::new(storage_root.path()));
-    let description = ShellTool::new(harness.probe, backend)
-        .description()
-        .await
-        .expect("description")
-        .to_lowercase();
+    let tool = ShellTool::new(harness.probe, backend);
+    let description = tool.description().await.expect("description");
+    let schema = serde_json::to_string(&tool.input_schema()).expect("schema");
+    let text = format!("{}\n{}", description, schema).to_lowercase();
 
-    let contracts: [(&str, &[&str]); 6] = [
-        (
-            "非零退出码不是工具失败",
-            &["non-zero exit code", "not a tool failure"],
-        ),
+    let contracts: [(&str, &[&str]); 7] = [
+        // 「非零退出码不是工具失败」这一语义由实现保证（`run.rs` 恒返回
+        // `ok_with_assistant`，只有超时 / 取消 / 业务失败才 `ok: false`），
+        // 因此文案只需指路「去读 stderr 并改正」，不必复述 ok 标志。
+        ("非零退出码是正常结果", &["non-zero exit code", "stderr"]),
         ("无 stdin / 无 PTY", &["no stdin", "no pty"]),
         (
             "Windows 是 cmd 语法",
@@ -1133,23 +1413,34 @@ async fn a33_description_covers_the_six_contracts() {
             &["defaults to the workspace root", "stay inside it"],
         ),
         (
-            "输出落盘、用 read 读 outputPath",
-            &["outputpath", "instead of re-running"],
+            "输出落盘、用 read 读引用",
+            &["tool-output://", "instead of re-running"],
         ),
         (
             "长任务显式调大 timeout_ms（含默认与上限）",
             &["timeout_ms", "120000", "1800000"],
+        ),
+        (
+            "临时区语义（I73 §3.8 T3 / S8）",
+            &[
+                "outside the workspace",
+                "stays writable",
+                "until the session ends",
+                "same names overwrite",
+                "scratch://",
+                "accepts as `path`",
+            ],
         ),
     ];
 
     for (label, keywords) in contracts {
         for keyword in keywords {
             assert!(
-                description.contains(keyword),
-                "描述缺少「{}」的关键词 `{}`：{}",
+                text.contains(keyword),
+                "描述与 schema 合计缺少「{}」的关键词 `{}`：{}",
                 label,
                 keyword,
-                description
+                text
             );
         }
     }
@@ -1183,5 +1474,52 @@ async fn a6_command_text_is_shared_by_validation_intents_and_execution() {
     assert!(
         file.contains("second"),
         "the executed body is the same text: {file}"
+    );
+}
+
+/// A9：新行回填引用、`data.outputPath` 仍为绝对、历史绝对串标签仍可读（I73 §3.6 R6 / R8）。
+#[tokio::test]
+async fn a9_new_rows_use_the_reference_while_output_path_and_old_rows_stay_absolute() {
+    use assistant_tools::os::agent_read::AgentReadTool;
+    use assistant_tools::storage::InMemoryReadReceiptStore;
+
+    let _guard = EXEC_LOCK.lock().await;
+    let harness = Harness::new();
+    let result = harness
+        .run("call-a9", script("echo alpha", "echo alpha"))
+        .await;
+    assert!(result.ok, "{:?}", result.error);
+
+    let absolute = output_path(&result);
+    assert!(
+        std::path::Path::new(&absolute).is_absolute(),
+        "data.outputPath 必须保持绝对: {absolute}"
+    );
+    assert!(
+        std::path::Path::new(&absolute).starts_with(harness.storage_root()),
+        "outputPath 必须落在输出域内: {absolute}"
+    );
+
+    let tag = assistant_tools::compact::parse_persisted_tag(&result.assistant_text())
+        .expect("tag must parse")
+        .path;
+    assert!(
+        tag.starts_with("tool-output://"),
+        "新行回填的必须是引用: {tag}"
+    );
+
+    // 历史行：模型照抄绝对串标签，读路径必须照旧成立。
+    let reader = AgentReadTool::new(Arc::new(InMemoryReadReceiptStore::new()));
+    let mut ctx = harness.ctx("call-a9-read");
+    ctx.tool_output_root = Some(harness.storage_root());
+    let read = reader
+        .execute(&json!({ "path": absolute }), &ctx)
+        .await
+        .expect("read executes");
+    assert!(read.ok, "{:?}", read.error);
+    assert!(
+        read.assistant_text().contains("alpha"),
+        "绝对串标签必须仍可读: {}",
+        read.assistant_text()
     );
 }

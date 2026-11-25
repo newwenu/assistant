@@ -221,8 +221,15 @@ describe("规则提交前预校验（I70 §6.1 / A5）", () => {
     expect(validateApprovalRules([])).toBeNull();
   });
 
-  it("allow 不得匹配 readToolOutput / mcp，也不得用通配符绕过底线", () => {
-    for (const action of ["readToolOutput", "mcp", "*", "**", "read*"]) {
+  it("allow 不得匹配 readToolOutput / readScratch / mcp，也不得用通配符绕过底线", () => {
+    for (const action of [
+      "readToolOutput",
+      "readScratch",
+      "mcp",
+      "*",
+      "**",
+      "read*",
+    ]) {
       const error = validateApprovalRules([rule(action, "*", "allow")]);
       expect(error?.code, `action=${action}`).toBe("allowBottomLine");
     }
@@ -289,13 +296,14 @@ describe("规则提交前预校验（I70 §6.1 / A5）", () => {
 });
 
 describe("快捷规则的数据定义（I70 §3.3）", () => {
-  it("五条快捷规则齐备，动作与规格一致", () => {
+  it("六条快捷规则齐备，动作与规格一致", () => {
     expect(APPROVAL_RULE_SHORTCUTS.map((item) => item.key)).toEqual([
       "execute",
       "edit",
       "read",
       "mcp",
       "readOutput",
+      "readScratch",
     ]);
     expect(APPROVAL_RULE_SHORTCUTS.map((item) => item.action)).toEqual([
       "execute",
@@ -303,11 +311,12 @@ describe("快捷规则的数据定义（I70 §3.3）", () => {
       "read",
       "mcp",
       "readToolOutput",
+      "readScratch",
     ]);
   });
 
-  it("mcp 与 readToolOutput 不提供 allow（底线在 UI 上可见）", () => {
-    for (const key of ["mcp", "readOutput"] as const) {
+  it("mcp、readToolOutput 与 readScratch 不提供 allow（底线在 UI 上可见）", () => {
+    for (const key of ["mcp", "readOutput", "readScratch"] as const) {
       const shortcut = APPROVAL_RULE_SHORTCUTS.find((item) => item.key === key);
       expect(shortcut?.effects).toEqual(["ask", "deny"]);
     }

@@ -188,6 +188,17 @@ describe("resolveResultDisplay", () => {
     expect(display.body).toBe("preview");
   });
 
+  it("ref 值的 persisted 同样按已知前缀裁剪并原样透传", () => {
+    const ref = "tool-output://1700000000-shell-c1.txt";
+    const text = `<persisted-output path="${ref}">\npreview`;
+    const display = resolveResultDisplay(
+      text,
+      compact({ persisted: { path: ref, bytes: 4096 } }),
+    );
+    expect(display.persisted).toEqual({ path: ref, bytes: 4096 });
+    expect(display.body).toBe("preview");
+  });
+
   it("信封无 persisted 时不解析文本标签（门禁 7）", () => {
     const text = '<persisted-output path="store/c1.txt">\npreview';
     const display = resolveResultDisplay(text, compact());

@@ -45,6 +45,15 @@ const CODE_SPAWN_FAILED: &str = "spawn_failed";
 /// 沙箱拒绝的固定回填行（§8.5）。
 const DENIED_MARKER: &str = "[sandbox: write outside writable root denied]";
 
+/// 临时区根引用的固定串：空 body 即会话临时区根（I73 §3.8「语法」）。
+const SCRATCH_ROOT_REF: &str = "scratch://";
+
+/// 子项清单上限：超出部分只报个数，避免结果膨胀（I73 §3.6 R5）。
+const SCRATCH_LIST_MAX: usize = 20;
+
+/// 清单单名上限（字符）：文件名最长可达 255 字节，20 个就能挤满一行上下文。
+const SCRATCH_NAME_MAX: usize = 64;
+
 /// 执行入口。**永不返回 `Err`**：所有失败都归一为带 `error_kind` 的 `ToolResult`。
 pub async fn execute(
     input: &Value,
@@ -68,27 +77,25 @@ pub async fn execute(
         );
     }
 
-    // 第 3 步：推导执行计划并建调用级临时目录。
+    // 第 3 步：推导执行计划并幂等建会话临时区。
     let call_id = context
         .tool_call_id
         .clone()
         .unwrap_or_else(|| format!("call-{}", next_call_seq()));
-    let plan = match spawn::build_plan(&parsed, &call_id) {
+    let plan = match spawn::build_plan(&parsed) {
         Ok(plan) => plan,
         Err(error) => {
             return failure(error.code(), &error.to_message());
         }
     };
 
-    // 兜底守卫：目录一建好就接管。取消在 agent 侧是「丢弃 future」
+    // 兜底守卫：进程一建好就接管。取消在 agent 侧是「丢弃 future」
     // （`cancellable` 的 `select!`），本函数体被 drop 时后续所有步骤都不再执行；
-    // 守卫随函数体存活，drop 路径补「删临时目录」（杀树句柄在建进程后填入）。
+    // 守卫随函数体存活，drop 路径补「杀整棵树」（杀树句柄在建进程后填入）。
     // 正常路径二次调用均幂等（R1 / R3）。sink 不归守卫持有：删除由
     // `FileSpillSink::Drop` 在最后一个读取任务释放时完成（R2）。
-    let mut run_guard = RunGuard {
-        kill: None,
-        scratch: plan.scratch.clone(),
-    };
+    // 临时区是会话级目录，**不**在调用收尾时删除（I73 §3.8 W6）。
+    let mut run_guard = RunGuard { kill: None };
 
     // 第 4 步：先建 sink（落盘是执行的前置条件，不是事后收尾）。
     let request = PersistToolResult {
@@ -99,10 +106,7 @@ pub async fn execute(
     };
     let sink = match storage.open_sink(request).await {
         Ok(sink) => sink,
-        Err(error) => {
-            spawn::cleanup_scratch(&plan.scratch);
-            return failure(CODE_OUTPUT_SPILL_FAILED, &error);
-        }
+        Err(error) => return failure(CODE_OUTPUT_SPILL_FAILED, &error),
     };
     // 两个读取任务并发写同一个 sink：临界区只有一次 `write`（§8.1 不变式 3）。
     let slot = Arc::new(Mutex::new(Some(sink)));
@@ -112,7 +116,7 @@ pub async fn execute(
     let mut child = match sandbox::spawn(&plan.plan) {
         Ok(child) => child,
         Err(error) => {
-            discard_sink(slot, &plan.scratch).await;
+            discard_sink(slot).await;
             return failure(spawn_code(&error), error.detail());
         }
     };
@@ -184,8 +188,8 @@ pub async fn execute(
         );
     }
 
-    // 第 10 步：`sink.finish()`——四种终态一律调用；临时目录同步删除。
-    let spilled = match finish_sink(slot, &plan.scratch).await {
+    // 第 10 步：`sink.finish()`——四种终态一律调用。
+    let spilled = match finish_sink(slot).await {
         Ok(spilled) => spilled,
         Err(error) => return failure(CODE_OUTPUT_SPILL_FAILED, &error),
     };
@@ -215,6 +219,7 @@ pub async fn execute(
     let denied = is_sandbox_denied(probe.enforcement, exit_code, &spilled.preview);
     let text = assemble_text(
         &spilled,
+        &parsed.scratch_root,
         denied,
         exit_code,
         signal,
@@ -271,15 +276,14 @@ enum Outcome {
     Cancelled,
 }
 
-/// 取消兜底守卫：随 `execute` 的函数体存活，drop 时补「杀整棵树 + 删调用级临时目录」。
+/// 取消兜底守卫：随 `execute` 的函数体存活，drop 时补「杀整棵树」。
 ///
-/// 正常路径 drop 时树已收尸、目录已删：`kill()` 与 `cleanup_scratch()` 都幂等，
-/// 因此不需要「是否已收尾」的状态位，也就不会出现「某条早退分支忘了撤销守卫」。
-/// `kill` 为 `None` 表示守卫建于建进程之前（此时只可能泄漏目录，无树可杀）。
-/// `Drop` 内不 `await`：`remove_dir_all` 只作用于重定向输出，量级有界（R3）。
+/// 正常路径 drop 时树已收尸：`kill()` 幂等，因此不需要「是否已收尾」的状态位，
+/// 也就不会出现「某条早退分支忘了撤销守卫」。
+/// `kill` 为 `None` 表示守卫建于建进程之前（此时无树可杀）。
+/// 临时区归会话所有，守卫**不**碰它（I73 §3.8 W6）。
 struct RunGuard {
     kill: Option<KillHandle>,
-    scratch: std::path::PathBuf,
 }
 
 impl Drop for RunGuard {
@@ -287,7 +291,6 @@ impl Drop for RunGuard {
         if let Some(kill) = self.kill.take() {
             kill.kill();
         }
-        spawn::cleanup_scratch(&self.scratch);
     }
 }
 
@@ -353,21 +356,14 @@ fn drain(
 /// 取走 sink 并收尾；调用方在 join 之后才 `take()`，**不得**用 `Arc::try_unwrap`。
 async fn finish_sink(
     slot: Arc<Mutex<Option<Box<dyn ToolResultSink>>>>,
-    scratch: &Path,
 ) -> Result<SpilledOutput, String> {
     let sink = slot
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
         .take();
-    let scratch = scratch.to_path_buf();
-    let joined = tokio::task::spawn_blocking(move || {
-        let finished = match sink {
-            Some(sink) => sink.finish(),
-            None => Err("output sink was already taken".to_string()),
-        };
-        // 第 3 步建的目录在四种终态之后都不留（尽力而为，失败只记日志）。
-        spawn::cleanup_scratch(&scratch);
-        finished
+    let joined = tokio::task::spawn_blocking(move || match sink {
+        Some(sink) => sink.finish(),
+        None => Err("output sink was already taken".to_string()),
     })
     .await;
     match joined {
@@ -376,10 +372,9 @@ async fn finish_sink(
     }
 }
 
-/// `spawn` 失败路径：已建 sink 按第 10 步同法收尾（空文件由 `finish` 删除），
-/// 临时目录一并清掉。
-async fn discard_sink(slot: Arc<Mutex<Option<Box<dyn ToolResultSink>>>>, scratch: &Path) {
-    let _ = finish_sink(slot, scratch).await;
+/// `spawn` 失败路径：已建 sink 按第 10 步同法收尾（空文件由 `finish` 删除）。
+async fn discard_sink(slot: Arc<Mutex<Option<Box<dyn ToolResultSink>>>>) {
+    let _ = finish_sink(slot).await;
 }
 
 /// 失败回填：`code: detail` 前缀便于检索，`error_kind` 恒 `Business`。
@@ -402,12 +397,14 @@ fn spawn_code(error: &SandboxError) -> &'static str {
     }
 }
 
-/// 回填文本：落盘引用（标签 + 尾窗口 + 省略标记）+ 末尾标记行。
+/// 回填文本：落盘引用（标签 + 尾窗口 + 省略标记）+ 末尾标记行 + 临时区回填行。
 ///
 /// 预览**只取尾窗口**：命令输出的信息密度集中在末尾（失败栈、测试摘要），
 /// 头部多是启动横幅与进度条。标记顺序固定为「正文在前、标记在末尾」。
+#[allow(clippy::too_many_arguments)]
 fn assemble_text(
     spilled: &SpilledOutput,
+    scratch_root: &Path,
     denied: bool,
     exit_code: Option<i32>,
     signal: Option<i32>,
@@ -416,9 +413,12 @@ fn assemble_text(
     timeout_ms: u64,
 ) -> String {
     let mut text = match &spilled.reference {
-        Some(reference) => {
-            persisted_reference_from_tail(&reference.path, &spilled.preview, spilled.total_chars)
-        }
+        // 模型看到的是引用（I73 §3.6 R2）；`path` 仍是绝对路径，只供内部 IO。
+        Some(reference) => persisted_reference_from_tail(
+            &reference.model_ref(),
+            &spilled.preview,
+            spilled.total_chars,
+        ),
         // 空输出不落盘（§8.2 第 5 条）：给一句可判断的正文，而不是空串。
         None => "(no output)".to_string(),
     };
@@ -438,7 +438,63 @@ fn assemble_text(
     if cancelled {
         text.push_str("\n[stopped: turn cancelled]");
     }
+    // 临时区回填恒在（I73 §3.6 R5 / §7 A18）：与本次是否产生文件无关——目录是
+    // 会话级共享的，清单反映「当前临时区里有什么」，这正是跨调用 handoff 的视图。
+    text.push('\n');
+    text.push_str(&scratch_lines(scratch_root));
     text
+}
+
+/// 临时区回填：根引用行恒在，子项清单行仅在非空时追加（`≤SCRATCH_LIST_MAX`）。
+///
+/// 只列一层且只给名字：`list` / `glob` 对任何 scheme 都拒绝（I73 §4），
+/// 清单是模型唯一的「列举」通道；递归或附带大小/时间会让结果膨胀。
+/// 目录不可读时只回填根引用，不回退、不报错——回填不承担诊断职责。
+fn scratch_lines(scratch_root: &Path) -> String {
+    let mut names: Vec<String> = Vec::new();
+    let mut total = 0_usize;
+    match std::fs::read_dir(scratch_root) {
+        Ok(entries) => {
+            for entry in entries.flatten() {
+                total += 1;
+                if names.len() < SCRATCH_LIST_MAX {
+                    names.push(sanitize_entry_name(&entry.file_name().to_string_lossy()));
+                }
+            }
+        }
+        Err(error) => log::debug!(
+            "scratch listing skipped for {}: {}",
+            scratch_root.display(),
+            error
+        ),
+    }
+    let mut text = format!("[scratch root: {}]", SCRATCH_ROOT_REF);
+    if total == 0 {
+        return text;
+    }
+    // 顺序取目录枚举结果，不排序：清单只用于「知道有什么」，顺序无关，
+    // 排序反而会为大目录多付一次比较成本。
+    text.push_str(&format!("\n[scratch entries: {}", names.join(", ")));
+    if total > names.len() {
+        text.push_str(&format!(", …(+{} more)", total - names.len()));
+    }
+    text.push(']');
+    text
+}
+
+/// 子项名消毒：子进程能造出任意文件名，含换行/控制字符的名字若原样拼进回填文本，
+/// 就能伪造出一条工具自己的标记行（如 `[exit code: 0]`），把失败读成成功。
+/// 因此控制字符一律替换为 `?`，单名超过 `SCRATCH_NAME_MAX` 字符按字符边界截断。
+fn sanitize_entry_name(name: &str) -> String {
+    let mut cleaned: String = name
+        .chars()
+        .map(|ch| if ch.is_control() { '?' } else { ch })
+        .collect();
+    if cleaned.chars().count() > SCRATCH_NAME_MAX {
+        cleaned = cleaned.chars().take(SCRATCH_NAME_MAX).collect::<String>();
+        cleaned.push('…');
+    }
+    cleaned
 }
 
 /// Unix 侧被信号杀死时 `code()` 为 `None`，信号号另行取出；Windows 恒 `None`。
@@ -453,7 +509,7 @@ fn signal_of(_status: &ExitStatus) -> Option<i32> {
     None
 }
 
-/// 缺 `tool_call_id` 时的兜底序号：只用于命名临时目录，不承担任何语义。
+/// 缺 `tool_call_id` 时的兜底序号：只用于落盘记录的调用标识，不承担任何语义。
 fn next_call_seq() -> u64 {
     static SEQ: AtomicU64 = AtomicU64::new(0);
     SEQ.fetch_add(1, Ordering::Relaxed)

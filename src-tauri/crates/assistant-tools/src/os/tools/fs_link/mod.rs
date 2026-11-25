@@ -195,8 +195,8 @@ impl FsLinkTool {
         create::create_link(&source, &target, parsed.kind)?;
 
         Ok(ToolResult::ok(serde_json::json!({
-            "source": parsed.source,
-            "target": parsed.target,
+            "source": parsed.source.raw(),
+            "target": parsed.target.raw(),
             "kind": parsed.kind.as_str(),
             "created": true
         })))
@@ -207,13 +207,13 @@ impl FsLinkTool {
         input: &Value,
         context: &ToolUseContext,
     ) -> Result<ToolResult, String> {
-        let source_str = validate::parse_check_input(input)?;
-        let source = validate::resolve_path(&source_str, context)?;
+        let source_ref = validate::parse_check_input(input)?;
+        let source = validate::resolve_path(&source_ref, context)?;
 
         let info = check::check_link(&source)?;
 
         Ok(ToolResult::ok(serde_json::json!({
-            "source": source_str,
+            "source": source_ref.raw(),
             "isLink": info.is_link,
             "kind": info.kind,
             "target": info.target,

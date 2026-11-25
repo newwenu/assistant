@@ -121,6 +121,12 @@ pub(super) fn sample_logs(root: &Path) -> EntrySample {
     from_io(crate::app_dirs::fs_stats::tree_stats(root))
 }
 
+/// `E19`：shell 临时区（I73 §3.8）。目录由应用自持、会话结束时整棵删除，
+/// 故与 `E12` 同口径走 `tree_stats`，只观测占用、不提供回收入口。
+pub(super) fn sample_scratch(root: &Path) -> EntrySample {
+    from_io(crate::app_dirs::fs_stats::tree_stats(root))
+}
+
 /// `E14`：WebView2 profile 整棵树由应用接管观测，可回收量只算缓存白名单子目录。
 ///
 /// `bytes` 是整棵树（与扫描同一棵树 ⇒ `residualBytes` 只剩噪声量级）；`reclaimable`

@@ -81,7 +81,7 @@ impl Tool for AgentListTool {
 
     fn validate_input(&self, input: &Value, context: &ToolUseContext) -> ValidationResult {
         match ListRequest::parse(input) {
-            Ok(request) => match path::resolve(&request.path, context) {
+            Ok(request) => match request.path.resolve_browse(context) {
                 Ok(_) => ValidationResult::ok(),
                 Err(error) => ValidationResult::invalid(error),
             },
@@ -95,7 +95,7 @@ impl Tool for AgentListTool {
         context: &ToolUseContext,
     ) -> Result<Vec<PermissionIntent>, String> {
         let request = ListRequest::parse(input)?;
-        let resolved = path::resolve(&request.path, context)?;
+        let resolved = request.path.resolve_browse(context)?;
         Ok(vec![PermissionIntent::new(
             "read",
             resolved.display().to_string(),
@@ -109,9 +109,8 @@ impl Tool for AgentListTool {
         };
 
         let resolve_context = context.clone();
-        let raw_path = request.path.clone();
         let prepared = tokio::task::spawn_blocking(move || {
-            let resolved = path::resolve(&raw_path, &resolve_context)?;
+            let resolved = request.path.resolve_browse(&resolve_context)?;
             let metadata = std::fs::metadata(&resolved)
                 .map_err(|error| format!("failed to stat '{}': {}", resolved.display(), error))?;
             if !metadata.is_dir() {
@@ -165,7 +164,7 @@ impl Tool for AgentListTool {
 }
 
 struct ListRequest {
-    path: String,
+    path: path::PathRef,
     depth: u64,
     depth_clamped: bool,
     all: bool,

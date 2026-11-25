@@ -44,6 +44,29 @@ fn to_wide(value: &Path) -> Vec<u16> {
     units
 }
 
+/// `MAX_PATH` 的目录段上限（不含文件名与结尾 `\`）。
+const MAX_PATH_CHARS: usize = 248;
+
+/// ACL API 的路径入参：先归一到绑定形态，超长再补 `\\?\` 前缀（I73 §3.9 W7）。
+///
+/// 不依赖 exe 清单的 `longPathAware`：该声明未做，且即使声明了，
+/// 长路径支持还受用户机器的注册表开关影响，不能作为正确性前提。
+/// 归一是必需的：`canonicalize` 在 Windows 上返回 verbatim 形态，
+/// 形态不一致会让「同一个目录」在 DACL 读写两侧被当成两个对象。
+fn path_wide(path: &Path) -> Result<Vec<u16>, SandboxError> {
+    let normalized = crate::os::path::canonicalize_lenient(path)
+        .map_err(|_| SandboxError::SetupFailed("acl_canonicalize_path".to_string()))?;
+    let text = normalized.to_string_lossy();
+    let units: Vec<u16> = if text.chars().count() >= MAX_PATH_CHARS && !text.starts_with(r"\\?\") {
+        format!(r"\\?\{text}").encode_utf16().collect()
+    } else {
+        text.encode_utf16().collect()
+    };
+    let mut units = units;
+    units.push(0);
+    Ok(units)
+}
+
 /// 分配沙箱 SID；调用方负责 `LocalFree`。
 pub(crate) fn sandbox_sid() -> Result<PSID, SandboxError> {
     let wide = to_wide(Path::new(SANDBOX_SID));
@@ -90,7 +113,7 @@ impl Drop for ExplicitEntries {
 }
 
 pub(crate) fn read_entries(path: &Path) -> Result<ExplicitEntries, SandboxError> {
-    let wide = to_wide(path);
+    let wide = path_wide(path)?;
     let mut descriptor = PSECURITY_DESCRIPTOR::default();
     let mut dacl: *mut ACL = std::ptr::null_mut();
     let status = unsafe {
@@ -178,7 +201,7 @@ fn converge_ace(path: &Path, sid: PSID, mask: u32) -> Result<(), SandboxError> {
         return Ok(());
     }
 
-    let wide = to_wide(path);
+    let wide = path_wide(path)?;
     let mut descriptor = PSECURITY_DESCRIPTOR::default();
     let mut dacl: *mut ACL = std::ptr::null_mut();
     let status = unsafe {
@@ -227,14 +250,20 @@ fn converge_ace(path: &Path, sid: PSID, mask: u32) -> Result<(), SandboxError> {
     Ok(())
 }
 
-/// `spawn` 前的幂等准备：把可写根收敛为「唯一沙箱写授权 ACE」。
+/// `spawn` 前的幂等准备：把每个可写根收敛为「唯一沙箱写授权 ACE」。
 ///
-/// 只碰 `plan.writable_root`（规格 §5.1 / §6 硬约束 2）：敏感目录、系统目录、
+/// 只碰 `plan.write_roots`（规格 §5.1 / §6 硬约束 2）：敏感目录、系统目录、
 /// 用户主目录一律不动——Windows 没有读边界，往这些路径写 deny ACE 只是无效的宿主副作用。
-/// 可写根不可读 / 不存在即 `SetupFailed`（`acl_read_dacl`），**禁止**代建（A-S5）。
+/// 任一可写根不可读 / 不存在即 `SetupFailed`（`acl_read_dacl`），**禁止**代建（A-S5）。
 pub(crate) fn prepare(plan: &SandboxPlan) -> Result<(), SandboxError> {
     let sid = sandbox_sid()?;
-    let result = converge_ace(&plan.writable_root, sid, WRITE_GRANT_MASK);
+    let mut result = Ok(());
+    for root in &plan.write_roots {
+        if let Err(error) = converge_ace(root, sid, WRITE_GRANT_MASK) {
+            result = Err(error);
+            break;
+        }
+    }
     free_sid(sid);
     result
 }
@@ -249,7 +278,7 @@ mod tests {
             program: PathBuf::from("C:/Windows/System32/cmd.exe"),
             args: Vec::new(),
             cwd: root.to_path_buf(),
-            writable_root: root.to_path_buf(),
+            write_roots: vec![root.to_path_buf()],
             env: Vec::new(),
             network: false,
             stdin: None,

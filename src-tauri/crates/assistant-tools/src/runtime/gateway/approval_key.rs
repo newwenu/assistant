@@ -79,11 +79,12 @@ impl ApprovalKey {
         enforcement: Option<SandboxEnforcement>,
     ) -> Option<Self> {
         let scope = match intent.action.as_str() {
-            "read" | "readToolOutput" | "edit" | "write" | "delete" | "move" | "copy" => {
-                ApprovalScope::Path {
-                    canonical: canonical_path_for_key(resource)?,
-                }
-            }
+            // `readScratch` 与 `readToolOutput` 同属「按路径归一」：resource 是域根，
+            // 一次授权覆盖本会话整棵临时区（I73 §3.8 P5 / P7）。
+            "read" | "readToolOutput" | "readScratch" | "edit" | "write" | "delete" | "move"
+            | "copy" => ApprovalScope::Path {
+                canonical: canonical_path_for_key(resource)?,
+            },
             "execute" | "run" | "shell" => ApprovalScope::Command {
                 argv: split_argv(resource)?,
                 cwd: command_cwd(input, context),

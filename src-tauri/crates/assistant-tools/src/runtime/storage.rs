@@ -64,8 +64,23 @@ pub struct PersistToolResult {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PersistedRef {
+    /// 绝对路径：内部 IO、条目统计与测试都以它为入口（I73 §3.6 R4）。
     pub path: String,
     pub bytes: usize,
+}
+
+impl PersistedRef {
+    /// 模型可见的引用（I73 §3.6 R1）：由 `path` 的文件名派生，不新增字段、不改落盘格式。
+    ///
+    /// 映射是结构性恒等式而非查表——落盘文件平铺在会话命名空间目录下，
+    /// 因此 `tool_output_root.join(file_name)` 就是原路径（I73 §3.7）。
+    pub fn model_ref(&self) -> String {
+        let file_name = Path::new(&self.path)
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| self.path.clone());
+        crate::os::path::tool_output_ref(&file_name)
+    }
 }
 
 #[async_trait]
@@ -265,6 +280,15 @@ pub fn session_namespace(session_id: Option<&str>) -> String {
         hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
     }
     format!("{:016x}", hash)
+}
+
+/// 会话级 scratch 域根：`base.join(session_namespace(session_id))`（I73 §5.4 P4.0 / N1）。
+///
+/// 会话段拼法的**唯一实现点**：应用层只允许两处调用——注入
+/// （`adapters/tool_exec.rs`）与会话结束清理（`cmd/conversation/mutate.rs`）。
+/// 纯函数、无 IO，故库 crate 不解析基根也能复用同一实现。
+pub fn scratch_root_for(base: &Path, session_id: Option<&str>) -> PathBuf {
+    base.join(session_namespace(session_id))
 }
 
 /// 文件名的唯一前缀：纳秒时间戳 + 进程内自增序号。

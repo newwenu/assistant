@@ -261,6 +261,7 @@ describe("规则编辑器复用与语义（I70 §7.3）", () => {
       "execute",
       "mcp",
       "readToolOutput",
+      "readScratch",
     ]) {
       expect(body, action).toContain(`"${action}"`);
     }

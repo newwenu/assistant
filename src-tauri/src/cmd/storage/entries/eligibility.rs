@@ -38,7 +38,8 @@ pub(super) fn eligibility_for(
             | CoreEntry::Crashes
             | CoreEntry::Config
             | CoreEntry::OrbConfig
-            | CoreEntry::MascotConfig,
+            | CoreEntry::MascotConfig
+            | CoreEntry::ToolScratch,
         )
         | None => None,
     };

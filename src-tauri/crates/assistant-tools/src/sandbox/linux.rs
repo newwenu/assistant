@@ -1,7 +1,7 @@
 //! Linux 后端：Landlock LSM 文件系统规则 + 独立进程组。
 //!
 //! 规则形状见 I53 沙箱准备规格（已归档） §5.2（OQ10 已定稿，形状 a）：
-//! 根 `/` 只授 `EXECUTE`，读权按固定白名单逐条授，写权只授 `writable_root`。
+//! 根 `/` 只授 `EXECUTE`，读权按固定白名单逐条授，写权只授 `write_roots` 各根。
 //! 未列入白名单的路径（含用户主目录、敏感目录）默认不可读，因此敏感目录无需额外规则。
 
 use std::io;
@@ -59,7 +59,7 @@ impl SandboxBackend for LandlockBackend {
     }
 
     fn probe(&self) -> SandboxProbe {
-        // 敏感列表为空时判负：读边界本身来自白名单，但 `writable_root` 一旦罩住主目录，
+        // 敏感列表为空时判负：读边界本身来自白名单，但 `write_roots` 一旦罩住主目录，
         // 授全量 `AccessFs` 会连带把 `~/.ssh` 变成可读，而此时没有列表可做相交拦截。
         // 宁可让 `shell` 不注册，也不接受一份「无法判断是否越界」的授权。
         if self.host.sensitive_read_deny.is_empty() {
@@ -72,7 +72,7 @@ impl SandboxBackend for LandlockBackend {
         if abi <= ABI::Unsupported {
             return SandboxProbe::unavailable(SandboxKind::Landlock, "probe_landlock_unsupported");
         }
-        if build_ruleset(&self.host, None, abi).is_err() {
+        if build_ruleset(&self.host, &[], abi).is_err() {
             return SandboxProbe::unavailable(SandboxKind::Landlock, "probe_ruleset_create");
         }
         let mut missing = Vec::new();
@@ -88,7 +88,11 @@ impl SandboxBackend for LandlockBackend {
     }
 
     fn spawn(&self, plan: &SandboxPlan) -> Result<SandboxChild, SandboxError> {
-        if !plan.cwd.starts_with(&plan.writable_root) {
+        if !plan
+            .write_roots
+            .iter()
+            .any(|root| plan.cwd.starts_with(root))
+        {
             return Err(SandboxError::SetupFailed("cwd_outside_root".to_string()));
         }
         if !plan.cwd.is_dir() {
@@ -100,18 +104,18 @@ impl SandboxBackend for LandlockBackend {
             ));
         }
         // 可写根与敏感列表相交时无解：授全量写权必然连带读权，只能拒绝启动。
-        if self
-            .host
-            .sensitive_read_deny
-            .iter()
-            .any(|sensitive| paths_overlap(&plan.writable_root, sensitive))
-        {
+        if plan.write_roots.iter().any(|root| {
+            self.host
+                .sensitive_read_deny
+                .iter()
+                .any(|sensitive| paths_overlap(root, sensitive))
+        }) {
             return Err(SandboxError::SetupFailed(
                 "writable_root_overlaps_sensitive".to_string(),
             ));
         }
         let abi = kernel_abi()?;
-        let ruleset = build_ruleset(&self.host, Some(&plan.writable_root), abi)?;
+        let ruleset = build_ruleset(&self.host, &plan.write_roots, abi)?;
 
         let mut command = Command::new(&plan.program);
         command.args(&plan.args).current_dir(&plan.cwd);
@@ -232,9 +236,11 @@ fn network_supported(abi: ABI) -> bool {
 }
 
 /// 建规则集：调用方在 `pre_exec` 里 `restrict_self`，`probe` 里只验证能否建起来。
+///
+/// `write_roots` 为空时得到「只读」形态（供 `probe()` 使用）；非空时逐根授全量访问权。
 fn build_ruleset(
     host: &SandboxHostPaths,
-    writable_root: Option<&Path>,
+    write_roots: &[PathBuf],
     abi: ABI,
 ) -> Result<RulesetCreated, SandboxError> {
     let mut ruleset = Ruleset::default()
@@ -272,7 +278,7 @@ fn build_ruleset(
         }
         ruleset = add_path_rule(ruleset, path, AccessFs::from_file(abi))?;
     }
-    if let Some(root) = writable_root {
+    for root in write_roots {
         ruleset = add_path_rule(ruleset, root, AccessFs::from_all(abi))?;
     }
     Ok(ruleset)
@@ -323,7 +329,7 @@ mod tests {
             program: PathBuf::from("/bin/sh"),
             args: vec!["-c".to_string(), script.to_string()],
             cwd: root.to_path_buf(),
-            writable_root: root.to_path_buf(),
+            write_roots: vec![root.to_path_buf()],
             env: vec![("PATH".to_string(), "/usr/bin:/bin".to_string())],
             network: false,
             stdin: None,
@@ -422,7 +428,7 @@ mod tests {
 
         let plan = SandboxPlan {
             cwd: sensitive.clone(),
-            writable_root: sensitive,
+            write_roots: vec![sensitive],
             ..plan_for(&temp.path().join("workspace"), "true")
         };
         match backend.spawn(&plan) {

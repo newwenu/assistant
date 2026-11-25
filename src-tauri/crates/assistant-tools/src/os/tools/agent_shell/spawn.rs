@@ -9,9 +9,6 @@ use crate::sandbox::SandboxPlan;
 
 use super::schema::ShellInput;
 
-/// 调用级临时目录目录名（落在可写根内）。
-const SCRATCH_DIR_NAME: &str = ".assistant-tmp";
-
 /// 本次实际执行的 shell 种类（诊断字段，只写种类、不写路径）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ShellFlavor {
@@ -45,13 +42,11 @@ impl ShellFlavor {
     }
 }
 
-/// 一次 `execute` 的执行输入：沙箱计划 + 方言 + 临时目录。
+/// 一次 `execute` 的执行输入：沙箱计划 + 方言。
 #[derive(Debug, Clone)]
 pub struct ShellSpawnPlan {
     pub plan: SandboxPlan,
     pub flavor: ShellFlavor,
-    /// `<writable_root>/.assistant-tmp/<call_id>`：`finish` 之后删除。
-    pub scratch: PathBuf,
 }
 
 /// 推导失败的两档：程序不可用（注册期就该挡住）与临时目录建立失败。
@@ -81,18 +76,16 @@ impl SpawnPlanError {
     }
 }
 
-/// 推导执行计划：解析 shell 程序 → 建调用级临时目录 → 拼装 plan 与环境块。
+/// 推导执行计划：解析 shell 程序 → 幂等建会话临时区 → 拼装 plan 与环境块。
 ///
-/// 临时目录必须在 `spawn` 之前建好：命令的第一个写临时文件动作就要用到它，
+/// 临时区必须在 `spawn` 之前建好：命令的第一个写临时文件动作就要用到它，
 /// 建不出来就不该起进程（否则命令会以「Access is denied」失败而原因不可见）。
-pub fn build_plan(input: &ShellInput, call_id: &str) -> Result<ShellSpawnPlan, SpawnPlanError> {
+/// 临时区是**会话级单目录**（`input.scratch_root`，已含 `<session_hash>`），
+/// 跨调用复用、不在调用结束时删除（I73 §3.8），故这里只 `create_dir_all`。
+pub fn build_plan(input: &ShellInput) -> Result<ShellSpawnPlan, SpawnPlanError> {
     let program = resolve_program().map_err(SpawnPlanError::ProgramUnavailable)?;
 
-    let scratch = input
-        .writable_root
-        .join(SCRATCH_DIR_NAME)
-        .join(scratch_component(call_id));
-    prepare_scratch(&scratch).map_err(SpawnPlanError::ScratchDirFailed)?;
+    prepare_scratch(&input.scratch_root).map_err(SpawnPlanError::ScratchDirFailed)?;
 
     let args = program.args_for(&input.command);
 
@@ -100,8 +93,9 @@ pub fn build_plan(input: &ShellInput, call_id: &str) -> Result<ShellSpawnPlan, S
         program: program.path,
         args,
         cwd: input.cwd.clone(),
-        writable_root: input.writable_root.clone(),
-        env: env_block(&scratch),
+        // 两个可写根并列：工作区根 + 会话临时区根，逐根授权（I73 §3.8 W1）。
+        write_roots: vec![input.writable_root.clone(), input.scratch_root.clone()],
+        env: env_block(&input.scratch_root),
         // P14 恒 false：不代表「命令不能联网」（§8.4 的 `sandbox.network` 另行求交）。
         network: false,
         // 无 stdin 通道。
@@ -111,7 +105,6 @@ pub fn build_plan(input: &ShellInput, call_id: &str) -> Result<ShellSpawnPlan, S
     Ok(ShellSpawnPlan {
         plan,
         flavor: program.flavor,
-        scratch,
     })
 }
 
@@ -296,50 +289,13 @@ fn plain_path_text(path: &Path) -> String {
     }
 }
 
-/// 调用级临时目录：`call_id` 只作目录名，非法字符替换，空值兜底。
-fn scratch_component(call_id: &str) -> String {
-    let sanitized: String = call_id
-        .chars()
-        .map(|ch| {
-            if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_') {
-                ch
-            } else {
-                '_'
-            }
-        })
-        .collect();
-    let trimmed = sanitized.trim_matches('_');
-    if trimmed.is_empty() {
-        "call".to_string()
-    } else {
-        trimmed.chars().take(64).collect()
-    }
-}
-
-/// 建目录：已存在即清空复用（同名目录可能来自上一次失败的调用）。
+/// 建会话临时区：幂等 `create_dir_all`，**不**清空（目录跨调用共享，I73 §3.8 W6）。
+///
+/// 早先「已存在即清空」的写法是为调用级目录服务的；会话级目录一旦清空，
+/// 就抹掉了上一次调用留给下一次的 handoff 产物。
 fn prepare_scratch(scratch: &Path) -> Result<(), String> {
-    if scratch.exists() {
-        std::fs::remove_dir_all(scratch)
-            .map_err(|error| format!("clear scratch dir failed: {}", error))?;
-    }
     std::fs::create_dir_all(scratch)
         .map_err(|error| format!("create scratch dir failed: {}", error))
-}
-
-/// 删除调用级临时目录（尽力而为：子进程刚退出时句柄可能未释放，失败只记日志）。
-///
-/// `NotFound` 静默：`RunGuard` 在正常路径上也会调用一次，此时目录已被
-/// `finish_sink` 删掉，不算异常。
-pub fn cleanup_scratch(scratch: &Path) {
-    match std::fs::remove_dir_all(scratch) {
-        Ok(()) => {}
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-        Err(error) => log::debug!(
-            "shell scratch cleanup skipped ({}): {}",
-            scratch.display(),
-            error
-        ),
-    }
 }
 
 #[cfg(test)]
@@ -347,11 +303,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn scratch_component_is_sanitized() {
-        assert_eq!(scratch_component("call_01"), "call_01");
-        assert_eq!(scratch_component("a/b:c"), "a_b_c");
-        assert_eq!(scratch_component(""), "call");
-        assert_eq!(scratch_component("///"), "call");
+    fn prepare_scratch_is_idempotent_and_keeps_existing_files() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let scratch = dir.path().join("session");
+        prepare_scratch(&scratch).expect("first create");
+        std::fs::write(scratch.join("kept.txt"), b"x").expect("write");
+        prepare_scratch(&scratch).expect("second create");
+        assert!(
+            scratch.join("kept.txt").exists(),
+            "会话级临时区不得被下一次调用清空"
+        );
     }
 
     #[test]

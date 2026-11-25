@@ -23,7 +23,8 @@ pub fn build_compact(
         head: build_head(tool, arguments, data, result),
         truncated: parse_truncation(&text),
         persisted: persisted.map(|reference| PersistedInfo {
-            path: reference.path.clone(),
+            // 卡片展示引用而非本机绝对路径（I73 §3.6 R3）。
+            path: reference.model_ref(),
             bytes: Some(reference.bytes as u64),
         }),
         error_kind: if result.ok {

@@ -7,8 +7,8 @@ use crate::os::path;
 use super::LinkKind;
 
 pub(super) struct CreateInput {
-    pub source: String,
-    pub target: String,
+    pub source: path::PathRef,
+    pub target: path::PathRef,
     pub kind: LinkKind,
 }
 
@@ -30,15 +30,18 @@ pub(super) fn parse_create_input(input: &Value) -> Result<CreateInput, String> {
     })
 }
 
-pub(super) fn parse_check_input(input: &Value) -> Result<String, String> {
+pub(super) fn parse_check_input(input: &Value) -> Result<path::PathRef, String> {
     let object = input
         .as_object()
         .ok_or_else(|| "input must be a JSON object".to_string())?;
     path::parse_path_arg(object, "source")
 }
 
-pub(super) fn resolve_path(raw: &str, context: &ToolUseContext) -> Result<PathBuf, String> {
-    crate::os::path::resolve_leaf_preserving(raw, context)
+pub(super) fn resolve_path(
+    raw: &path::PathRef,
+    context: &ToolUseContext,
+) -> Result<PathBuf, String> {
+    raw.resolve_leaf_preserving(context)
 }
 
 pub(super) fn ensure_target_exists(target: &Path) -> Result<(), String> {

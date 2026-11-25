@@ -6,7 +6,6 @@ use encoding_rs::{Encoding, UTF_8};
 use crate::context::ToolUseContext;
 use crate::os::agent_read::file_revision;
 use crate::os::agent_write::MAX_TRANSCODE_BYTES;
-use crate::os::path;
 use crate::os::text_encoding::{detect_and_decode, encode_text, writes_bom};
 
 use super::locate::{apply_hits, effective_replacement, locate};
@@ -49,7 +48,7 @@ pub(super) fn probe_target(
     request: &EditRequest,
     context: &ToolUseContext,
 ) -> Result<(PathBuf, String), String> {
-    let resolved = path::resolve(&request.path, context)?;
+    let resolved = request.path.resolve_write(context)?;
     let metadata = match std::fs::metadata(&resolved) {
         Ok(metadata) => metadata,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {

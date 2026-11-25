@@ -129,11 +129,11 @@ pub(crate) fn merge_pending(pending: &[PendingApproval]) -> Vec<PermissionIntent
 
 /// 审批卡上展示的资源名。
 ///
-/// 输出域读取的 resource 是会话命名空间目录（应用数据目录下的绝对路径），
+/// 内部域（输出域 / 临时区）的 resource 是域根（应用数据目录下的绝对路径），
 /// 只用于审批键覆盖整段命名空间；展示时按既有 `redact_resource` 只留末段，
-/// 不把本机绝对路径带进卡片（I52 §5.11.4(5)）。其余动作的资源名保持原样。
+/// 不把本机绝对路径带进卡片（I52 §5.11.4(5) / I73 §3.8 P8）。其余动作的资源名保持原样。
 fn displayed_resource(item: &PendingApproval) -> String {
-    if item.action == "readToolOutput" {
+    if matches!(item.action.as_str(), "readToolOutput" | "readScratch") {
         redact_resource(&item.resource)
     } else {
         item.resource.clone()
@@ -259,10 +259,13 @@ fn workspace_extensions(
 }
 
 /// 只有这些 action 的 `resource` 是路径；其余（`execute` / `mcp`）不是。
+///
+/// `readToolOutput` 与 `readScratch` 的 `resource` 都是域根的绝对路径，
+/// 与 `read` / `edit` 同属「可判定工作区内外」的一类（I73 §3.5 / §3.8 P8）。
 fn is_path_action(action: &str) -> bool {
     matches!(
         action,
-        "read" | "readToolOutput" | "edit" | "delete" | "purge"
+        "read" | "readToolOutput" | "readScratch" | "edit" | "delete" | "purge"
     )
 }
 
@@ -437,6 +440,28 @@ mod tests {
         assert_eq!(mixed.len(), 1);
         assert_eq!(mixed[0].code, "partial");
         assert_eq!(mixed[0].severity, ApprovalExtensionSeverity::Caution);
+    }
+
+    /// 内部域的 `resource` 是域根绝对路径：与 `read` 同样判定，不因动作名不同而漏判（I73 §3.8 P8）。
+    #[test]
+    fn internal_domain_reads_are_judged_against_the_workspace_boundary() {
+        let dir = tempfile::tempdir().unwrap();
+        let domain = tempfile::tempdir().unwrap();
+        let context = context_with_root(dir.path());
+
+        for action in ["readToolOutput", "readScratch"] {
+            let extensions = workspace_extensions(
+                &[pending(action, &domain.path().display().to_string())],
+                &context,
+            );
+            assert_eq!(extensions.len(), 1, "{action} resource is a path");
+            assert_eq!(extensions[0].code, "outside", "{action}");
+            assert_eq!(
+                extensions[0].severity,
+                ApprovalExtensionSeverity::Caution,
+                "{action}"
+            );
+        }
     }
 
     /// 未配置工作区：没有边界就没有结论，不得把「无法判定」伪装成「在区内」。

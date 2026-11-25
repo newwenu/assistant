@@ -133,5 +133,16 @@ pub(super) fn static_for(entry: CoreEntry) -> EntryStatic {
             counts_self_logs: false,
             note: Some("配置文件承载用户设置，只展示占用，不提供清理入口"),
         },
+        // `E19` 临时区（I73 §3.8）：没有独立回收 API，会话结束时随会话一并删除，
+        // 这里只观测占用；与 `E13` 同档（`NotImplemented` / `NoReclaimApi`）。
+        CoreEntry::ToolScratch => EntryStatic {
+            action: StorageReclaimActionDto::None,
+            eligibility: StorageEligibilityDto::NotImplemented,
+            reason: StorageReclaimReasonDto::NoReclaimApi,
+            policy: ReclaimPolicyDto::default(),
+            auto_active: false,
+            counts_self_logs: false,
+            note: Some("会话结束时随会话一并删除，这里只展示占用情况"),
+        },
     }
 }

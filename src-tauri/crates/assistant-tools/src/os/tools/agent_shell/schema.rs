@@ -1,9 +1,10 @@
 //! 输入解析与校验（I56 §4.1 / §4.2）。
 //!
-//! 检查顺序：形状 → `writable_root` → `cwd` 解析 → 超时范围。
+//! 检查顺序：形状 → `writable_root` → `scratch_root` → `cwd` 解析 → 超时范围。
 //! `writable_root` 从第 4 步提前到第 2 步：它是整个工具的前置条件（没有可写根就不存在
 //! 可写边界），且 `cwd` 的相对路径解析本来就以它为基准——先判定它，失败原因才是
-//! `sandbox_root_missing` 而不是含糊的「路径无法解析」。两类失败都是 `blocked`，方向一致。
+//! `sandbox_root_missing` 而不是含糊的「路径无法解析」。`scratch_root` 同口径
+//! （I73 §5.4 P4.0）：临时区必须落在沙箱可写根内，缺根同样 fail-closed。
 //!
 //! 本模块**不做**命令内容匹配：命令是什么由沙箱边界决定，不由字符串白/黑名单决定。
 
@@ -38,6 +39,9 @@ pub struct ShellInput {
     pub timeout_ms: u64,
     /// 会话可写根（canonicalize 后），由 `ToolUseContext` 派生，**不接受**模型输入。
     pub writable_root: PathBuf,
+    /// 会话临时区域根（已含 `<session_hash>`，构造点已归一），直接取
+    /// `ToolUseContext.tool_scratch_root`；`TEMP` / `TMP` / `TMPDIR` 与 `scratch://` 共用它。
+    pub scratch_root: PathBuf,
 }
 
 impl ShellInput {
@@ -72,12 +76,22 @@ impl ShellInput {
 
         // 2. `cwd` 解析：缺省取可写根；给出时按可写根解析并做边界检查。
         let writable_root = resolve_writable_root(context)?;
+        // 2b. 临时区根：与可写根同口径 fail-closed（缺根即 `sandbox_root_missing`）。
+        // 该字段已含会话段且在注入点归一过（§3.9），这里不再 canonicalize。
+        let scratch_root = context.tool_scratch_root.clone().ok_or_else(|| {
+            ShellInputError::blocked_with_code(
+                "shell requires a session scratch root; this context has none",
+                SANDBOX_ROOT_MISSING,
+            )
+        })?;
         let cwd = match object.get("cwd") {
             None | Some(Value::Null) => writable_root.clone(),
-            Some(Value::String(raw)) => path::resolve(raw, context).map_err(|error| {
-                // 换路径重试同一意图不构成新意图：不可通过改写输入绕过。
-                ShellInputError::blocked(error)
-            })?,
+            Some(Value::String(raw)) => path::parse_ref(raw)
+                .and_then(|reference| reference.resolve_working_directory(context))
+                .map_err(|error| {
+                    // 换路径重试同一意图不构成新意图：不可通过改写输入绕过。
+                    ShellInputError::blocked(error)
+                })?,
             Some(_) => return Err(ShellInputError::invalid("'cwd' must be a string")),
         };
 
@@ -101,6 +115,7 @@ impl ShellInput {
             cwd,
             timeout_ms,
             writable_root,
+            scratch_root,
         })
     }
 

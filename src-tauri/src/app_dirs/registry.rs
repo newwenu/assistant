@@ -1,4 +1,4 @@
-// 受管目录登记表：core 12 条资源监视条目（`E1`–`E6` / `E12`–`E15` / `E17`–`E18`）的唯一来源。
+// 受管目录登记表：core 13 条资源监视条目（`E1`–`E6` / `E12`–`E15` / `E17`–`E19`）的唯一来源。
 //
 // 本模块只描述「哪个基根、哪一段、归哪条条目、由谁提供、是否参与对账」，
 // 不做路径拼接（拼接在 `roots.rs`）、不读配置、不访问磁盘。
@@ -60,10 +60,12 @@ pub enum CoreEntry {
     OrbConfig,
     /// `E18`（吉祥物配置 `mascot-config.json`）
     MascotConfig,
+    /// `E19`（shell 临时区 `tool-scratch`，I73 §3.8）
+    ToolScratch,
 }
 
 impl CoreEntry {
-    /// core 12 条全集（自检与测试用；顺序即对外 id 顺序）。
+    /// core 13 条全集（自检与测试用；顺序即对外 id 顺序）。
     pub const ALL: &'static [Self] = &[
         Self::Attachments,
         Self::AttachmentsDerived,
@@ -77,9 +79,10 @@ impl CoreEntry {
         Self::Config,
         Self::OrbConfig,
         Self::MascotConfig,
+        Self::ToolScratch,
     ];
 
-    /// 对外条目 id：`E1`–`E6` / `E12`–`E15` / `E17`–`E18`。
+    /// 对外条目 id：`E1`–`E6` / `E12`–`E15` / `E17`–`E19`。
     pub const fn id(self) -> &'static str {
         match self {
             Self::Attachments => "E1",
@@ -94,13 +97,14 @@ impl CoreEntry {
             Self::Config => "E15",
             Self::OrbConfig => "E17",
             Self::MascotConfig => "E18",
+            Self::ToolScratch => "E19",
         }
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ManagedRoot {
-    /// `E1`–`E6` / `E12`–`E15` / `E17`–`E18`（单点定义见 [`CoreEntry`]）。
+    /// `E1`–`E6` / `E12`–`E15` / `E17`–`E19`（单点定义见 [`CoreEntry`]）。
     pub entry: CoreEntry,
     /// 稳定身份（不是路径；等于 `segments` 用 `/` 连接）。
     pub key: &'static str,
@@ -241,6 +245,19 @@ pub const MANAGED_ROOTS: &[ManagedRoot] = &[
         risk: RiskTier::Forbidden,
         inventory: true,
     },
+    // `E19` shell 临时区（I73 §3.8）：大、易失、机器本地，故 `Local`；
+    // `inventory: false` 与 `E12` 同构——长命令运行期文件持续增删，
+    // 登记值与扫描值来自两个时刻，减法必然产生假余量 / 假负数。
+    ManagedRoot {
+        entry: CoreEntry::ToolScratch,
+        key: "tool-scratch",
+        scope: RootScope::Local,
+        segments: &[dir_name::TOOL_SCRATCH],
+        coverage: RootCoverage::RecursiveTree,
+        owner: "ShellToolScratch",
+        risk: RiskTier::Low,
+        inventory: false,
+    },
 ];
 
 pub const IGNORED_NAMES: &[&str] = &[".DS_Store", "Thumbs.db", "desktop.ini"];
@@ -261,9 +278,9 @@ pub const OWNER_DECLARED_SEGMENTS: &[&str] = &[
     <MascotConf as ConfGroup>::FILE_NAME,
 ];
 
-const EXPECTED_ENTRY_COUNT: usize = 12;
+const EXPECTED_ENTRY_COUNT: usize = 13;
 
-/// core 12 条的显式 id 集合（删条即判红，不靠 `for index in 1..=18` 推算）。
+/// core 13 条的显式 id 集合（删条即判红，不靠 `for index in 1..=19` 推算）。
 const CORE_ENTRY_IDS: &[CoreEntry] = CoreEntry::ALL;
 
 /// 按 `key` 取登记项；未登记返回 `None`（管理器不得为未登记 key 产出条目，G4）。
@@ -271,14 +288,14 @@ pub fn find(key: &str) -> Option<&'static ManagedRoot> {
     MANAGED_ROOTS.iter().find(|root| root.key == key)
 }
 
-/// 按条目 id（core 12 条）取登记项：条目 id 是对外契约，槽位由登记表现算。
+/// 按条目 id（core 13 条）取登记项：条目 id 是对外契约，槽位由登记表现算。
 pub fn find_by_entry(entry: &str) -> Option<&'static ManagedRoot> {
     MANAGED_ROOTS.iter().find(|root| root.entry.id() == entry)
 }
 
 /// 按首段取登记项；首段唯一（`E2` 与 `E1` 共享 `attachments`，返回先登记的 `E1`）。
 ///
-/// 只覆盖 core 12 条：可选首段（`OPTIONAL_SEGMENTS`）不命中登记表，由分区声明判定。
+/// 只覆盖 core 13 条：可选首段（`OPTIONAL_SEGMENTS`）不命中登记表，由分区声明判定。
 pub fn find_by_first_segment(segment: &str) -> Option<&'static ManagedRoot> {
     MANAGED_ROOTS
         .iter()
@@ -287,7 +304,7 @@ pub fn find_by_first_segment(segment: &str) -> Option<&'static ManagedRoot> {
 
 /// 登记表自检（V19 三条）：纯函数、接受切片，测试可传缺项负例。
 ///
-/// 1. core 12 条 `entry` 集合完整且 `key == segments.join("/")`，`key` 不重复；
+/// 1. core 13 条 `entry` 集合完整且 `key == segments.join("/")`，`key` 不重复；
 /// 2. `dir_name` 每个常量都必须有对应登记（首段命中）；
 /// 3. 每条登记首段必须来自 `dir_name` 常量，或由 owner crate 自述
 ///    （`OWNER_DECLARED_SEGMENTS` 只放行 `E15` / `E17` / `E18`）。

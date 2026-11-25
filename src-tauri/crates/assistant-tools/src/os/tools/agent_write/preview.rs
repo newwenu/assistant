@@ -1,5 +1,4 @@
 use crate::context::ToolUseContext;
-use crate::os::path;
 use crate::r#trait::ApprovalPreview;
 
 use super::lines::{count_lines, count_lines_in_file};
@@ -14,7 +13,7 @@ pub(super) fn build_preview(
     request: &WriteRequest,
     context: &ToolUseContext,
 ) -> Option<ApprovalPreview> {
-    let resolved = path::resolve(&request.path, context).ok()?;
+    let resolved = request.path.resolve_write(context).ok()?;
     let existing = std::fs::metadata(&resolved)
         .ok()
         .filter(|metadata| metadata.is_file());

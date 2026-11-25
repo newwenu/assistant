@@ -654,6 +654,71 @@ async fn the_receipt_is_isomorphic_and_gates_edit() {
     assert_eq!(read_file(&dir.path().join("cut.txt")), long);
 }
 
+/// A2：`super_read` 读引用与 `read` 完全同权——同一次读取、同一组审批意图（I73 §7）。
+#[tokio::test]
+async fn a_tool_output_reference_reads_and_shares_intents_with_read() {
+    let dir = tempfile::tempdir().unwrap();
+    let indexes = tempfile::tempdir().unwrap();
+    let output = tempfile::tempdir().unwrap();
+    std::fs::write(output.path().join("run.log"), "alpha\nbeta\n").unwrap();
+
+    let mut ctx = context(dir.path(), indexes.path());
+    ctx.tool_output_root = Some(output.path().to_path_buf());
+
+    let (_, text) = run(
+        &super_tool(),
+        json!({ "path": "tool-output://run.log" }),
+        &ctx,
+    )
+    .await;
+    assert_eq!(body(&text), "     1\talpha\n     2\tbeta\n");
+
+    let super_intents = super_tool()
+        .permission_intents(&json!({ "path": "tool-output://run.log" }), &ctx)
+        .expect("super intents");
+    let read_intents = read_tool()
+        .permission_intents(&json!({ "path": "tool-output://run.log" }), &ctx)
+        .expect("read intents");
+    assert_eq!(
+        super_intents, read_intents,
+        "super_read 与 read 必须对同一引用派生同一审批意图"
+    );
+}
+
+/// I73 A15：`scratch://` 同样两者同权——同一正文、同一 `readScratch` 意图（§3.8 P5）。
+#[tokio::test]
+async fn a_scratch_reference_reads_and_shares_intents_with_read() {
+    let dir = tempfile::tempdir().unwrap();
+    let indexes = tempfile::tempdir().unwrap();
+    let scratch = tempfile::tempdir().unwrap();
+    write(scratch.path(), "tmp.txt", "alpha\nbeta\n");
+
+    let mut ctx = context(dir.path(), indexes.path());
+    ctx.tool_scratch_root = Some(scratch.path().to_path_buf());
+
+    let input = json!({ "path": "scratch://tmp.txt" });
+    let (_, super_text) = run(&super_tool(), input.clone(), &ctx).await;
+    let (_, read_text) = run(&read_tool(), input.clone(), &ctx).await;
+    assert_eq!(body(&super_text), body(&read_text));
+    assert_eq!(body(&read_text), "     1\talpha\n     2\tbeta\n");
+
+    let super_intents = super_tool()
+        .permission_intents(&input, &ctx)
+        .expect("super intents");
+    let read_intents = read_tool()
+        .permission_intents(&input, &ctx)
+        .expect("read intents");
+    assert_eq!(
+        super_intents, read_intents,
+        "super_read 与 read 必须对同一临时区引用派生同一审批意图"
+    );
+    assert_eq!(super_intents[0].action, "readScratch");
+    assert_eq!(
+        super_intents[0].resources,
+        vec![scratch.path().display().to_string()]
+    );
+}
+
 fn read_file(path: &Path) -> String {
     std::fs::read_to_string(path).expect("read fixture")
 }
@@ -663,4 +728,29 @@ fn canonical(root: &Path, name: &str) -> String {
         .expect("canonical fixture")
         .display()
         .to_string()
+}
+
+/// A24：`super_read` 与 `read` 同一错误回显口径——只含原串，不含域根物理路径
+/// （I73 §3.10 D1 / D2 / N18）。
+#[tokio::test]
+async fn reference_errors_echo_the_raw_reference_in_super_read() {
+    let dir = tempfile::tempdir().unwrap();
+    let indexes = tempfile::tempdir().unwrap();
+    let scratch = tempfile::tempdir().unwrap();
+
+    let mut ctx = context(dir.path(), indexes.path());
+    ctx.tool_scratch_root = Some(scratch.path().to_path_buf());
+
+    let path = "scratch://missing.txt";
+    let result = super_tool()
+        .execute(&json!({ "path": path }), &ctx)
+        .await
+        .expect("execute");
+    assert!(!result.ok, "{path} must fail");
+    let error = result.error.unwrap_or_default();
+    assert!(error.contains(path), "must echo the raw reference: {error}");
+    assert!(
+        !error.contains(&scratch.path().display().to_string()),
+        "must not leak the domain root: {error}"
+    );
 }

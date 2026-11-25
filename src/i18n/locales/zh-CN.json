@@ -79,7 +79,8 @@
         "edit": "写入免确认",
         "read": "读取确认",
         "mcp": "MCP 确认",
-        "readOutput": "回读确认"
+        "readOutput": "回读确认",
+        "readScratch": "临时区确认"
       },
       "effect": {
         "allow": "自动执行",
@@ -1312,6 +1313,7 @@
           "action": {
             "read": "读取",
             "readToolOutput": "读取工具输出",
+            "readScratch": "读取临时区",
             "edit": "修改",
             "delete": "删除",
             "purge": "永久删除",

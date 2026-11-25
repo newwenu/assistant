@@ -646,7 +646,7 @@ mod tests {
             program: cmd_program(),
             args: vec!["/C".to_string(), script.to_string()],
             cwd: root.to_path_buf(),
-            writable_root: root.to_path_buf(),
+            write_roots: vec![root.to_path_buf()],
             env: Vec::new(),
             network: false,
             stdin: None,

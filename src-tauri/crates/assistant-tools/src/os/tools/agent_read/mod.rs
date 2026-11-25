@@ -48,11 +48,18 @@ pub const DEFAULT_MAX_LINES: usize = 2000;
 /// 长度与 mtime 都不变的「删除后重建」（保时间戳的复制 / 解包）由
 /// `ReadReceiptStore::invalidate_path` 兜底，不依赖修订号。
 pub fn file_revision(path: &Path) -> Result<String, String> {
+    file_revision_as(path, &path.display().to_string())
+}
+
+/// 与 [`file_revision`] 相同，但错误文本用调用方给的 `label`（I73 §3.10 D4）。
+///
+/// 仅 `read` / `super_read` 传引用原串；其余调用点用 1 参版本，维持解析后落点（D3）。
+pub fn file_revision_as(path: &Path, label: &str) -> Result<String, String> {
     let metadata = std::fs::metadata(path)
-        .map_err(|error| format!("failed to stat '{}': {}", path.display(), error))?;
+        .map_err(|error| format!("failed to stat '{}': {}", label, error))?;
     let modified = metadata
         .modified()
-        .map_err(|error| format!("failed to read mtime of '{}': {}", path.display(), error))?;
+        .map_err(|error| format!("failed to read mtime of '{}': {}", label, error))?;
     let nanos = modified
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_nanos())
@@ -87,8 +94,9 @@ impl Tool for AgentReadTool {
              `totalLines` is null when the file is too large to count to the end in one call. \
              Binary files are rejected. Non-UTF-8 files are decoded via BOM detection, via the \
              `encoding` label, or by a confident guess. Does not follow `.gitignore`. Tool \
-             output files referenced by a `<persisted-output path=\"...\">` tag can be read with \
-             this tool; the first such read asks the user for permission."
+             output files referenced by a `<persisted-output path=\"tool-output://...\">` tag can \
+             be read by passing that `tool-output://` reference as `path` verbatim; the first \
+             such read asks the user for permission."
                 .to_string(),
         )
     }
@@ -134,7 +142,7 @@ impl Tool for AgentReadTool {
 
     fn validate_input(&self, input: &Value, context: &ToolUseContext) -> ValidationResult {
         match ReadRequest::parse(input) {
-            Ok(request) => match path::resolve_readable(&request.path, context) {
+            Ok(request) => match request.path.resolve_readable(context) {
                 Ok(_) => ValidationResult::ok(),
                 Err(error) => ValidationResult::invalid(error),
             },
@@ -148,25 +156,13 @@ impl Tool for AgentReadTool {
         context: &ToolUseContext,
     ) -> Result<Vec<PermissionIntent>, String> {
         let request = ReadRequest::parse(input)?;
-        let resolved = path::resolve_readable(&request.path, context)?;
         // 输出域落在工作区之外，必须走更严的独立动作，不能借 `read` 的默认 `Allow` 混过去。
         // `resource` 取命名空间**目录**：审批键覆盖本会话全部输出，读第 2、第 3 个文件不再弹框。
-        match resolved.scope {
-            path::ReadableScope::Workspace => Ok(vec![PermissionIntent::new(
-                "read",
-                resolved.path.display().to_string(),
-            )]),
-            path::ReadableScope::ToolOutput => {
-                let root = context
-                    .tool_output_root
-                    .as_deref()
-                    .ok_or_else(|| "tool output root is unavailable".to_string())?;
-                Ok(vec![PermissionIntent::new(
-                    "readToolOutput",
-                    root.display().to_string(),
-                )])
-            }
-        }
+        // 映射只在 `ReadablePath::intent` 一处实现（I73 §3.5），`super_read` 共用同一份。
+        Ok(vec![request
+            .path
+            .resolve_readable(context)?
+            .intent(context)?])
     }
 
     async fn preview_for_approval(
@@ -177,12 +173,14 @@ impl Tool for AgentReadTool {
         let request = ReadRequest::parse(input).ok()?;
         let context = context.clone();
         tokio::task::spawn_blocking(move || {
-            let resolved = path::resolve_readable(&request.path, &context).ok()?;
+            let resolved = request.path.resolve_readable(&context).ok()?;
             // 工作区内读取由 `read` 的默认 `Allow` 覆盖，不会走到审批卡片；
-            // 只有跨出边界的输出域读取才需要量级摘要。
-            if resolved.scope != path::ReadableScope::ToolOutput {
-                return None;
-            }
+            // 只有跨出边界的输出域 / 临时区读取才需要量级摘要（I73 §3.8 P9）。
+            let label = match resolved.scope {
+                path::ReadableScope::ToolOutput => "输出",
+                path::ReadableScope::Scratch => "临时区",
+                path::ReadableScope::Workspace => return None,
+            };
             let bytes = std::fs::metadata(&resolved.path).ok()?.len();
             // 文件名只取末段：卡片不暴露本机绝对路径（I52 §5.11.4(5)）。
             let file_name = resolved.path.file_name()?.to_string_lossy().to_string();
@@ -193,7 +191,8 @@ impl Tool for AgentReadTool {
             let last = first.saturating_add(line_cap as u64 - 1);
             Some(ApprovalPreview {
                 summary: format!(
-                    "读本会话输出 {} · 第 {}–{} 行 · {}",
+                    "读本会话{} {} · 第 {}–{} 行 · {}",
+                    label,
                     file_name,
                     first,
                     last,
@@ -222,21 +221,21 @@ impl Tool for AgentReadTool {
         };
 
         let resolve_context = context.clone();
-        let raw_path = request.path.clone();
         let prepared = tokio::task::spawn_blocking(move || {
-            let resolved = path::resolve_readable(&raw_path, &resolve_context)?.path;
+            let resolved = request.path.resolve_readable(&resolve_context)?.path;
+            let label = request.path.error_label(&resolved);
             let metadata = std::fs::metadata(&resolved)
-                .map_err(|error| format!("failed to stat '{}': {}", resolved.display(), error))?;
+                .map_err(|error| format!("failed to stat '{}': {}", label, error))?;
             if metadata.is_dir() {
                 return Err(format!(
                     "'{}' is a directory; use ls to list its entries",
-                    resolved.display()
+                    label
                 ));
             }
             if !metadata.is_file() {
-                return Err(format!("'{}' is not a regular file", resolved.display()));
+                return Err(format!("'{}' is not a regular file", label));
             }
-            let revision = file_revision(&resolved)?;
+            let revision = file_revision_as(&resolved, &label)?;
             Ok::<(PathBuf, String), String>((resolved, revision))
         })
         .await;
@@ -335,7 +334,7 @@ impl Tool for AgentReadTool {
 }
 
 struct ReadRequest {
-    path: String,
+    path: path::PathRef,
     offset: u64,
     limit: Option<usize>,
     encoding: Option<&'static Encoding>,

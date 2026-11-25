@@ -76,7 +76,8 @@ pub async fn execute_storage_reclaim(
                 | CoreEntry::Crashes
                 | CoreEntry::Config
                 | CoreEntry::OrbConfig
-                | CoreEntry::MascotConfig,
+                | CoreEntry::MascotConfig
+                | CoreEntry::ToolScratch,
             ) => entry_result(
                 key.to_string(),
                 action,
@@ -131,13 +132,15 @@ fn executor_action(view: &EntryView) -> Option<StorageReclaimActionDto> {
         }
         CoreEntry::ToolResults => Some(StorageReclaimActionDto::SweepExpired),
         // `E15` / `E17` / `E18` 是用户业务数据（`Forbidden`），没有执行器：白名单直接拒绝。
+        // `E19` 临时区没有独立回收 API（`NotImplemented`），同样不放行任何动作。
         CoreEntry::MascotAssets
         | CoreEntry::Database
         | CoreEntry::Logs
         | CoreEntry::Crashes
         | CoreEntry::Config
         | CoreEntry::OrbConfig
-        | CoreEntry::MascotConfig => None,
+        | CoreEntry::MascotConfig
+        | CoreEntry::ToolScratch => None,
     }
 }
 

@@ -242,16 +242,13 @@ fn push_segment(out: &mut Vec<String>, current: &mut String) {
 /// 取语句内所有 `>` / `>>` 的重定向目标原文（引号外）。
 fn collect_redirects(segment: &str, out: &mut Vec<String>) {
     let mut quote: Option<char> = None;
-    let mut chars = segment.char_indices().peekable();
-    while let Some((index, ch)) = chars.next() {
+    for (index, ch) in segment.char_indices() {
         match ch {
             '\'' | '"' if quote == Some(ch) => quote = None,
             '\'' | '"' if quote.is_none() => quote = Some(ch),
             '>' if quote.is_none() => {
                 let mut end = index + 1;
-                if segment[end..].starts_with('>') {
-                    end += 1;
-                } else if segment[end..].starts_with('|') {
+                if segment[end..].starts_with('>') || segment[end..].starts_with('|') {
                     end += 1;
                 }
                 let rest = &segment[end..];

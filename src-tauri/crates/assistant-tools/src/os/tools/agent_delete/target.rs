@@ -6,7 +6,7 @@ use crate::context::ToolUseContext;
 use crate::os::path;
 
 pub(crate) struct DeleteRequest {
-    pub(crate) path: String,
+    pub(crate) path: path::PathRef,
     pub(crate) recursive: bool,
     pub(crate) permanent: bool,
 }
@@ -48,14 +48,14 @@ pub(crate) fn resolve_target(
     request: &DeleteRequest,
     context: &ToolUseContext,
 ) -> Result<PathBuf, String> {
-    let raw = Path::new(&request.path);
+    let raw = Path::new(request.path.raw());
     if raw.parent().is_none() {
         return Err(format!(
             "refusing to delete the filesystem root '{}'",
-            request.path
+            request.path.raw()
         ));
     }
-    let target = path::resolve_leaf_preserving(&request.path, context)?;
+    let target = request.path.resolve_leaf_preserving(context)?;
     reject_undeletable(&target, context)?;
     Ok(target)
 }

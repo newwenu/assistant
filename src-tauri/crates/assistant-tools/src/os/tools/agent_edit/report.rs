@@ -1,7 +1,6 @@
 use crate::context::ToolUseContext;
 use crate::os::agent_read::LINE_TRUNCATED_MARKER;
 use crate::os::footer;
-use crate::os::path;
 use crate::r#trait::ApprovalPreview;
 
 use super::locate::strip_read_line_prefixes;
@@ -30,7 +29,7 @@ pub(super) fn build_preview(
     request: &EditRequest,
     context: &ToolUseContext,
 ) -> Option<ApprovalPreview> {
-    let resolved = path::resolve(&request.path, context).ok()?;
+    let resolved = request.path.resolve_write(context).ok()?;
     let old_lines = request.old_string.lines().count().max(1);
     let new_lines = request.new_string.lines().count();
     let diff = diff_text(&request.old_string, &request.new_string);

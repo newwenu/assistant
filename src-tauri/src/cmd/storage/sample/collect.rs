@@ -19,7 +19,7 @@ use crate::setup::DbState;
 use super::super::entries::{set_sample, views, EntrySample};
 use super::rows::{
     attachment_sample, derived_sample, sample_config_file, sample_crashes, sample_database,
-    sample_index, sample_logs, sample_mascot, sample_tool_results, sample_webview,
+    sample_index, sample_logs, sample_mascot, sample_scratch, sample_tool_results, sample_webview,
 };
 use super::sections::section_sample;
 use super::timeout::{timed, timed_blocking, SampleFuture};
@@ -169,6 +169,16 @@ pub async fn collect_with(inputs: SampleInputs<'_>) -> Sampled {
         tasks.push(Box::pin(timed_blocking(CoreEntry::Logs.id(), move || {
             sample_logs(&logs_root)
         })));
+    }
+
+    // E19：shell 临时区（I73 §3.8）。`sample/collect.rs` 不是 `match`，编译器不点名，
+    // 漏采样会让 `declared = 0`、整棵树被误报成余量（与 `E12` 的同款 G11 缺陷）。
+    {
+        let scratch_root = dirs.tool_scratch();
+        tasks.push(Box::pin(timed_blocking(
+            CoreEntry::ToolScratch.id(),
+            move || sample_scratch(&scratch_root),
+        )));
     }
 
     // E14：WebView2 profile，整棵树由应用接管观测（§13.3）。

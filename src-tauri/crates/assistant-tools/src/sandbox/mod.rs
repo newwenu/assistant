@@ -123,17 +123,18 @@ impl SandboxProbe {
 
 /// 一次 `spawn` 的完整输入。
 ///
-/// `writable_root` 是按会话解析的结果（每次 `spawn` 现传），
+/// `write_roots` 是按会话解析的结果（每次 `spawn` 现传；工作区根 + 会话临时区根，I73 §3.8），
 /// `program` / `args` / `cwd` / `network` **禁止**由工具输入直接指定（规格 §4.3）。
 #[derive(Debug, Clone)]
 pub struct SandboxPlan {
     /// 绝对路径，不经 `PATH` 解析。
     pub program: PathBuf,
     pub args: Vec<String>,
-    /// 已 canonicalize，且落在 `writable_root` 内。
+    /// 已 canonicalize，且落在 `write_roots` 之一内。
     pub cwd: PathBuf,
-    /// 唯一可写根。
-    pub writable_root: PathBuf,
+    /// 可写根集合（每项都已 canonicalize）：工作区根与会话临时区根并列，
+    /// 逐项授权、逐项做敏感重叠检查；`cwd` 归属判定为「在任一根内」。
+    pub write_roots: Vec<PathBuf>,
     pub env: Vec<(String, String)>,
     /// P14 恒 `false`。
     pub network: bool,
@@ -176,7 +177,7 @@ impl std::error::Error for SandboxError {}
 /// 由上层（`tool_setup`）注入的主机路径。
 ///
 /// `assistant-tools` 不依赖 tauri / `app_dirs`，因此敏感目录列表必须注入
-/// （规格 §4.4 / A-S6）。`writable_root` **不在其中**：它按会话解析、每次 `spawn` 现传。
+/// （规格 §4.4 / A-S6）。`write_roots` **不在其中**：它按会话解析、每次 `spawn` 现传。
 #[derive(Debug, Clone, Default)]
 pub struct SandboxHostPaths {
     /// 固定敏感目录（§5.4）：沙箱层的读拒绝只针对这份列表。

@@ -65,6 +65,13 @@ pub struct ToolUseContext {
     /// **不得**在第二处重算路径。`None` = 不提供回读（ToolBox 无会话归属）。
     #[serde(skip)]
     pub tool_output_root: Option<PathBuf>,
+    /// 本会话的临时区域根（`scratch://` 的回读域，I73 §3.8 / §5.4 P4.0）。
+    ///
+    /// 运行时字段，不进 wire；**已含会话段**（`scratch_root_for(base, session_id)`），
+    /// 与 `tool_output_root` 同形，故 crate 内不得再 join 会话段。
+    /// `None` = 不提供临时区（ToolBox 无会话归属），`shell` 据此 fail-closed。
+    #[serde(skip)]
+    pub tool_scratch_root: Option<PathBuf>,
     /// 行索引缓存根（`super_read` 的 `index_root`，I58 §3.5）。
     ///
     /// 运行时字段，不进 wire；由应用层注入（`AppDirs::indexes()`），
@@ -113,6 +120,8 @@ impl ToolUseContext {
             cancel: None,
             // ToolBox 无会话归属，因此没有输出域可读。
             tool_output_root: None,
+            // ToolBox 无会话归属，因此没有临时区可用。
+            tool_scratch_root: None,
             // ToolBox 直调不经应用层装配，因此没有索引缓存根。
             index_root: None,
             // ToolBox 不经 `resolve_available_tools`，没有「本轮工具集」事实。

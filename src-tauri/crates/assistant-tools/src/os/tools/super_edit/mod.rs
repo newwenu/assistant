@@ -182,7 +182,7 @@ impl Tool for SuperEditTool {
 
     fn validate_input(&self, input: &Value, context: &ToolUseContext) -> ValidationResult {
         match Request::parse(input) {
-            Ok(request) => match path::resolve(&request.path, context) {
+            Ok(request) => match request.path.resolve_write(context) {
                 Ok(_) => ValidationResult::ok(),
                 Err(error) => ValidationResult::invalid(error),
             },
@@ -196,7 +196,7 @@ impl Tool for SuperEditTool {
         context: &ToolUseContext,
     ) -> Result<Vec<PermissionIntent>, String> {
         let request = Request::parse(input)?;
-        let resolved = path::resolve(&request.path, context)?;
+        let resolved = request.path.resolve_write(context)?;
         // 与 `edit` 同一审批键：写侧只认「编辑」这一件事，不因工具名分叉。
         Ok(vec![PermissionIntent::new(
             "edit",
@@ -212,7 +212,7 @@ impl Tool for SuperEditTool {
         let request = Request::parse(input).ok()?;
         let preview_context = context.clone();
         tokio::task::spawn_blocking(move || {
-            let resolved = path::resolve(&request.path, &preview_context).ok()?;
+            let resolved = request.path.resolve_write(&preview_context).ok()?;
             let index_root = preview_context.index_root.clone()?;
             let metadata = std::fs::metadata(&resolved).ok()?;
             let revision = file_revision(&resolved).ok()?;
@@ -267,10 +267,9 @@ impl Tool for SuperEditTool {
         };
 
         let probe_context = context.clone();
-        let raw_path = request.path.clone();
         let address = request.address;
         let probed = tokio::task::spawn_blocking(move || {
-            let resolved = path::resolve(&raw_path, &probe_context)?;
+            let resolved = request.path.resolve_write(&probe_context)?;
             let metadata = match std::fs::metadata(&resolved) {
                 Ok(metadata) => metadata,
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
@@ -421,7 +420,7 @@ impl Tool for SuperEditTool {
 /// 解析后的入参：地址与文本都已是本工具内部形态，后续不再回读 JSON。
 #[derive(Clone)]
 struct Request {
-    path: String,
+    path: path::PathRef,
     address: Address,
     expected: Option<String>,
     replacement: String,

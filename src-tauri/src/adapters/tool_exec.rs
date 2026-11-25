@@ -10,6 +10,7 @@ use assistant_agent::agent::tool_event::{
     ToolEvent, ToolEventPayload,
 };
 use assistant_tools::compact::{ToolResultCompact, TruncatedUnit};
+use assistant_tools::storage::scratch_root_for;
 use assistant_tools::{
     PipelineEvent, PipelineEventSink, PipelineStage, ResolvedPermissionPolicy, ToolCall,
     ToolErrorKind, ToolOutcome, ToolPipeline, ToolRegistry, ToolUseContext,
@@ -147,6 +148,9 @@ pub struct PipelineToolExecution {
     /// 行索引缓存根（I58 §3.5）：由应用层装配时给出，库 crate 不解析基根。
     /// `None` = 未装配索引能力，`super_read` 据此报业务错误。
     index_root: Option<std::path::PathBuf>,
+    /// 临时区基根（I73 §5.4 P4.0）：装配期由应用层给出（`AppDirs::tool_scratch()`），
+    /// 本适配器只搬运；会话段在每次 `execute` 由 `scratch_root_for` 派生。
+    tool_scratch: Option<std::path::PathBuf>,
     /// 升级通道装配（I58 §3.8 ③）：注册表 + 层级来源。`None` = 不提供升级通道，
     /// `request_tool(detail = "enable")` 返回业务错误（§3.8 ⑥）。
     escalation: Option<EscalationWiring>,
@@ -185,6 +189,7 @@ impl PipelineToolExecution {
             workspace_root,
             policy: Arc::new(ResolvedPermissionPolicy::default_global()),
             index_root: None,
+            tool_scratch: None,
             escalation: None,
         }
     }
@@ -193,6 +198,13 @@ impl PipelineToolExecution {
     /// 本适配器只搬运，不自行解析基根。
     pub fn with_index_root(mut self, index_root: std::path::PathBuf) -> Self {
         self.index_root = Some(index_root);
+        self
+    }
+
+    /// 装配临时区基根（I73 §5.4 P4.0）：由应用层传入 `AppDirs::tool_scratch()`，
+    /// 本适配器只搬运，不自行解析基根；会话段在 `execute` 里派生。
+    pub fn with_tool_scratch(mut self, tool_scratch: std::path::PathBuf) -> Self {
+        self.tool_scratch = Some(tool_scratch);
         self
     }
 
@@ -221,6 +233,7 @@ impl PipelineToolExecution {
             workspace_root: self.workspace_root.clone(),
             policy: Arc::new(policy),
             index_root: self.index_root.clone(),
+            tool_scratch: self.tool_scratch.clone(),
             escalation: self.escalation.as_ref().map(|wiring| EscalationWiring {
                 registry: wiring.registry.clone(),
                 max_tool_tier: wiring.max_tool_tier.clone(),
@@ -269,7 +282,24 @@ impl ToolExecutionPort for PipelineToolExecution {
         // 的回退作为相对路径基准。不额外填 `resolve_base`，避免出现「有基准无边界」的上下文。
         // `tool_output_root` 取自 Pipeline 的落盘存储（唯一来源），不在此处重算路径。
         let session_id = ctx.conversation_id.to_string();
-        let tool_output_root = self.pipeline.storage().namespace_root(Some(&session_id));
+        // 域根在构造点归一为绑定形态（I73 §3.9 / P1.8）：之后的 `join` /
+        // `ensure_within_root` / 审批 resource 都只认这一份。归一失败即视为没有输出域，
+        // 不回退原始串——两侧形态不一致会让域内文件被误判成域外。
+        let tool_output_root = self
+            .pipeline
+            .storage()
+            .namespace_root(Some(&session_id))
+            .and_then(|root| assistant_tools::os::path::canonicalize_lenient(&root).ok());
+        // 临时区域根同口径（I73 §5.4 P4.0 / N17）：基根来自装配期注入，会话段由
+        // `scratch_root_for` 唯一实现点派生（`crate` 内不得自行 join 会话段）。
+        // 目录尚未创建时 `canonicalize_lenient` 仍给出确定形态，故这里无需建目录。
+        let tool_scratch_root = self.tool_scratch.as_ref().and_then(|base| {
+            assistant_tools::os::path::canonicalize_lenient(&scratch_root_for(
+                base,
+                Some(&session_id),
+            ))
+            .ok()
+        });
         // 升级端口每次 `execute` 现构造（I58 §3.8 ③）：层级按会话求值，收集器按轮次
         // 归属。任一侧缺失（未装配 / 本链路不支持升级）都保持 `None`，`enable` 分支
         // 据此返回业务错误（§3.8 ⑥），不会静默降级成「申请成功但没生效」。
@@ -291,6 +321,7 @@ impl ToolExecutionPort for PipelineToolExecution {
             // 本轮取消令牌：MCP 客户端据此中止在途 `tools/call`（I38e §4.3）。
             cancel: Some(ctx.child_token.clone()),
             tool_output_root,
+            tool_scratch_root,
             // 行索引缓存根：与输出域同为「可重建的工具产物」，由装配层注入（I58 §3.5）。
             index_root: self.index_root.clone(),
             // 本轮工具集名表：`request_tool` 的清单以它为准（I58 §3.1 G2）。

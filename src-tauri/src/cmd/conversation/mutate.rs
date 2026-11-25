@@ -9,14 +9,31 @@ use crate::protocol::{
     MessageChangeKindDto,
 };
 use assistant_storage::conversations;
+use assistant_tools::storage::scratch_root_for;
 
 use super::emit_list_changed;
+
+/// 会话结束清理临时区（I73 §5.4 P4.6）：整棵树删除，`NotFound` 静默。
+///
+/// 只删「该会话命名空间」这一个子目录，不碰基根下其它会话与 `shared` 段。
+/// 失败只记日志、不影响命令结果：数据库事务已提交，残留目录由存储管理页展示占用。
+fn remove_session_scratch(dirs: &crate::app_dirs::AppDirs, id: &str) {
+    let root = scratch_root_for(&dirs.tool_scratch(), Some(id));
+    if let Err(err) = std::fs::remove_dir_all(&root) {
+        if err.kind() != std::io::ErrorKind::NotFound {
+            log::warn!("remove tool scratch failed at {}: {}", root.display(), err);
+        }
+    }
+}
 
 #[command]
 pub fn delete_conversation(app: AppHandle, id: String) -> Result<(), String> {
     let state = app.state::<crate::setup::DbState>();
     let conn = get_db_conn(&state)?;
     conversations::delete_conversation(&conn, &id)?;
+    if let Ok(dirs) = crate::app_dirs::AppDirs::resolve() {
+        remove_session_scratch(&dirs, &id);
+    }
 
     emit_list_changed(&app, ConversationListChangeKindDto::Deleted, Some(id), None);
 
@@ -238,6 +255,11 @@ pub fn batch_delete_conversations(app: AppHandle, ids: Vec<String>) -> Result<()
     let conn = get_db_conn(&state)?;
     let affected = ids.clone();
     conversations::batch_delete(&conn, &ids)?;
+    if let Ok(dirs) = crate::app_dirs::AppDirs::resolve() {
+        for id in &ids {
+            remove_session_scratch(&dirs, id);
+        }
+    }
 
     emit_list_changed(
         &app,
@@ -253,7 +275,17 @@ pub fn batch_delete_conversations(app: AppHandle, ids: Vec<String>) -> Result<()
 pub fn purge_conversations(app: AppHandle) -> Result<(), String> {
     let state = app.state::<crate::setup::DbState>();
     let conn = get_db_conn(&state)?;
+    // 清空会删掉全部会话，故清理临时区前先取全量 id（删表后无从枚举）。
+    let ids: Vec<String> = conversations::get_conversations(&conn, None)?
+        .into_iter()
+        .map(|row| row.id)
+        .collect();
     conversations::purge_all(&conn)?;
+    if let Ok(dirs) = crate::app_dirs::AppDirs::resolve() {
+        for id in &ids {
+            remove_session_scratch(&dirs, id);
+        }
+    }
 
     emit_list_changed(&app, ConversationListChangeKindDto::Purged, None, None);
 

@@ -304,16 +304,17 @@ export const APPROVAL_ACTION_OPTIONS: string[] = [
   "execute",
   "mcp",
   "readToolOutput",
+  "readScratch",
 ];
 
 /**
  * 快捷规则（I70 §3.3）：一键追加一条标准用户规则，**不维护开关状态**。
  *
- * `mcp` 与 `readToolOutput` 不提供 `allow`——放宽底线会被 §6 E4 拒绝，
+ * `mcp`、`readToolOutput` 与 `readScratch` 不提供 `allow`——放宽底线会被 §6 E4 拒绝，
  * 这里直接不给出该选项，让底线在 UI 上可见。
  */
 export interface ApprovalRuleShortcut {
-  key: "execute" | "edit" | "read" | "mcp" | "readOutput";
+  key: "execute" | "edit" | "read" | "mcp" | "readOutput" | "readScratch";
   action: string;
   effects: ApprovalRuleEffectDto[];
 }
@@ -324,6 +325,7 @@ export const APPROVAL_RULE_SHORTCUTS: ApprovalRuleShortcut[] = [
   { key: "read", action: "read", effects: ["ask", "deny"] },
   { key: "mcp", action: "mcp", effects: ["ask", "deny"] },
   { key: "readOutput", action: "readToolOutput", effects: ["ask", "deny"] },
+  { key: "readScratch", action: "readScratch", effects: ["ask", "deny"] },
 ];
 
 /** 校验失败原因（与 Rust `RuleValidationError` 一一对应，I70 §6.1 E1–E5）。 */
@@ -428,6 +430,7 @@ export function validateApprovalRules(
     if (
       rule.effect === "allow" &&
       (approvalActionMatches(rule.action, "readToolOutput") ||
+        approvalActionMatches(rule.action, "readScratch") ||
         approvalActionMatches(rule.action, "mcp"))
     ) {
       return {

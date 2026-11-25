@@ -1149,3 +1149,253 @@ async fn a_utf8_file_that_turns_invalid_later_falls_back_to_a_guess() {
     assert!(text.contains("中文测试。"));
     assert!(text.ends_with("(guess)]"));
 }
+
+/// A1：`tool-output://<name>` 读到的内容与绝对路径读逐字节一致（I73 §7）。
+#[tokio::test]
+async fn read_accepts_a_tool_output_reference() {
+    let workspace = tempfile::tempdir().unwrap();
+    let output = tempfile::tempdir().unwrap();
+    write(output.path(), "run.log", "line one\nline two\n");
+
+    let mut ctx = context(workspace.path(), Some("conv-1"));
+    ctx.tool_output_root = Some(output.path().to_path_buf());
+
+    let by_ref = tool()
+        .execute(&json!({ "path": "tool-output://run.log" }), &ctx)
+        .await
+        .unwrap();
+    let by_path = tool()
+        .execute(
+            &json!({ "path": output.path().join("run.log").display().to_string() }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+    assert!(by_ref.ok, "{:?}", by_ref.error);
+    assert_eq!(
+        by_ref.result_for_assistant, by_path.result_for_assistant,
+        "引用读取必须与绝对路径读取逐字节一致"
+    );
+    assert_eq!(by_ref.data, by_path.data);
+}
+
+/// A3：两种写法命中同一授权键，因此不会二次弹框（I73 §7）。
+///
+/// 授权键由 `(action, resource)` 派生，断言两者相同即等价于「同一键」。
+#[test]
+fn reference_and_absolute_path_share_one_authorization_key() {
+    let workspace = tempfile::tempdir().unwrap();
+    let output = tempfile::tempdir().unwrap();
+    std::fs::write(output.path().join("run.log"), b"log").unwrap();
+
+    let mut ctx = context(workspace.path(), Some("conv-1"));
+    ctx.tool_output_root = Some(output.path().to_path_buf());
+
+    let by_ref = tool()
+        .permission_intents(&json!({ "path": "tool-output://run.log" }), &ctx)
+        .expect("ref intents");
+    let by_path = tool()
+        .permission_intents(
+            &json!({ "path": output.path().join("run.log").display().to_string() }),
+            &ctx,
+        )
+        .expect("absolute intents");
+
+    assert_eq!(by_ref, by_path, "同一目标必须派生同一授权键");
+}
+
+/// A7：没有输出域时引用读取报业务错误，不回退工作区（I73 §7）。
+#[tokio::test]
+async fn a_reference_without_an_output_root_does_not_fall_back_to_the_workspace() {
+    let workspace = tempfile::tempdir().unwrap();
+    write(workspace.path(), "run.log", "workspace copy\n");
+    let ctx = context(workspace.path(), Some("conv-1"));
+
+    let result = tool()
+        .execute(&json!({ "path": "tool-output://run.log" }), &ctx)
+        .await
+        .unwrap();
+
+    assert!(!result.ok);
+    let error = result.error.unwrap_or_default();
+    assert!(
+        error.contains("no tool output root"),
+        "unexpected error: {error}"
+    );
+}
+
+/// A11：`resolve_readable(model_ref(path))` 回到逐字节相同的绝对路径（I73 §7）。
+#[test]
+fn a_tool_output_reference_round_trips_to_the_persisted_path() {
+    use assistant_tools::os::path::{parse_ref, tool_output_ref, ReadableScope};
+
+    let workspace = tempfile::tempdir().unwrap();
+    let output = tempfile::tempdir().unwrap();
+    let persisted = write(output.path(), "run.log", "log\n");
+
+    let mut ctx = context(workspace.path(), Some("conv-1"));
+    ctx.tool_output_root = Some(output.path().to_path_buf());
+
+    let reference = tool_output_ref("run.log");
+    let resolved = parse_ref(&reference)
+        .expect("parse ref")
+        .resolve_readable(&ctx)
+        .expect("resolve ref");
+
+    assert_eq!(
+        resolved.path,
+        assistant_tools::os::path::canonicalize_lenient(&persisted).expect("canonical path"),
+        "回读必须命中落盘时的那一份"
+    );
+    assert_eq!(resolved.scope, ReadableScope::ToolOutput);
+}
+
+/// A22：域根以 verbatim 形态注入时仍能读回域内文件（I73 §3.9 / N17）。
+#[cfg(windows)]
+#[tokio::test]
+async fn a_verbatim_output_root_still_reads_its_own_files() {
+    let workspace = tempfile::tempdir().unwrap();
+    let output = tempfile::tempdir().unwrap();
+    write(output.path(), "run.log", "verbatim\n");
+
+    let verbatim = std::path::PathBuf::from(format!(r"\\?\{}", output.path().display()));
+    let mut ctx = context(workspace.path(), Some("conv-1"));
+    ctx.tool_output_root = Some(verbatim.clone());
+
+    let absolute = verbatim.join("run.log").display().to_string();
+    for path in ["tool-output://run.log".to_string(), absolute.clone()] {
+        let result = tool()
+            .execute(&json!({ "path": path }), &ctx)
+            .await
+            .unwrap();
+        assert!(result.ok, "path '{}' must read: {:?}", path, result.error);
+    }
+
+    let intents = tool()
+        .permission_intents(&json!({ "path": absolute }), &ctx)
+        .expect("intents");
+    assert_eq!(intents[0].action, "readToolOutput");
+}
+
+/// A17：scratch 越界与形态拒绝；`scratch://` 与 `scratch:///` 指会话临时区根本身，
+/// 读取目录报「is a directory」而不是越界（I73 §7 A17 / N15）。
+#[tokio::test]
+async fn scratch_references_reject_escapes_and_bare_forms_mean_the_root() {
+    let workspace = tempfile::tempdir().unwrap();
+    let scratch = tempfile::tempdir().unwrap();
+    write(scratch.path(), "inside.txt", "inside\n");
+
+    let mut ctx = context(workspace.path(), Some("conv-1"));
+    ctx.tool_scratch_root = Some(scratch.path().to_path_buf());
+
+    for path in ["scratch://../x", "scratch://a/../../x", r"scratch://C:\x"] {
+        let result = tool()
+            .execute(&json!({ "path": path }), &ctx)
+            .await
+            .unwrap();
+        assert!(!result.ok, "{path} must be rejected");
+        let error = result.error.unwrap_or_default();
+        assert!(error.contains("invalid path reference"), "{path}: {error}");
+    }
+
+    // 根形态合法：落到目录本身，失败原因是「读的是目录」而非「越界」。
+    for root in ["scratch://", "scratch:///"] {
+        let result = tool()
+            .execute(&json!({ "path": root }), &ctx)
+            .await
+            .unwrap();
+        assert!(!result.ok, "{root} must fail as a directory");
+        let error = result.error.unwrap_or_default();
+        assert!(error.contains("is a directory"), "{root}: {error}");
+        assert!(!error.contains("escapes"), "{root}: {error}");
+    }
+
+    // 域内文件：审批意图是 `readScratch`，一次授权覆盖本会话全部临时区。
+    let intents = tool()
+        .permission_intents(&json!({ "path": "scratch://inside.txt" }), &ctx)
+        .expect("intents");
+    assert_eq!(intents.len(), 1);
+    assert_eq!(intents[0].action, "readScratch");
+    assert_eq!(
+        intents[0].resources,
+        vec![scratch.path().display().to_string()]
+    );
+}
+
+/// A24：引用类路径错误的回显口径——只含调用方原串，不含域根物理路径
+/// （含用户名与会话哈希）（I73 §3.10 D1 / D2 / N18）。
+#[tokio::test]
+async fn reference_errors_echo_the_raw_reference_not_the_domain_root() {
+    let workspace = tempfile::tempdir().unwrap();
+    let scratch = tempfile::tempdir().unwrap();
+    let output = tempfile::tempdir().unwrap();
+
+    let mut ctx = context(workspace.path(), Some("conv-1"));
+    ctx.tool_scratch_root = Some(scratch.path().to_path_buf());
+    ctx.tool_output_root = Some(output.path().to_path_buf());
+
+    let scratch_root = scratch.path().display().to_string();
+    let output_root = output.path().display().to_string();
+
+    for path in ["scratch://missing.txt", "tool-output://missing.log"] {
+        let result = tool()
+            .execute(&json!({ "path": path }), &ctx)
+            .await
+            .unwrap();
+        assert!(!result.ok, "{path} must fail");
+        let error = result.error.unwrap_or_default();
+        assert!(
+            error.contains(path),
+            "{path} must echo the raw reference: {error}"
+        );
+        assert!(
+            !error.contains(&scratch_root) && !error.contains(&output_root),
+            "{path} must not leak the domain root: {error}"
+        );
+    }
+
+    // 读临时区根本身：失败原因是「读的是目录」，同样只回显原串。
+    let result = tool()
+        .execute(&json!({ "path": "scratch://" }), &ctx)
+        .await
+        .unwrap();
+    assert!(
+        !result.ok,
+        "reading the scratch root must fail as a directory"
+    );
+    let error = result.error.unwrap_or_default();
+    assert!(error.contains("is a directory"), "{error}");
+    assert!(error.contains("scratch://"), "{error}");
+    assert!(
+        !error.contains(&scratch_root),
+        "directory error must not leak the domain root: {error}"
+    );
+}
+
+/// A25：解析层的失败文案同口径——引用命中受保护目录时也只回显原串（I73 §3.10 D2 / N18）。
+#[tokio::test]
+async fn parse_layer_errors_echo_the_raw_reference_too() {
+    let workspace = tempfile::tempdir().unwrap();
+    let scratch = tempfile::tempdir().unwrap();
+
+    let mut ctx = context(workspace.path(), Some("conv-1"));
+    ctx.tool_scratch_root = Some(scratch.path().to_path_buf());
+
+    let path = "scratch://.ssh/id_rsa";
+    let result = tool()
+        .execute(&json!({ "path": path }), &ctx)
+        .await
+        .unwrap();
+    assert!(!result.ok, "{path} must be rejected");
+    let error = result.error.unwrap_or_default();
+    assert!(error.contains(path), "must echo the raw reference: {error}");
+    assert!(
+        error.contains("credential directory"),
+        "must still report why it was rejected: {error}"
+    );
+    assert!(
+        !error.contains(&scratch.path().display().to_string()),
+        "must not leak the domain root: {error}"
+    );
+}

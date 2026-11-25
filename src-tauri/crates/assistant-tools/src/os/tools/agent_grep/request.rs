@@ -11,7 +11,7 @@ use super::{DEFAULT_CONTEXT, MAX_CONTEXT};
 
 pub(super) struct GrepRequest {
     pub(super) pattern: String,
-    pub(super) path: Option<String>,
+    pub(super) path: Option<path::PathRef>,
     pub(super) include: Option<String>,
     pub(super) context: u64,
     pub(super) encoding: Option<SearcherEncoding>,

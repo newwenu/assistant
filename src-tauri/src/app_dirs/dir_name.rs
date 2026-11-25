@@ -10,6 +10,11 @@ pub const DATABASE: &str = "assistant.db";
 pub const ATTACHMENTS: &str = "attachments";
 pub const TOOL_RESULTS: &str = "tool-results";
 pub const TOOL_INDEX: &str = "tool-index";
+/// shell 临时区基根（会话级单目录，I73 §3.8 / W5）。
+///
+/// 命名判据见规格 §3.8「域根与命名」：含 `scratch` 与代码词汇一致、与 scheme 同名、
+/// 前缀粒度是 `tool-` 而非 `shell-`、在存储管理列表里与 `tool-index` / `tool-results` 相邻。
+pub const TOOL_SCRATCH: &str = "tool-scratch";
 pub const MASCOT_ASSETS: &str = "mascot-assets";
 pub const LOGS: &str = "logs";
 pub const CRASHES: &str = "crashes";
@@ -23,6 +28,7 @@ pub const ALL: &[&str] = &[
     ATTACHMENTS,
     TOOL_RESULTS,
     TOOL_INDEX,
+    TOOL_SCRATCH,
     MASCOT_ASSETS,
     LOGS,
     CRASHES,

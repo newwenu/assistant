@@ -60,8 +60,8 @@ impl SandboxBackend for SeatbeltBackend {
             return SandboxProbe::unavailable(SandboxKind::Seatbelt, "sandbox_exec_missing");
         }
         // 无写根时生成「只读 + 敏感拒绝」的 profile：结构与 spawn 完全同源，
-        // 差别仅在于没有 `writable_root` 那一条。
-        let profile = match build_profile(&self.host, None) {
+        // 差别仅在于没有 `write_roots` 那几条。
+        let profile = match build_profile(&self.host, &[]) {
             Ok(profile) => profile,
             Err(err) => return SandboxProbe::unavailable(SandboxKind::Seatbelt, err.detail()),
         };
@@ -91,7 +91,11 @@ impl SandboxBackend for SeatbeltBackend {
     }
 
     fn spawn(&self, plan: &SandboxPlan) -> Result<SandboxChild, SandboxError> {
-        if !plan.cwd.starts_with(&plan.writable_root) {
+        if !plan
+            .write_roots
+            .iter()
+            .any(|root| plan.cwd.starts_with(root))
+        {
             return Err(SandboxError::SetupFailed("cwd_outside_root".to_string()));
         }
         if !plan.cwd.is_dir() {
@@ -108,7 +112,7 @@ impl SandboxBackend for SeatbeltBackend {
             ));
         }
         // profile 生成阶段已含相交判定（授写权必然连带读权，相交即无解）。
-        let profile = build_profile(&self.host, Some(&plan.writable_root))?;
+        let profile = build_profile(&self.host, &plan.write_roots)?;
 
         let mut command = Command::new(SANDBOX_EXEC);
         command
@@ -198,21 +202,17 @@ impl Drop for SeatbeltChild {
     }
 }
 
-/// 生成 SBPL profile；`writable_root` 为 `None` 时得到「只读」形态（供 `probe()` 使用）。
-fn build_profile(
-    host: &SandboxHostPaths,
-    writable_root: Option<&Path>,
-) -> Result<String, SandboxError> {
+/// 生成 SBPL profile；`write_roots` 为空时得到「只读」形态（供 `probe()` 使用）。
+fn build_profile(host: &SandboxHostPaths, write_roots: &[PathBuf]) -> Result<String, SandboxError> {
     let sensitive: Vec<PathBuf> = host
         .sensitive_read_deny
         .iter()
         .map(|path| profile_path(path))
         .collect();
-    let writable = writable_root.map(profile_path);
+    let writable: Vec<String> = write_roots.iter().map(|path| profile_path(path)).collect();
 
-    if let Some(root) = writable.as_deref() {
-        let overlaps_sensitive = sensitive.iter().any(|item| paths_overlap(root, item));
-        if overlaps_sensitive {
+    for root in &writable {
+        if sensitive.iter().any(|item| paths_overlap(root, item)) {
             return Err(SandboxError::SetupFailed(
                 "writable_root_overlaps_sensitive".to_string(),
             ));
@@ -246,7 +246,7 @@ fn build_profile(
         forms.push(format!("(deny file-read* {})", clauses.join(" ")));
     }
     forms.push(format!("(allow file-write* {DEVICE_WRITE_CLAUSES})"));
-    if let Some(root) = writable.as_deref() {
+    for root in &writable {
         forms.push(format!(
             "(allow file-write* (subpath {}))",
             sbpl_string(root)
@@ -313,7 +313,7 @@ mod tests {
             program: PathBuf::from("/bin/sh"),
             args: vec!["-c".to_string(), script.to_string()],
             cwd: root.to_path_buf(),
-            writable_root: root.to_path_buf(),
+            write_roots: vec![root.to_path_buf()],
             env: vec![("PATH".to_string(), "/usr/bin:/bin".to_string())],
             network: false,
             stdin: None,
@@ -354,7 +354,7 @@ mod tests {
     fn profile_denies_sensitive_reads_after_allow() {
         let profile = build_profile(
             &host_with_sensitive(vec![PathBuf::from("/Users/a/.ssh")]),
-            None,
+            &[],
         )
         .expect("profile");
         let allow = profile
@@ -370,7 +370,7 @@ mod tests {
     fn profile_grants_writable_root_and_devices() {
         let profile = build_profile(
             &host_with_sensitive(vec![PathBuf::from("/Users/a/.ssh")]),
-            Some(Path::new("/Users/a/work")),
+            &[PathBuf::from("/Users/a/work")],
         )
         .expect("profile");
         assert!(profile.contains("(subpath \"/Users/a/work\")"));
@@ -379,9 +379,23 @@ mod tests {
     }
 
     #[test]
+    fn profile_grants_every_write_root() {
+        let profile = build_profile(
+            &host_with_sensitive(vec![PathBuf::from("/Users/a/.ssh")]),
+            &[
+                PathBuf::from("/Users/a/work"),
+                PathBuf::from("/Users/a/Library/scratch"),
+            ],
+        )
+        .expect("profile");
+        assert!(profile.contains("(subpath \"/Users/a/work\")"));
+        assert!(profile.contains("(subpath \"/Users/a/Library/scratch\")"));
+    }
+
+    #[test]
     fn profile_refuses_overlapping_root() {
         let host = host_with_sensitive(vec![PathBuf::from("/Users/a/work/secret")]);
-        match build_profile(&host, Some(Path::new("/Users/a/work"))) {
+        match build_profile(&host, &[PathBuf::from("/Users/a/work")]) {
             Err(SandboxError::SetupFailed(detail)) => {
                 assert_eq!(detail, "writable_root_overlaps_sensitive");
             }
@@ -392,7 +406,7 @@ mod tests {
     #[test]
     fn profile_refuses_control_chars() {
         let host = host_with_sensitive(vec![PathBuf::from("/Users/a/we\nird")]);
-        match build_profile(&host, None) {
+        match build_profile(&host, &[]) {
             Err(SandboxError::SetupFailed(detail)) => {
                 assert_eq!(detail, "profile_path_control_char");
             }
@@ -470,7 +484,7 @@ mod tests {
 
         let plan = SandboxPlan {
             cwd: sensitive.clone(),
-            writable_root: sensitive,
+            write_roots: vec![sensitive],
             ..plan_for(&temp.path().join("workspace"), "true")
         };
         match backend.spawn(&plan) {

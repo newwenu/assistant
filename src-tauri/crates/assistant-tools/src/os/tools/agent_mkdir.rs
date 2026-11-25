@@ -78,7 +78,7 @@ impl Tool for AgentMkdirTool {
             Ok(request) => request,
             Err(error) => return ValidationResult::invalid(error),
         };
-        match path::resolve(&request.path, context) {
+        match request.path.resolve_write(context) {
             Ok(_) => ValidationResult::ok(),
             Err(error) => ValidationResult::invalid(error),
         }
@@ -90,7 +90,7 @@ impl Tool for AgentMkdirTool {
         context: &ToolUseContext,
     ) -> Result<Vec<PermissionIntent>, String> {
         let request = MkdirRequest::parse(input)?;
-        let resolved = path::resolve(&request.path, context)?;
+        let resolved = request.path.resolve_write(context)?;
         Ok(vec![PermissionIntent::new(
             "edit",
             resolved.display().to_string(),
@@ -105,7 +105,7 @@ impl Tool for AgentMkdirTool {
         let request = MkdirRequest::parse(input).ok()?;
         let context = context.clone();
         tokio::task::spawn_blocking(move || {
-            let resolved = path::resolve(&request.path, &context).ok()?;
+            let resolved = request.path.resolve_write(&context).ok()?;
             let (exists, symlink) = match std::fs::symlink_metadata(&resolved) {
                 Ok(metadata) => (Some(true), Some(metadata.file_type().is_symlink())),
                 Err(_) => (Some(false), Some(false)),
@@ -136,7 +136,7 @@ impl Tool for AgentMkdirTool {
 
         let resolve_context = context.clone();
         let created = tokio::task::spawn_blocking(move || {
-            let resolved = path::resolve(&request.path, &resolve_context)?;
+            let resolved = request.path.resolve_write(&resolve_context)?;
             let outcome = create_directory(&resolved, request.parents)?;
             Ok::<(PathBuf, MkdirOutcome), String>((resolved, outcome))
         })
@@ -167,7 +167,7 @@ impl Tool for AgentMkdirTool {
 }
 
 struct MkdirRequest {
-    path: String,
+    path: path::PathRef,
     parents: bool,
 }
 

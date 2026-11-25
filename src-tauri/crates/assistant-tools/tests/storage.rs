@@ -266,6 +266,40 @@ async fn file_storage_namespaces_by_session_and_prefixes_names() {
     );
 }
 
+/// A12：同一命名空间连续落盘 N 次（含同一 `tool_call_id` 重试）必得 N 个不同文件名（I73 §3.7 M2）。
+///
+/// M2 是 `model_ref` 往返成立的硬前提：文件名一旦可复用，ref 会解析到另一个文件而静默读错。
+#[tokio::test]
+async fn a12_consecutive_persists_never_reuse_a_file_name() {
+    let dir = tempfile::tempdir().unwrap();
+    let storage = FileToolResultStorage::new(dir.path());
+
+    let mut names = std::collections::HashSet::new();
+    for index in 0..32 {
+        let reference = storage
+            .persist(PersistToolResult {
+                tool_call_id: "call-retry".to_string(),
+                tool_name: "shell".to_string(),
+                session_id: Some("session-a12".to_string()),
+                content: format!("attempt {index}"),
+            })
+            .await
+            .unwrap();
+        assert_eq!(reference.model_ref(), {
+            let name = Path::new(&reference.path)
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .into_owned();
+            format!("tool-output://{name}")
+        });
+        assert!(
+            names.insert(reference.path.clone()),
+            "同一 call_id 的第 {index} 次落盘复用了已有文件名"
+        );
+    }
+}
+
 fn sink_request(call_id: &str, session: Option<&str>) -> PersistToolResult {
     PersistToolResult {
         tool_call_id: call_id.to_string(),

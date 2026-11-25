@@ -114,7 +114,7 @@ impl Tool for AgentEditTool {
         if let Some(error) = rejected_arguments(&request) {
             return ValidationResult::invalid(error);
         }
-        match path::resolve(&request.path, context) {
+        match request.path.resolve_write(context) {
             Ok(_) => ValidationResult::ok(),
             Err(error) => ValidationResult::invalid(error),
         }
@@ -126,7 +126,7 @@ impl Tool for AgentEditTool {
         context: &ToolUseContext,
     ) -> Result<Vec<PermissionIntent>, String> {
         let request = EditRequest::parse(input)?;
-        let resolved = path::resolve(&request.path, context)?;
+        let resolved = request.path.resolve_write(context)?;
         Ok(vec![PermissionIntent::new(
             "edit",
             resolved.display().to_string(),
@@ -264,7 +264,7 @@ impl Tool for AgentEditTool {
 
 #[derive(Clone)]
 struct EditRequest {
-    path: String,
+    path: path::PathRef,
     old_string: String,
     new_string: String,
     replace_all: bool,

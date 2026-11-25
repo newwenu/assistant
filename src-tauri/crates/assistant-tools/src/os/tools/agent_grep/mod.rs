@@ -140,7 +140,7 @@ impl Tool for AgentGrepTool {
         if let Err(error) = build_include(request.include.as_deref()) {
             return ValidationResult::invalid(error);
         }
-        match scope::base_directory(request.path.as_deref(), context) {
+        match scope::base_directory(request.path.as_ref(), context) {
             Ok(_) => ValidationResult::ok(),
             Err(error) => ValidationResult::invalid(error),
         }
@@ -152,7 +152,7 @@ impl Tool for AgentGrepTool {
         context: &ToolUseContext,
     ) -> Result<Vec<PermissionIntent>, String> {
         let request = GrepRequest::parse(input)?;
-        let base = scope::base_directory(request.path.as_deref(), context)?;
+        let base = scope::base_directory(request.path.as_ref(), context)?;
         Ok(vec![PermissionIntent::new(
             "read",
             base.display().to_string(),
@@ -180,9 +180,8 @@ impl Tool for AgentGrepTool {
         };
 
         let resolve_context = context.clone();
-        let path_input = request.path.clone();
         let prepared = tokio::task::spawn_blocking(move || {
-            let base = scope::base_directory(path_input.as_deref(), &resolve_context)?;
+            let base = scope::base_directory(request.path.as_ref(), &resolve_context)?;
             let metadata = std::fs::metadata(&base)
                 .map_err(|error| format!("failed to stat '{}': {}", base.display(), error))?;
             if !metadata.is_dir() {

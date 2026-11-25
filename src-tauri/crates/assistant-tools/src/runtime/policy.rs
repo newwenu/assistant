@@ -299,7 +299,7 @@ pub enum RuleValidationError {
     ActionLength { index: usize, len: usize },
     /// E3：`resource` 为空或超长。
     ResourceLength { index: usize, len: usize },
-    /// E4：`allow` 触碰底线动作（`readToolOutput` / `mcp`）。
+    /// E4：`allow` 触碰底线动作（`readToolOutput` / `readScratch` / `mcp`）。
     AllowTouchesBottomLine { index: usize, action: String },
     /// E5：`resource` 使用了约束层专用语法 `tier:`。
     ReservedTierResource { index: usize, resource: String },
@@ -373,6 +373,7 @@ pub fn validate_rules(rules: &[PermissionRule]) -> Result<(), RuleValidationErro
         // 因此 `("*","*",Allow)` 也会在此被拒（I70 §6.1 的刻意后果）。
         if rule.effect == PermissionEffect::Allow
             && (pattern_matches(&rule.action, "readToolOutput")
+                || pattern_matches(&rule.action, "readScratch")
                 || pattern_matches(&rule.action, "mcp"))
         {
             return Err(RuleValidationError::AllowTouchesBottomLine {
@@ -471,6 +472,9 @@ fn base_rules() -> Vec<PermissionRule> {
         // 排在 `("*", "*")` 与 `("read", "*")` 之后 → `none` 档改写首条也压不住它；
         // 动作名与 `read` 不同 → 不会被 `read` 的默认 `Allow` 漏过来。
         PermissionRule::new("readToolOutput", "*", PermissionEffect::Ask),
+        // 读取本会话临时区：与输出域同一底线（I73 §3.8 P5 / P4.9「同底线」）。
+        // 动作名独立，故 `read` 的默认 `Allow` 同样漏不过来。
+        PermissionRule::new("readScratch", "*", PermissionEffect::Ask),
     ]
 }
 
@@ -580,35 +584,41 @@ mod tests {
     }
 
     #[test]
-    fn read_tool_output_asks_at_every_approval_level() {
-        // 输出域在工作区之外：`none` 档的「免审」只覆盖工作区内，压不住这条更具体的规则。
+    fn internal_domain_reads_ask_at_every_approval_level() {
+        // 输出域与临时区都在工作区之外：`none` 档的「免审」只覆盖工作区内，
+        // 压不住这两条更具体的规则（I73 §3.8 P5 与输出域同底线）。
         for level in [
             ApprovalLevel::None,
             ApprovalLevel::DangerousOnly,
             ApprovalLevel::AllOsTools,
         ] {
             let policy = policy(level, ToolTier::External);
-            assert_eq!(
-                policy.evaluate("readToolOutput", "/tmp/outputs/abc"),
-                PermissionEffect::Ask,
-                "readToolOutput must stay Ask under {:?}",
-                level
-            );
+            for action in ["readToolOutput", "readScratch"] {
+                assert_eq!(
+                    policy.evaluate(action, "/tmp/outputs/abc"),
+                    PermissionEffect::Ask,
+                    "{action} must stay Ask under {:?}",
+                    level
+                );
+            }
         }
     }
 
     #[test]
-    fn read_tool_output_is_not_covered_by_reads_default_allow() {
+    fn internal_domain_reads_are_not_covered_by_reads_default_allow() {
         let policy = policy(ApprovalLevel::DangerousOnly, ToolTier::External);
-        // 动作名精确匹配：`("read", "*", Allow)` 不得漏给 `readToolOutput`。
+        // 动作名精确匹配：`("read", "*", Allow)` 不得漏给内部域动作。
         assert_eq!(
             policy.evaluate("read", "/tmp/a.txt"),
             PermissionEffect::Allow
         );
-        assert_eq!(
-            policy.evaluate("readToolOutput", "/tmp/a.txt"),
-            PermissionEffect::Ask
-        );
+        for action in ["readToolOutput", "readScratch"] {
+            assert_eq!(
+                policy.evaluate(action, "/tmp/a.txt"),
+                PermissionEffect::Ask,
+                "{action} must not inherit read's default Allow"
+            );
+        }
     }
 
     #[test]
@@ -720,15 +730,18 @@ mod tests {
             PermissionEffect::Ask
         );
 
-        // 读取放行；工具输出回读恒 Ask。
+        // 读取放行；内部域（输出域 / 临时区）回读恒 Ask。
         assert_eq!(
             policy.evaluate("read", "/ws/a.txt"),
             PermissionEffect::Allow
         );
-        assert_eq!(
-            policy.evaluate("readToolOutput", "/ws/outputs/a.txt"),
-            PermissionEffect::Ask
-        );
+        for action in ["readToolOutput", "readScratch"] {
+            assert_eq!(
+                policy.evaluate(action, "/ws/outputs/a.txt"),
+                PermissionEffect::Ask,
+                "{action} must stay Ask"
+            );
+        }
 
         // 硬保护不受档位影响。
         assert_eq!(
@@ -807,7 +820,7 @@ mod tests {
 
     #[test]
     fn allow_rules_touching_bottom_line_actions_are_rejected() {
-        for action in ["readToolOutput", "mcp", "*", "**"] {
+        for action in ["readToolOutput", "readScratch", "mcp", "*", "**"] {
             let rules = vec![PermissionRule::new(action, "*", PermissionEffect::Allow)];
             assert!(
                 matches!(

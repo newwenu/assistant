@@ -79,6 +79,12 @@ impl AppDirs {
         self.path_for(dir_name::TOOL_INDEX)
     }
 
+    /// shell 临时区基根（`scratch://` 域，I73 §3.8）：会话段由应用层
+    /// `scratch_root_for` 派生，故这里只给基根，与 `tool_results()` 同形态。
+    pub fn tool_scratch(&self) -> PathBuf {
+        self.path_for(dir_name::TOOL_SCRATCH)
+    }
+
     pub fn mascot_assets(&self) -> PathBuf {
         self.path_for(dir_name::MASCOT_ASSETS)
     }

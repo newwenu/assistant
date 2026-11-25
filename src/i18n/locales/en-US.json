@@ -79,7 +79,8 @@
         "edit": "Skip: writes",
         "read": "Confirm reads",
         "mcp": "Confirm MCP",
-        "readOutput": "Confirm output"
+        "readOutput": "Confirm output",
+        "readScratch": "Confirm scratch"
       },
       "effect": {
         "allow": "Run automatically",
@@ -1339,6 +1340,7 @@
           "action": {
             "read": "Read",
             "readToolOutput": "Read tool output",
+            "readScratch": "Read scratch",
             "edit": "Edit",
             "delete": "Delete",
             "purge": "Permanently delete",

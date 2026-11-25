@@ -1,6 +1,7 @@
 mod args;
 mod membership;
 mod protected;
+mod r#ref;
 mod resolve;
 
 use std::path::{Component, Path};
@@ -8,10 +9,13 @@ use std::path::{Component, Path};
 pub use args::{parse_optional_path_arg, parse_path_arg};
 pub use membership::{ensure_within_root, workspace_membership, WorkspaceMembership};
 pub use protected::reject_system_dirs;
+pub use r#ref::{
+    parse_ref, tool_output_ref, write_rejected, PathRef, Scheme, SchemeNature, WriteAlternate,
+    BROWSE_REJECTED, CWD_REJECTED, SCRATCH_SCHEME, TOOL_OUTPUT_SCHEME,
+};
 pub(crate) use resolve::resolution_base;
 pub use resolve::{
-    canonicalize_lenient, resolve, resolve_external_input, resolve_leaf_preserving,
-    resolve_readable, ExternalInputMode, ReadablePath, ReadableScope,
+    canonicalize_lenient, resolve_external_input, ExternalInputMode, ReadablePath, ReadableScope,
 };
 
 /// 判断 `path` 是否以 `base` 为组件级前缀（`path == base` 允许）。
@@ -65,6 +69,7 @@ fn component_eq(left: &Component, right: &Component) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use super::resolve::{resolve, resolve_leaf_preserving, resolve_readable};
     use super::*;
     use crate::context::ToolUseContext;
     use std::path::PathBuf;
@@ -698,5 +703,73 @@ mod tests {
                 "受保护系统目录必须拒绝"
             );
         }
+    }
+
+    /// A4：输出域引用只接受单个文件名，其余形态在格式层拒绝（I73 §7）。
+    #[test]
+    fn a_tool_output_reference_rejects_anything_but_a_file_name() {
+        for raw in [
+            "tool-output://../x",
+            "tool-output://a/b",
+            "tool-output://C:\\x",
+            "tool-output://",
+            "tool-output:// x",
+        ] {
+            let error = parse_ref(raw).expect_err(raw);
+            assert!(
+                error.contains("invalid path reference"),
+                "{} -> {}",
+                raw,
+                error
+            );
+        }
+    }
+
+    /// A6：绕过 `PathRef` 把引用直接喂给解析层时，最低层拒绝（I73 §3.3 E1）。
+    #[test]
+    fn a_reference_that_bypasses_path_ref_is_rejected_at_the_lowest_layer() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let ctx = context_with_root(dir.path());
+
+        for raw in ["tool-output://x", "scratch://logs/a.log"] {
+            let error = resolve(raw, &ctx).expect_err(raw);
+            assert!(
+                error.contains("must be resolved through PathRef"),
+                "{} -> {}",
+                raw,
+                error
+            );
+        }
+    }
+
+    /// A21：引用 body 不得是 verbatim 形态——拒绝，而不是剥离后当成合法路径（I73 §3.9 / N17）。
+    #[test]
+    fn reference_bodies_reject_verbatim_prefixes() {
+        for raw in [
+            "tool-output://\\\\?\\C:\\x",
+            "tool-output:////?/C:/x",
+            "scratch://\\\\?\\C:\\x",
+            "scratch:////?/C:/x",
+        ] {
+            let error = parse_ref(raw).expect_err(raw);
+            assert!(
+                error.contains("invalid path reference"),
+                "{} -> {}",
+                raw,
+                error
+            );
+        }
+
+        // 无 scheme 的 verbatim 串不是引用，仍按原规则解析成功。
+        let dir = tempfile::tempdir().expect("tempdir");
+        let file = dir.path().join("ok.txt");
+        std::fs::write(&file, b"x").expect("write file");
+        let ctx = context_with_root(dir.path());
+        let verbatim = format!("\\\\?\\{}", file.display());
+        assert!(parse_ref(&verbatim).is_ok(), "非引用串必须原样通过");
+        assert_eq!(
+            resolve(&verbatim, &ctx).expect("verbatim 串必须可解析"),
+            canonicalize_lenient(&file).expect("canonical")
+        );
     }
 }

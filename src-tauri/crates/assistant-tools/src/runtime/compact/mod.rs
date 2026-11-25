@@ -219,7 +219,9 @@ mod tests {
         );
 
         let info = compact.persisted.unwrap();
-        assert_eq!(info.path, "results/abc.txt");
+        assert_eq!(info.path, reference.model_ref());
+        assert_eq!(info.path, "tool-output://abc.txt");
+        assert_ne!(info.path, "results/abc.txt");
         assert_eq!(info.bytes, Some(12_345));
     }
 

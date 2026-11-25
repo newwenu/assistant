@@ -14,6 +14,14 @@ use super::component_prefix_match;
 /// 凭据目录（`.ssh` / `.gnupg` / `.aws` / `.azure` / `.kube` / `keychains` 等）
 /// 无论位于何处一律拒绝，判定先于 `workspace_root` 授权。
 pub fn reject_system_dirs(path: &Path) -> Result<(), String> {
+    reject_system_dirs_as(path, &path.display().to_string())
+}
+
+/// 与 [`reject_system_dirs`] 相同，但错误文本用调用方给的 `label`。
+///
+/// 引用（`tool-output://` / `scratch://`）命中受保护目录时必须回显原串，不得把域根
+/// 物理路径写进模型可见文本（I73 §3.10 D1 / D2）；其余调用点用 1 参版本，行为不变。
+pub fn reject_system_dirs_as(path: &Path, label: &str) -> Result<(), String> {
     // 符号链接（macOS `/etc` `/tmp` `/var` → `/private`，Debian `/bin` `/sbin` → `/usr`）
     // 只按字面比较会漏判，故两侧都取归一结果；归一失败保留原形态，方向只会更严。
     let canonical =
@@ -22,14 +30,14 @@ pub fn reject_system_dirs(path: &Path) -> Result<(), String> {
         if protected_prefix_hit(path, &canonical, &protected) {
             return Err(format!(
                 "path '{}' is inside a protected system directory '{}'",
-                path.display(),
+                label,
                 protected.display()
             ));
         }
     }
-    reject_credential_dirs(path)?;
+    reject_credential_dirs(path, label)?;
     if canonical.as_path() != path {
-        reject_credential_dirs(&canonical)?;
+        reject_credential_dirs(&canonical, label)?;
     }
     Ok(())
 }
@@ -99,7 +107,7 @@ const CREDENTIAL_DIR_COMPONENTS: &[&str] =
 #[cfg(windows)]
 const MICROSOFT_CREDENTIAL_DIR_COMPONENTS: &[&str] = &["Protect", "Credentials", "Crypto", "Vault"];
 
-fn reject_credential_dirs(path: &Path) -> Result<(), String> {
+fn reject_credential_dirs(path: &Path, label: &str) -> Result<(), String> {
     let components: Vec<&std::ffi::OsStr> = path
         .components()
         .map(|component| component.as_os_str())
@@ -113,8 +121,7 @@ fn reject_credential_dirs(path: &Path) -> Result<(), String> {
         {
             return Err(format!(
                 "path '{}' is inside a protected credential directory '{}'",
-                path.display(),
-                name
+                label, name
             ));
         }
     }
@@ -132,8 +139,7 @@ fn reject_credential_dirs(path: &Path) -> Result<(), String> {
                 {
                     return Err(format!(
                         "path '{}' is inside a protected credential directory 'Microsoft\\{}'",
-                        path.display(),
-                        next_name
+                        label, next_name
                     ));
                 }
             }

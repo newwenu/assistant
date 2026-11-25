@@ -146,8 +146,8 @@ impl Tool for AgentMoveTool {
 }
 
 struct MoveRequest {
-    source: String,
-    target: String,
+    source: path::PathRef,
+    target: path::PathRef,
     overwrite: bool,
 }
 
@@ -200,8 +200,8 @@ fn resolve_both(
     request: &MoveRequest,
     context: &ToolUseContext,
 ) -> Result<(PathBuf, PathBuf), String> {
-    let source = path::resolve_leaf_preserving(&request.source, context)?;
-    let target = path::resolve_leaf_preserving(&request.target, context)?;
+    let source = request.source.resolve_leaf_preserving(context)?;
+    let target = request.target.resolve_leaf_preserving(context)?;
     Ok((source, target))
 }
 

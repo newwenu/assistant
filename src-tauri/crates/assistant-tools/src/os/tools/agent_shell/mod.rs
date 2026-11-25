@@ -62,18 +62,15 @@ impl Tool for ShellTool {
 
     async fn description(&self) -> Result<String, String> {
         Ok(
-            "Run one command in a sandboxed shell and return its exit code plus a path to the \
-             captured output. A non-zero exit code is NOT a tool failure: read `stderr` (or the \
-             output file) and fix the command. There is no stdin and no PTY, so interactive \
-             commands (`git commit` without `-m`, `vim`, `npm login`, a first `ssh` connection) \
-             will hang until the timeout. On Windows the shell is `cmd` (Unix: `sh`): \
-             `Get-ChildItem`, `$env:X` and `$VAR` do not work; single quotes are not quotes, `;` \
-             is not a separator (use `&`), and `\\` is not an escape character — check \
-             `data.sandbox.shell` for the shell actually used. `cwd` defaults to the workspace \
-             root and must stay inside it. Output is spooled to a file: when the returned text \
-             is truncated, read `outputPath` with `read` instead of re-running the command. \
-             Raise `timeout_ms` explicitly for long builds (default 120000 ms, max 1800000); on \
-             timeout the whole process tree is killed and the output written so far is kept."
+            "Run one command in a sandboxed shell. Non-zero exit codes are normal: read `stderr` \
+             and fix the command. No stdin and no PTY, so interactive commands (`vim`, \
+             `npm login`, `git commit` without `-m`) hang until the timeout. Windows runs `cmd`, \
+             not bash: no `$env:X`, single quotes are not quotes, `;` is not a separator (use \
+             `&`), `\\` is not an escape. Output is spooled to a file; the result opens with a \
+             `tool-output://` reference you can pass to `read` instead of re-running. Temp files \
+             written by commands go to a session-shared dir outside the workspace that stays \
+             writable until the session ends; same names overwrite. Each result backfills a \
+             `scratch://` ref to it that `read` accepts as `path`."
                 .to_string(),
         )
     }

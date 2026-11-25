@@ -423,6 +423,16 @@ impl ToolPipeline {
 
         match decision {
             GatewayDecision::Allowed => {}
+            // 审批通过后补发 `Started`：`awaiting_user` 是 `running` 的子区间（I60 §3.1），
+            // 批准时刻即真正的执行起点，前端据此回到 `running` 并重算计时（I74 §3.3）。
+            GatewayDecision::AllowedAfterApproval => {
+                sink.emit(PipelineEvent::Started {
+                    tool_call_id: call.tool_call_id.clone(),
+                    tool_name: call.tool_name.clone(),
+                    args_preview: args_preview(&call.tool_name, &call.arguments),
+                })
+                .await;
+            }
             GatewayDecision::Denied { action, resource } => {
                 return ToolOutcome::new(
                     call,
@@ -492,8 +502,9 @@ impl ToolPipeline {
 
         match self.storage.persist(request).await {
             Ok(reference) => {
+                // 模型看到的是引用（I73 §3.6 R2）：`path` 仍是绝对路径，只供内部 IO。
                 outcome.assistant_text =
-                    persisted_reference(&reference.path, &outcome.assistant_text);
+                    persisted_reference(&reference.model_ref(), &outcome.assistant_text);
                 outcome.persisted = Some(reference);
             }
             Err(error) => log::warn!(

@@ -26,6 +26,7 @@ const PRIMARY_ARG_KEYS = [
 export const INTENT_ACTION: Readonly<Record<string, string>> = {
   read: "chat.tool.approval.intent.action.read",
   readToolOutput: "chat.tool.approval.intent.action.readToolOutput",
+  readScratch: "chat.tool.approval.intent.action.readScratch",
   edit: "chat.tool.approval.intent.action.edit",
   delete: "chat.tool.approval.intent.action.delete",
   purge: "chat.tool.approval.intent.action.purge",

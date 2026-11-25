@@ -13,7 +13,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use crate::context::ToolUseContext;
-use crate::os::agent_read::file_revision;
+use crate::os::agent_read::file_revision_as;
 use crate::os::footer;
 use crate::os::output::human_bytes;
 use crate::os::path;
@@ -171,7 +171,7 @@ impl Tool for SuperReadTool {
 
     fn validate_input(&self, input: &Value, context: &ToolUseContext) -> ValidationResult {
         match Request::parse(input) {
-            Ok(request) => match path::resolve_readable(&request.path, context) {
+            Ok(request) => match request.path.resolve_readable(context) {
                 Ok(_) => ValidationResult::ok(),
                 Err(error) => ValidationResult::invalid(error),
             },
@@ -185,25 +185,13 @@ impl Tool for SuperReadTool {
         context: &ToolUseContext,
     ) -> Result<Vec<PermissionIntent>, String> {
         let request = Request::parse(input)?;
-        let resolved = path::resolve_readable(&request.path, context)?;
         // 与 `read` 同构：工作区走 `read`，输出域走更严的独立动作。
         // `resource` 取命名空间**目录**，审批键覆盖本会话全部输出。
-        match resolved.scope {
-            path::ReadableScope::Workspace => Ok(vec![PermissionIntent::new(
-                "read",
-                resolved.path.display().to_string(),
-            )]),
-            path::ReadableScope::ToolOutput => {
-                let root = context
-                    .tool_output_root
-                    .as_deref()
-                    .ok_or_else(|| "tool output root is unavailable".to_string())?;
-                Ok(vec![PermissionIntent::new(
-                    "readToolOutput",
-                    root.display().to_string(),
-                )])
-            }
-        }
+        // 映射只在 `ReadablePath::intent` 一处实现（I73 §3.5），本工具不再自带一份。
+        Ok(vec![request
+            .path
+            .resolve_readable(context)?
+            .intent(context)?])
     }
 
     async fn preview_for_approval(
@@ -214,11 +202,13 @@ impl Tool for SuperReadTool {
         let request = Request::parse(input).ok()?;
         let context = context.clone();
         tokio::task::spawn_blocking(move || {
-            let resolved = path::resolve_readable(&request.path, &context).ok()?;
+            let resolved = request.path.resolve_readable(&context).ok()?;
             // 工作区内读取由 `read` 的默认 `Allow` 覆盖，不走到审批卡片。
-            if resolved.scope != path::ReadableScope::ToolOutput {
-                return None;
-            }
+            let label = match resolved.scope {
+                path::ReadableScope::ToolOutput => "输出",
+                path::ReadableScope::Scratch => "临时区",
+                path::ReadableScope::Workspace => return None,
+            };
             let bytes = std::fs::metadata(&resolved.path).ok()?.len();
             let file_name = resolved.path.file_name()?.to_string_lossy().to_string();
             let first = request.offset;
@@ -234,7 +224,8 @@ impl Tool for SuperReadTool {
             };
             Some(ApprovalPreview {
                 summary: format!(
-                    "读本会话输出 {} · 第 {}–{} 行{} · {}",
+                    "读本会话{} {} · 第 {}–{} 行{} · {}",
+                    label,
                     file_name,
                     first,
                     last,
@@ -272,21 +263,21 @@ impl Tool for SuperReadTool {
         };
 
         let resolve_context = context.clone();
-        let raw_path = request.path.clone();
         let prepared = tokio::task::spawn_blocking(move || {
-            let resolved = path::resolve_readable(&raw_path, &resolve_context)?.path;
+            let resolved = request.path.resolve_readable(&resolve_context)?.path;
+            let label = request.path.error_label(&resolved);
             let metadata = std::fs::metadata(&resolved)
-                .map_err(|error| format!("failed to stat '{}': {}", resolved.display(), error))?;
+                .map_err(|error| format!("failed to stat '{}': {}", label, error))?;
             if metadata.is_dir() {
                 return Err(format!(
                     "'{}' is a directory; use ls to list its entries",
-                    resolved.display()
+                    label
                 ));
             }
             if !metadata.is_file() {
-                return Err(format!("'{}' is not a regular file", resolved.display()));
+                return Err(format!("'{}' is not a regular file", label));
             }
-            let revision = file_revision(&resolved)?;
+            let revision = file_revision_as(&resolved, &label)?;
             prepare(
                 &index_root,
                 &resolved,
@@ -391,7 +382,7 @@ impl Tool for SuperReadTool {
 
 /// 一次调用的全部入参。
 struct Request {
-    path: String,
+    path: path::PathRef,
     offset: u64,
     limit: Option<usize>,
     encoding: Option<&'static Encoding>,

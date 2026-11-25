@@ -7,7 +7,11 @@ use super::context::ApprovalRequest;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GatewayDecision {
+    /// 策略直通或授权命中：调用本来就没有审批区间。
     Allowed,
+    /// 本次弹窗中批准（含会话 / 全局授权）：与 [`Self::Allowed`] 区分，
+    /// 供执行前补发一次 `Started`，让工具视图从 `awaiting_user` 回到 `running`（I74 §3）。
+    AllowedAfterApproval,
     Denied {
         action: String,
         resource: String,

@@ -108,7 +108,7 @@ impl Tool for AgentWriteTool {
         if request.content.len() > MAX_WRITE_BYTES {
             return ValidationResult::invalid(too_large_message(request.content.len()));
         }
-        match path::resolve(&request.path, context) {
+        match request.path.resolve_write(context) {
             Ok(_) => ValidationResult::ok(),
             Err(error) => ValidationResult::invalid(error),
         }
@@ -120,7 +120,7 @@ impl Tool for AgentWriteTool {
         context: &ToolUseContext,
     ) -> Result<Vec<PermissionIntent>, String> {
         let request = WriteRequest::parse(input)?;
-        let resolved = path::resolve(&request.path, context)?;
+        let resolved = request.path.resolve_write(context)?;
         Ok(vec![PermissionIntent::new(
             "edit",
             resolved.display().to_string(),
@@ -149,9 +149,8 @@ impl Tool for AgentWriteTool {
         }
 
         let probe_context = context.clone();
-        let raw_path = request.path.clone();
         let prepared = tokio::task::spawn_blocking(move || {
-            let resolved = path::resolve(&raw_path, &probe_context)?;
+            let resolved = request.path.resolve_write(&probe_context)?;
             let exists = std::fs::metadata(&resolved)
                 .map(|metadata| metadata.is_file())
                 .unwrap_or(false);
@@ -260,7 +259,7 @@ impl Tool for AgentWriteTool {
 }
 
 struct WriteRequest {
-    pub(super) path: String,
+    pub(super) path: path::PathRef,
     pub(super) content: String,
     pub(super) append: bool,
     pub(super) encoding: Option<&'static Encoding>,

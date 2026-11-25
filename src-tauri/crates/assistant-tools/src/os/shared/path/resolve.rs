@@ -15,7 +15,7 @@ use super::protected::reject_system_dirs;
 /// 解析基准非绝对路径、路径不可归一、落在受保护目录、越出 workspace 根。
 ///
 /// 调用方必须使用返回值做 IO，不得再用原始字符串，避免「校验 A、使用 B」。
-pub fn resolve(input: &str, context: &ToolUseContext) -> Result<PathBuf, String> {
+pub(crate) fn resolve(input: &str, context: &ToolUseContext) -> Result<PathBuf, String> {
     let joined = join_input(input, context)?;
     let canonical = canonicalize_lenient(&joined)?;
     reject_system_dirs(&canonical)?;
@@ -32,6 +32,8 @@ pub enum ReadableScope {
     Workspace,
     /// 本会话工具输出目录：跨出工作区边界，恒 `Ask`（`readToolOutput`）。
     ToolOutput,
+    /// 本会话临时区：同样跨出工作区边界，恒 `Ask`（`readScratch`）。
+    Scratch,
 }
 
 /// 可读路径：规范化后的绝对路径 + 它落在哪个域。
@@ -47,9 +49,12 @@ pub struct ReadablePath {
 /// 路径必须走**更严**的 `ToolOutput` 分支，不得因为「也在工作区内」而落回 `read` 的 `Allow`。
 /// `reject_system_dirs` 仍在一切边界判定之前——凭据目录在任何作用域内都不可读。
 ///
-/// 只被 `read` 调用；`write` / `edit` / `delete` / `move` 仍用 [`resolve`]，
+/// 只被 `PathRef::resolve_readable` 调用；`write` / `edit` / `delete` / `move` 仍用 [`resolve`]，
 /// 因此输出域对它们天然只读。
-pub fn resolve_readable(input: &str, context: &ToolUseContext) -> Result<ReadablePath, String> {
+pub(crate) fn resolve_readable(
+    input: &str,
+    context: &ToolUseContext,
+) -> Result<ReadablePath, String> {
     let joined = join_input(input, context)?;
     let canonical = canonicalize_lenient(&joined)?;
     reject_system_dirs(&canonical)?;
@@ -80,7 +85,10 @@ pub fn resolve_readable(input: &str, context: &ToolUseContext) -> Result<Readabl
 ///
 /// 用于「操作链接本身」的工具：`canonicalize` 会穿过符号链接解析到真实目标，
 /// 对 `check`（判断叶子是不是链接）与 `create`（保留链接语义）都是错的。
-pub fn resolve_leaf_preserving(input: &str, context: &ToolUseContext) -> Result<PathBuf, String> {
+pub(crate) fn resolve_leaf_preserving(
+    input: &str,
+    context: &ToolUseContext,
+) -> Result<PathBuf, String> {
     let joined = join_input(input, context)?;
     let normalized = normalize_components(&joined, input)?;
     let leaf = normalized
@@ -162,12 +170,20 @@ pub fn resolve_external_input(input: &str, mode: ExternalInputMode) -> Result<Pa
 ///
 /// 绝不在规范化失败时回退为原路径：那会让校验对象与实际使用对象分叉。
 pub fn canonicalize_lenient(path: &Path) -> Result<PathBuf, String> {
-    let original = path.display().to_string();
-    reject_drive_relative(path, &original)?;
-    let normalized = normalize_components(path, &original)?;
+    canonicalize_lenient_as(path, &path.display().to_string())
+}
+
+/// 与 [`canonicalize_lenient`] 相同，但错误文本用调用方给的 `label`。
+///
+/// 引用（`tool-output://` / `scratch://`）的路径类错误必须回显调用方原串而不是域根
+/// 物理路径（I73 §3.10 D1 / D2），故 `PathRef` 传 `raw()` 进来；其余调用点用 1 参版本，
+/// 错误文本维持解析后落点（D3）。
+pub fn canonicalize_lenient_as(path: &Path, label: &str) -> Result<PathBuf, String> {
+    reject_drive_relative(path, label)?;
+    let normalized = normalize_components(path, label)?;
 
     if normalized.exists() {
-        return canonicalize_existing(&normalized);
+        return canonicalize_existing(&normalized, label);
     }
 
     let mut ancestor = normalized;
@@ -178,22 +194,35 @@ pub fn canonicalize_lenient(path: &Path) -> Result<PathBuf, String> {
         }
         let name = ancestor
             .file_name()
-            .ok_or_else(|| format!("path '{}' has no existing ancestor", original))?;
+            .ok_or_else(|| format!("path '{}' has no existing ancestor", label))?;
         tail.push(name.to_os_string());
         let parent = ancestor
             .parent()
-            .ok_or_else(|| format!("path '{}' has no existing ancestor", original))?;
+            .ok_or_else(|| format!("path '{}' has no existing ancestor", label))?;
         ancestor = parent.to_path_buf();
     }
 
-    let mut canonical = canonicalize_existing(&ancestor)?;
+    let mut canonical = canonicalize_existing(&ancestor, label)?;
     for name in tail.iter().rev() {
         canonical.push(name);
     }
     Ok(canonical)
 }
 
+/// 只接受**已剥掉 scheme** 的串（`PathRef` 的 `raw` 满足这一点）。
+///
+/// 引用若绕过 `PathRef` 直接流到这里，说明有调用点跳过了统一入口（I73 §3.3 E1）：
+/// 报内部错误而不是把它当普通路径拼，避免「校验 A、使用 B」。
 pub(crate) fn join_input(input: &str, context: &ToolUseContext) -> Result<PathBuf, String> {
+    if let Some((name, _)) = input.split_once("://") {
+        if super::r#ref::Scheme::parse(name).is_some() {
+            return Err(format!(
+                "internal error: path reference '{}' reached path resolution; references must be resolved through PathRef",
+                input
+            ));
+        }
+    }
+
     let raw = Path::new(input);
     reject_drive_relative(raw, input)?;
 
@@ -301,10 +330,10 @@ fn normalize_components(path: &Path, original: &str) -> Result<PathBuf, String> 
     Ok(normalized)
 }
 
-fn canonicalize_existing(path: &Path) -> Result<PathBuf, String> {
+fn canonicalize_existing(path: &Path, label: &str) -> Result<PathBuf, String> {
     let canonical = path
         .canonicalize()
-        .map_err(|error| format!("failed to canonicalize '{}': {}", path.display(), error))?;
+        .map_err(|error| format!("failed to canonicalize '{}': {}", label, error))?;
     Ok(simplify_verbatim(&canonical))
 }
 
@@ -312,16 +341,23 @@ fn canonicalize_existing(path: &Path) -> Result<PathBuf, String> {
 ///
 /// 这里只做前缀剥离，不重新构造路径：`to_string_lossy` 得到的文本若被用来
 /// `PathBuf::from`，非 UTF-8 字节会被替换字符改写，得到另一个目录（I44 §10.3）。
+///
+/// 不复用 `dunce::simplified`：它在路径超过 260 字符时拒绝剥离（剥离会失去长路径
+/// 能力），而本处剥离是「域根与域内路径同形比较」的前提（I73 N17）——长路径的
+/// `std::fs` 调用由 M1 自动补前缀，剥离去前缀不降低能力，反而避免「根短、路径长」
+/// 时 `VerbatimDisk` 与 `Disk` 前缀不匹配而被误判越界。
 pub(crate) fn simplify_verbatim(path: &Path) -> PathBuf {
     #[cfg(windows)]
     {
-        let simplified = dunce::simplified(path);
-        if let Some(text) = simplified.to_str() {
+        if let Some(text) = path.to_str() {
             if let Some(rest) = text.strip_prefix(r"\\?\UNC\") {
                 return PathBuf::from(format!(r"\\{}", rest));
             }
+            if let Some(rest) = text.strip_prefix(r"\\?\") {
+                return PathBuf::from(rest);
+            }
         }
-        simplified.to_path_buf()
+        path.to_path_buf()
     }
     #[cfg(not(windows))]
     {

@@ -162,30 +162,33 @@ pub fn resolve_workspace(conn: &rusqlite::Connection, conversation_id: &str) -> 
     }
 }
 
-/// 沙箱读拒绝的固定列表（I53 §5.4）：只由本函数构造，不读用户配置、不受模型输入影响。
+/// 沙箱读拒绝的固定列表（I53 §5.4 / I73 §3.8 W3）：只由本函数构造，不读用户配置、不受模型输入影响。
 ///
 /// 三类来源：凭据目录、本应用写入的受管目录、平台凭据存储目录。
+/// 「本应用写入的受管目录」按登记表**逐项枚举**，不再整树拒绝 `data()` / `local()`：
+/// 整树拒绝会把会话临时区（同为受管目录，但必须是沙箱可写根）一并罩住，
+/// 触发 `writable_root_overlaps_sensitive` 直接判负。逐项枚举反而保留默认保护——
+/// 登记表新增条目自动进入拒绝列表，无需维护第二份清单。
 /// 不存在的项**不加入**，且**禁止**创建——探测时点只读系统能力（I53 §6）。
 fn sandbox_host_paths(
     dirs: &crate::app_dirs::AppDirs,
     home: Option<&std::path::Path>,
 ) -> SandboxHostPaths {
+    use crate::app_dirs::registry::{CoreEntry, MANAGED_ROOTS};
+
     let mut candidates: Vec<std::path::PathBuf> = Vec::new();
     if let Some(home) = home {
         for name in [".ssh", ".aws", ".gnupg", ".netrc"] {
             candidates.push(home.join(name));
         }
     }
-    candidates.extend([
-        dirs.data().to_path_buf(),
-        dirs.local().to_path_buf(),
-        dirs.database(),
-        dirs.attachments(),
-        dirs.tool_results(),
-        dirs.mascot_assets(),
-        dirs.logs(),
-        dirs.crashes(),
-    ]);
+    // 受管目录逐项枚举：`ToolScratch` 是沙箱可写根，排除在拒读列表之外。
+    for root in MANAGED_ROOTS {
+        if root.entry == CoreEntry::ToolScratch {
+            continue;
+        }
+        candidates.push(dirs.managed_path_of(root.entry));
+    }
     // 系统凭据目录：路径由 `dirs` 给出，不硬编码盘符或用户名。
     #[cfg(windows)]
     if let Some(roaming) = dirs::data_dir() {
@@ -345,6 +348,8 @@ pub fn init(handle: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>>
         PipelineToolExecution::with_workspace_source(pipeline, waits, workspace_source)
             // 行索引缓存根：与结果落盘同为可重建产物，由装配层给出（I58 §3.5）。
             .with_index_root(dirs.indexes())
+            // shell 临时区基根：会话段由执行器按 session 派生，应用层只给基根（I73 §5.4 P4.0）。
+            .with_tool_scratch(dirs.tool_scratch())
             // 升级通道：注册表 + 层级来源，`request_tool(detail = "enable")` 的唯一出口（I58 §3.8）。
             .with_escalation(registry.clone(), max_tool_tier_source),
     );
