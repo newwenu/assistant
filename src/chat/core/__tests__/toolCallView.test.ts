@@ -187,6 +187,32 @@ describe("applyAgentToolCall 五态映射", () => {
     });
   });
 
+  it("审批通过后的 Started 把 awaiting_user 推回 running 并清掉审批对象（I74 §3.2）", () => {
+    let views = applyAgentToolCall(
+      [],
+      call({ phase: "awaitingApproval", approval: approval() }),
+      NOW,
+    );
+    expect(views[0]).toMatchObject({
+      status: "awaiting_user",
+      startedAt: NOW,
+      arguments: { command: ["ls", "-la"] },
+    });
+
+    views = applyAgentToolCall(
+      views,
+      call({ phase: "started", argsPreview: "shell ls" }),
+      NOW + 30_000,
+    );
+    expect(views[0]).toMatchObject({
+      status: "running",
+      startedAt: NOW + 30_000,
+      argsText: "",
+      argsPreview: "shell ls",
+      approval: null,
+    });
+  });
+
   it("Started 之后迟到的 argsDelta 不降级为 preparing", () => {
     let views = applyAgentToolCall([], call({ phase: "started" }), NOW);
     views = applyAgentToolCall(

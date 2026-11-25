@@ -9,8 +9,8 @@ use assistant_tools::pipeline::{
     InMemoryEventSink, PipelineEvent, PipelineStage, ToolCall, ToolPipeline,
 };
 use assistant_tools::storage::{
-    persisted_reference, PersistToolResult, PersistedRef, ToolResultSink, ToolResultStorage,
-    PER_ROUND_LIMIT_CHARS, PER_TOOL_LIMIT_CHARS, PREVIEW_CHARS,
+    persisted_reference, FileToolResultStorage, PersistToolResult, PersistedRef, ToolResultSink,
+    ToolResultStorage, PER_ROUND_LIMIT_CHARS, PER_TOOL_LIMIT_CHARS, PREVIEW_CHARS,
 };
 use assistant_tools::{
     ApprovalDecision, AuditOutcome, PermissionEffect, PermissionIntent, PermissionRule,
@@ -470,6 +470,11 @@ async fn rejected_by_user_is_tagged_denied() {
         .unwrap()
         .contains("nope"));
     assert_eq!(h.executed.load(Ordering::SeqCst), 0);
+
+    let events = stateful_events(&sink);
+    assert_eq!(events.len(), 2, "拒绝不重发 `Started`（I74 §4 B1）");
+    assert!(matches!(events[0], PipelineEvent::Started { .. }));
+    assert!(matches!(events[1], PipelineEvent::Failed { .. }));
 }
 
 #[tokio::test]
@@ -489,9 +494,10 @@ async fn approved_call_runs_and_reports_events_in_order() {
     assert!(outcomes[0].persisted.is_none(), "small result stays inline");
 
     let events = stateful_events(&sink);
-    assert_eq!(events.len(), 2);
+    assert_eq!(events.len(), 3, "批准后必须补发一次 `Started`（I74 §3.3）");
     assert!(matches!(events[0], PipelineEvent::Started { .. }));
-    assert!(matches!(events[1], PipelineEvent::Finished { .. }));
+    assert!(matches!(events[1], PipelineEvent::Started { .. }));
+    assert!(matches!(events[2], PipelineEvent::Finished { .. }));
 }
 
 #[tokio::test]
@@ -540,7 +546,7 @@ async fn large_result_is_persisted_with_preview() {
         .expect("big result must persist");
     assert_eq!(h.storage.calls().len(), 1);
     assert_eq!(h.storage.calls()[0].content, big);
-    let prefix = format!("<persisted-output path=\"{}\">\n", persisted.path);
+    let prefix = format!("<persisted-output path=\"{}\">\n", persisted.model_ref());
     assert!(outcomes[0].assistant_text.starts_with(&prefix));
     let marker = format!(
         "\n[… {} chars omitted; full output in the file above …]\n",
@@ -567,7 +573,7 @@ async fn streamed_persisted_result_is_not_persisted_again() {
         bytes: big.len(),
     };
     // 流式落盘由工具自己完成，回填文本也已由它渲染好定位符与尾窗口。
-    let text = persisted_reference(&reference.path, &big);
+    let text = persisted_reference(&reference.model_ref(), &big);
     let h = harness(vec![]);
     h.add(
         ProbeSpec::new("probe").with_result(
@@ -1031,4 +1037,101 @@ async fn pipeline_keeps_invalid_strings_for_validation() {
         .unwrap()
         .contains("'offset' must be a non-negative integer"));
     assert!(seen.lock().unwrap().is_none(), "校验失败不得执行");
+}
+
+/// A13：落盘域与工具域同源（I73 §7）。
+///
+/// 输出域根只有一个来源——`ToolResultStorage::namespace_root`；落盘用的 `session_id`
+/// 与派生根用的必须是同一个 `ToolUseContext.session_id`，否则「工具看到的域」与
+/// 「落盘写进的域」会分叉，模型按 ref 回读就读不到。
+#[tokio::test]
+async fn the_persist_domain_and_the_tool_output_root_share_one_source() {
+    struct CaptureTool {
+        seen: Arc<Mutex<Option<ToolUseContext>>>,
+    }
+
+    #[async_trait]
+    impl Tool for CaptureTool {
+        fn id(&self) -> &str {
+            "capture"
+        }
+
+        async fn description(&self) -> Result<String, String> {
+            Ok("capture probe".to_string())
+        }
+
+        fn input_schema(&self) -> Value {
+            json!({ "type": "object" })
+        }
+
+        fn tier(&self) -> ToolTier {
+            ToolTier::Os
+        }
+
+        fn audience(&self) -> ToolAudience {
+            ToolAudience::BOTH
+        }
+
+        fn inline_output_limit(&self) -> Option<usize> {
+            Some(1)
+        }
+
+        async fn execute(
+            &self,
+            _input: &Value,
+            context: &ToolUseContext,
+        ) -> Result<ToolResult, String> {
+            *self.seen.lock().unwrap() = Some(context.clone());
+            Ok(ToolResult::ok(json!({ "payload": "0123456789" })))
+        }
+    }
+
+    let dir = tempfile::tempdir().unwrap();
+    let storage = Arc::new(FileToolResultStorage::new(dir.path()));
+    let registry = Arc::new(ToolRegistry::new());
+    let seen = Arc::new(Mutex::new(None));
+    registry.register(Arc::new(CaptureTool { seen: seen.clone() }));
+    let gateway = Arc::new(ToolGateway::new(
+        Arc::new(InMemoryGrantStore::default()),
+        Arc::new(InMemoryAuditStore::default()),
+        Arc::new(ScriptedApprovalPrompter::new(vec![])),
+        Duration::from_secs(5),
+    ));
+    let pipeline = ToolPipeline::new(registry, gateway, storage.clone());
+    let sink = InMemoryEventSink::new();
+
+    let session = "conv-a13";
+    let context = ToolUseContext {
+        session_id: Some(session.to_string()),
+        tool_output_root: storage.namespace_root(Some(session)),
+        ..Default::default()
+    };
+
+    let outcomes = pipeline
+        .execute(&[call("c1", "capture")], &context, &allow_all(), &sink)
+        .await;
+    assert_eq!(outcomes.len(), 1);
+    assert!(outcomes[0].result.ok, "{:?}", outcomes[0].result.error);
+    let persisted = outcomes[0]
+        .persisted
+        .as_ref()
+        .expect("the oversized result must be persisted");
+
+    let tool_root = seen
+        .lock()
+        .unwrap()
+        .clone()
+        .expect("the tool must run")
+        .tool_output_root
+        .expect("the context must carry the output root");
+    assert_eq!(
+        Some(tool_root.clone()),
+        storage.namespace_root(Some(session)),
+        "工具看到的输出域必须与落盘域同源"
+    );
+    assert_eq!(
+        std::path::Path::new(&persisted.path).parent(),
+        Some(tool_root.as_path()),
+        "落盘文件必须落在工具看到的同一个域内"
+    );
 }

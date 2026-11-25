@@ -81,6 +81,7 @@ export function applyAgentToolCall(
         compact: null,
         argsText: current?.argsText ?? "",
         argsPreview: payload.argsPreview,
+        approval: null,
       });
     }
     case "argsDelta": {

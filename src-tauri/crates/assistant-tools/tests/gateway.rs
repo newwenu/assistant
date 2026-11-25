@@ -993,7 +993,7 @@ async fn gateway_merges_multiple_asks_into_one_request() {
         .await
         .unwrap();
 
-    assert_eq!(decision, GatewayDecision::Allowed);
+    assert_eq!(decision, GatewayDecision::AllowedAfterApproval);
     assert_eq!(prompter.request_count(), 1, "asks must be merged");
     let requests = prompter.requests();
     assert_eq!(requests.len(), 1);
@@ -1019,7 +1019,7 @@ async fn gateway_always_approve_persists_key_and_skips_second_prompt() {
         .evaluate(&tool, &Value::Null, &ctx(), &policy)
         .await
         .unwrap();
-    assert_eq!(first, GatewayDecision::Allowed);
+    assert_eq!(first, GatewayDecision::AllowedAfterApproval);
     assert_eq!(grants.len(), 1);
 
     let second = gateway
@@ -1171,7 +1171,7 @@ async fn gateway_empty_key_still_asks_and_never_persists() {
         .await
         .unwrap();
 
-    assert_eq!(decision, GatewayDecision::Allowed);
+    assert_eq!(decision, GatewayDecision::AllowedAfterApproval);
     assert_eq!(prompter.request_count(), 1, "empty key must still prompt");
     assert!(
         grants.is_empty(),
@@ -1319,7 +1319,7 @@ async fn gateway_ask_path_carries_l0_l1_l2_context() {
         .await
         .unwrap();
 
-    assert_eq!(decision, GatewayDecision::Allowed);
+    assert_eq!(decision, GatewayDecision::AllowedAfterApproval);
     assert_eq!(tool.preview_calls(), 1, "Ask 路径必须预演一次");
     let seen = seen.lock().unwrap();
     assert_eq!(seen.len(), 1);
@@ -1654,7 +1654,7 @@ async fn read_tool_output_grant_covers_the_whole_session_namespace() {
         ..Default::default()
     };
 
-    for name in ["a.log", "b.log"] {
+    for (index, name) in ["a.log", "b.log"].into_iter().enumerate() {
         let decision = gateway
             .evaluate(
                 &tool,
@@ -1664,7 +1664,12 @@ async fn read_tool_output_grant_covers_the_whole_session_namespace() {
             )
             .await
             .unwrap();
-        assert_eq!(decision, GatewayDecision::Allowed, "用户批准后放行");
+        let expected = if index == 0 {
+            GatewayDecision::AllowedAfterApproval
+        } else {
+            GatewayDecision::Allowed
+        };
+        assert_eq!(decision, expected, "用户批准后放行");
     }
 
     assert_eq!(
@@ -1854,7 +1859,7 @@ async fn command_grant_is_not_reused_after_enforcement_downgrade() {
         .evaluate(&full, &Value::Null, &context, &policy)
         .await
         .unwrap();
-    assert_eq!(first, GatewayDecision::Allowed);
+    assert_eq!(first, GatewayDecision::AllowedAfterApproval);
     assert_eq!(grants.len(), 1, "session grant must persist");
 
     let partial = FakeTool::new(vec![PermissionIntent::new("execute", "git status")])

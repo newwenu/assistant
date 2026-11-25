@@ -212,7 +212,7 @@ impl ToolGateway {
                     )
                     .await;
                 }
-                Ok(GatewayDecision::Allowed)
+                Ok(GatewayDecision::AllowedAfterApproval)
             }
             ApprovalWait::Decided(ApprovalDecision::AllowSession) => {
                 let conversation_id = context.session_id.as_deref();
@@ -247,7 +247,7 @@ impl ToolGateway {
                     )
                     .await;
                 }
-                Ok(GatewayDecision::Allowed)
+                Ok(GatewayDecision::AllowedAfterApproval)
             }
             ApprovalWait::Decided(ApprovalDecision::AllowAlways) => {
                 for item in &pending {
@@ -274,7 +274,7 @@ impl ToolGateway {
                     )
                     .await;
                 }
-                Ok(GatewayDecision::Allowed)
+                Ok(GatewayDecision::AllowedAfterApproval)
             }
             ApprovalWait::Decided(ApprovalDecision::Deny { reason }) => {
                 for item in &pending {
