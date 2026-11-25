@@ -1,4 +1,6 @@
 import { useEffect, useRef, type RefObject } from "react";
+import grabHandSvg from "@/assets/cursors/hand-grab.svg?raw";
+import grabbingHandSvg from "@/assets/cursors/hand-grabbing.svg?raw";
 import { createLogger } from "@/services/system/logger";
 
 const log = createLogger("OrbCursor");
@@ -11,8 +13,8 @@ const DEFAULT_ACCENT = "#1677ff";
 const HEX_COLOR = /^#[0-9a-f]{6}$/i;
 
 const HOTSPOTS: Record<OrbCursorVariant, { x: number; y: number }> = {
-  idle: { x: 16, y: 16 },
-  active: { x: 16, y: 16 },
+  idle: { x: 16, y: 19 },
+  active: { x: 16, y: 19 },
   menu: { x: 3, y: 3 },
 };
 
@@ -31,6 +33,12 @@ const CURSOR_VARS: Record<OrbCursorVariant, string> = {
 const VARIANTS: OrbCursorVariant[] = ["idle", "active", "menu"];
 
 const MENU_ARROW_PATH = "M3 3 L3 23 L10 18 L14 27 L18 25 L14 16 L22 16 Z";
+
+/** 手型沿用 Phinger Cursors 的 grab / grabbing 剪影：深色实心 + 半透明白外光晕，与原生光标同构。 */
+const HAND_SVGS: Record<"idle" | "active", string> = {
+  idle: grabHandSvg,
+  active: grabbingHandSvg,
+};
 
 /** 3 变体 × 2 倍率 = 6 张/颜色，保留 4 种颜色的额度后整体清空，避免无界增长。 */
 const CURSOR_CACHE = new Map<string, Promise<string | null>>();
@@ -53,15 +61,9 @@ export function buildOrbCursorSvg(
   color: string | null | undefined,
   variant: OrbCursorVariant,
 ): string {
+  if (variant !== "menu") return HAND_SVGS[variant];
   const accent = resolveAccent(color);
-  const shape =
-    variant === "menu"
-      ? `<path d="${MENU_ARROW_PATH}" fill="${accent}" stroke="#ffffff" stroke-width="1.6" stroke-linejoin="round"/>`
-      : variant === "active"
-        ? `<circle cx="16" cy="16" r="7.2" fill="${accent}" stroke="#ffffff" stroke-width="2.4"/>`
-        : `<circle cx="16" cy="16" r="8" fill="none" stroke="#ffffff" stroke-opacity="0.92" stroke-width="4.4"/>` +
-          `<circle cx="16" cy="16" r="8" fill="none" stroke="${accent}" stroke-width="2.2"/>` +
-          `<circle cx="16" cy="16" r="1.5" fill="${accent}"/>`;
+  const shape = `<path d="${MENU_ARROW_PATH}" fill="${accent}" stroke="#ffffff" stroke-width="1.6" stroke-linejoin="round"/>`;
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" width="${CURSOR_SIZE}" height="${CURSOR_SIZE}" viewBox="0 0 32 32">` +
     `<defs><filter id="shadow" x="-50%" y="-50%" width="200%" height="200%">` +

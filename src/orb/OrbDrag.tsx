@@ -20,6 +20,7 @@ import {
   rebaseDragState,
   reduceGesture,
   resolveContextMenu,
+  resolveScreenPoint,
   type DragPointer,
   type DragState,
   type DragStep,
@@ -43,14 +44,9 @@ function pointerScreen(e: {
   clientY: number;
   screenX?: number;
   screenY?: number;
+  pointerType?: string;
 }): GesturePoint {
-  // 优先用事件自带的绝对屏幕坐标：`window.screenX + clientX` 里的 screenX 是处理器
-  // 执行时刻的窗口位置，比事件生成时刻晚一帧；拖拽中窗口正被 pump 以 60fps 移动，
-  // 快速拖动时这一帧的滞后可达数十像素，会让窗口落点系统性偏移、把光标甩出命中区。
-  if (typeof e.screenX === "number" && typeof e.screenY === "number") {
-    return { x: e.screenX, y: e.screenY };
-  }
-  return { x: window.screenX + e.clientX, y: window.screenY + e.clientY };
+  return resolveScreenPoint(e, { x: window.screenX, y: window.screenY });
 }
 
 function toPointerKind(pointerType: string): PointerKind {

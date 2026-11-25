@@ -6,6 +6,7 @@ import {
   rebaseDragState,
   reduceGesture,
   resolveContextMenu,
+  resolveScreenPoint,
   type GestureEffect,
   type GestureEvent,
   type GestureState,
@@ -274,6 +275,88 @@ describe("手势状态机", () => {
     ).toBe(true);
     expect(upFirst.state.phase).toBe("idle");
     expect(lostFirst.state.phase).toBe("idle");
+  });
+});
+
+describe("屏幕坐标解析", () => {
+  const windowScreen = { x: 500, y: 400 };
+
+  it("S1 鼠标优先用事件自带的屏幕坐标（避开窗口位置晚一帧的滞后）", () => {
+    expect(
+      resolveScreenPoint(
+        {
+          clientX: 40,
+          clientY: 30,
+          screenX: 900,
+          screenY: 700,
+          pointerType: "mouse",
+        },
+        windowScreen,
+      ),
+    ).toEqual({ x: 900, y: 700 });
+  });
+
+  it("S2 鼠标缺少 screenX 时退回合成式", () => {
+    expect(
+      resolveScreenPoint(
+        { clientX: 40, clientY: 30, pointerType: "mouse" },
+        windowScreen,
+      ),
+    ).toEqual({ x: 540, y: 430 });
+  });
+
+  it("S3 触摸不用事件自带的 screenX：Windows 上它是窗口相对坐标", () => {
+    expect(
+      resolveScreenPoint(
+        {
+          clientX: 40,
+          clientY: 30,
+          screenX: 40,
+          screenY: 30,
+          pointerType: "touch",
+        },
+        windowScreen,
+      ),
+    ).toEqual({ x: 540, y: 430 });
+  });
+
+  it("S4 触控笔与触摸同口径", () => {
+    expect(
+      resolveScreenPoint(
+        {
+          clientX: 40,
+          clientY: 30,
+          screenX: 40,
+          screenY: 30,
+          pointerType: "pen",
+        },
+        windowScreen,
+      ),
+    ).toEqual({ x: 540, y: 430 });
+  });
+
+  it("S5 触摸拖拽的绝对坐标不随窗口移动变化（无负反馈抖动）", () => {
+    const before = resolveScreenPoint(
+      {
+        clientX: 40,
+        clientY: 30,
+        screenX: 40,
+        screenY: 30,
+        pointerType: "touch",
+      },
+      { x: 500, y: 400 },
+    );
+    const after = resolveScreenPoint(
+      {
+        clientX: 28,
+        clientY: 18,
+        screenX: 28,
+        screenY: 18,
+        pointerType: "touch",
+      },
+      { x: 512, y: 412 },
+    );
+    expect(after).toEqual(before);
   });
 });
 

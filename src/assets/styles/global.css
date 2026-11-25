@@ -218,9 +218,13 @@ div[data-orb-window] .orb-hitbox.orb-hover {
   transform: scale(1.08);
 }
 
+div[data-orb-window] .orb-hitbox:active:not(.orb-touch):not(.orb-dragging) {
+  transform: scale(1.04);
+}
+
 div[data-orb-window] .orb-hitbox.orb-dragging {
-  opacity: 0.7 !important;
-  transform: scale(1.08);
+  opacity: 1 !important;
+  transform: scale(1.06);
 }
 
 div[data-orb-window] .orb-hitbox.orb-idle {

@@ -6,24 +6,36 @@ import {
 } from "../orbCursor";
 
 describe("buildOrbCursorSvg", () => {
-  it("uses the provided accent color", () => {
-    expect(buildOrbCursorSvg("#3DD87E", "idle")).toContain("#3DD87E");
-    expect(buildOrbCursorSvg("#3DD87E", "active")).toContain("#3DD87E");
+  it("uses the provided accent color for the menu pointer", () => {
     expect(buildOrbCursorSvg("#3DD87E", "menu")).toContain("#3DD87E");
   });
 
   it("falls back to the default accent for invalid colors", () => {
-    expect(buildOrbCursorSvg("red", "idle")).toContain("#1677ff");
-    expect(buildOrbCursorSvg("#fff", "active")).toContain("#1677ff");
+    expect(buildOrbCursorSvg("red", "menu")).toContain("#1677ff");
+    expect(buildOrbCursorSvg("#fff", "menu")).toContain("#1677ff");
     expect(buildOrbCursorSvg(null, "menu")).toContain("#1677ff");
   });
 
-  it("draws a hollow ring when idle and a filled disc when active", () => {
+  it("draws the grab hand when idle and the gripping hand when active", () => {
     const idle = buildOrbCursorSvg("#1677ff", "idle");
     const active = buildOrbCursorSvg("#1677ff", "active");
-    expect(idle.match(/<circle/g)).toHaveLength(3);
-    expect(active.match(/<circle/g)).toHaveLength(1);
     expect(idle).not.toBe(active);
+    expect(idle.match(/<circle/g)).toBeNull();
+    expect(active.match(/<circle/g)).toBeNull();
+    expect(idle).toContain("#C96442");
+    expect(active).toContain("#D97757");
+    expect(idle).toContain("scale(0.82)");
+    expect(idle).toContain("M16.25 3.5");
+    expect(active).toContain("M16.25 9.5");
+  });
+
+  it("keeps the hand cursors independent from the accent color", () => {
+    expect(buildOrbCursorSvg("#3DD87E", "idle")).toBe(
+      buildOrbCursorSvg(null, "idle"),
+    );
+    expect(buildOrbCursorSvg("#3DD87E", "active")).toBe(
+      buildOrbCursorSvg(null, "active"),
+    );
   });
 
   it("draws a single pointed arrow path for the menu variant", () => {

@@ -274,6 +274,42 @@ export function resolveContextMenu(
   return { show: event.now - state.menuShownAt >= CONTEXT_MENU_DEDUPE_MS };
 }
 
+export interface ScreenPointEvent {
+  clientX: number;
+  clientY: number;
+  screenX?: number;
+  screenY?: number;
+  pointerType?: string;
+}
+
+/**
+ * 把指针事件坐标换算成屏幕绝对坐标。
+ *
+ * 鼠标优先用事件自带的 `screenX / screenY`：`window.screenX + clientX` 里的 screenX 是
+ * 处理器执行时刻的窗口位置，比事件生成时刻晚一帧；拖拽中窗口正被 pump 以 60fps 移动，
+ * 快速拖动时这一帧的滞后可达数十像素，会让窗口落点系统性偏移。
+ *
+ * 触摸 / 触控笔必须走合成式：Windows 上实测它们的 `screenX − clientX ≡ 0`，即 screenX
+ * 是窗口相对坐标而非屏幕绝对坐标。当成绝对坐标会形成增益 −1 的负反馈——窗口跟随移动后
+ * clientX 反向变化，下一帧又把窗口拉回，表现为拖拽抖动、不跟手。
+ */
+export function resolveScreenPoint(
+  event: ScreenPointEvent,
+  windowScreen: GesturePoint,
+): GesturePoint {
+  if (
+    event.pointerType === "mouse" &&
+    typeof event.screenX === "number" &&
+    typeof event.screenY === "number"
+  ) {
+    return { x: event.screenX, y: event.screenY };
+  }
+  return {
+    x: windowScreen.x + event.clientX,
+    y: windowScreen.y + event.clientY,
+  };
+}
+
 export interface DragState {
   grabX: number;
   grabY: number;
