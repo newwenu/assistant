@@ -302,7 +302,7 @@ pub struct StorageInventoryNodeDto {
 }
 
 /// 单个 scope 的对账合计（I67 §5.1）：`scanBytes` 是该 scope 的分母。
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct StorageInventoryScopeTotalsDto {
     pub scan_bytes: Option<u64>,
@@ -321,27 +321,8 @@ pub struct StorageInventoryScopeTotalsDto {
     pub unnameable_count: Option<u64>,
 }
 
-impl Default for StorageInventoryScopeTotalsDto {
-    fn default() -> Self {
-        Self {
-            scan_bytes: None,
-            scan_count: None,
-            declared_bytes: None,
-            declared_count: None,
-            residual_bytes: None,
-            residual_count: None,
-            unregistered_bytes: None,
-            unregistered_count: None,
-            unreconciled_bytes: None,
-            unreconciled_count: None,
-            unnameable_bytes: None,
-            unnameable_count: None,
-        }
-    }
-}
-
 /// 全类余量合计（I67 §5.1）：`partial` 为 `true` 时数字是下界。
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct StorageInventoryTotalsDto {
     pub scan_bytes: Option<u64>,
@@ -352,20 +333,6 @@ pub struct StorageInventoryTotalsDto {
     pub partial: bool,
     pub data: StorageInventoryScopeTotalsDto,
     pub local: StorageInventoryScopeTotalsDto,
-}
-
-impl Default for StorageInventoryTotalsDto {
-    fn default() -> Self {
-        Self {
-            scan_bytes: None,
-            scan_count: None,
-            residual_bytes: None,
-            residual_count: None,
-            partial: false,
-            data: StorageInventoryScopeTotalsDto::default(),
-            local: StorageInventoryScopeTotalsDto::default(),
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]

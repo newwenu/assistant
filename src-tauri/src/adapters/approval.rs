@@ -365,7 +365,9 @@ impl ApprovalPrompter for TauriApprovalPrompter {
                 iteration: request.iteration.unwrap_or_default(),
                 call_id: request.tool_call_id.clone(),
                 name: request.tool_name.clone(),
-                payload: AgentToolCallPayloadDto::AwaitingApproval { approval },
+                payload: AgentToolCallPayloadDto::AwaitingApproval {
+                    approval: Box::new(approval),
+                },
             },
         );
 

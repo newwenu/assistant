@@ -133,6 +133,7 @@ mod tests {
 
     const OPTIONAL: &str = "optional-zone";
 
+    #[allow(clippy::too_many_arguments)]
     fn section_entry(
         entry: &'static str,
         key: &'static str,

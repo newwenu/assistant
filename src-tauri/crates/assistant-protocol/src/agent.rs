@@ -183,7 +183,7 @@ pub enum AgentToolCallPayloadDto {
         compact: Option<ToolResultCompactDto>,
     },
     AwaitingApproval {
-        approval: ToolApprovalRequestDto,
+        approval: Box<ToolApprovalRequestDto>,
     },
     /// 等待被结束（超时或 turn 取消），卡片必须转为不可操作。
     ///
