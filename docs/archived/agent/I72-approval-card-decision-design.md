@@ -44,7 +44,7 @@
 | `extensions`（`workspace` / `sandbox.enforcement` / `sandbox.root` / `output.scope`） | 现有 wire（`kind` + `label` + `value` + `severity`，其中 `label` / `value` 为中英混排散文） | `ApprovalExtensionDto`；本次改为 `kind` + `code` + `severity` 并删 `label` / `value`，`sandbox.root` / `output.scope` 停止产出（§10.2） |
 | 文件是否存在 / 是否为链接 / 目录条目数与字节数 | 本次补齐（§10.2；前端无文件系统知识） | 判据在 `agent_delete/scan.rs`、`agent_write/preview.rs`，当前只进散文 |
 | shell 命令类别、语句数、重定向目标、目标范围 | 本次补齐（§10.2；当前只有 `summary` 散文里的 `label_zh`） | `summary_for` 输出散文；结构解析见 §6 |
-| 拒绝理由的**输入**字段 `ToolApprovalDecisionDto.reason` | 现有 wire（后端链路完整，仅前端未使用） | [agent.rs](../../src-tauri/crates/assistant-protocol/src/agent.rs) + [pipeline.rs](../../src-tauri/crates/assistant-tools/src/runtime/pipeline.rs)；见 §8.5 |
+| 拒绝理由的**输入**字段 `ToolApprovalDecisionDto.reason` | 现有 wire（后端链路完整，仅前端未使用） | [agent.rs](../../../src-tauri/crates/assistant-protocol/src/agent.rs) + [pipeline.rs](../../../src-tauri/crates/assistant-tools/src/runtime/pipeline.rs)；见 §8.5 |
 
 由此确定一条铁律：**卡片只消费 wire 上真实存在的字段，前端不产生事实**。表中标「本次补齐」的字段由 §10.2 的后端改动在同一批交付（含 `contract:gen`），是本设计的组成部分。字段值为 `null` 时，唯一允许的表现是该要素无值即省略（N14）——不允许前端猜值，也不允许用「字段缺失」去缩小设计范围。
 
@@ -61,7 +61,7 @@
 
 ### 1.1 现状渲染路径
 
-后端把审批上下文装配成 `ToolApprovalRequest`（`toolName` / `arguments` / `intents` / `context{tier,behavior,reasons,preview,extensions}`），前端 [ApprovalCard.tsx](../../src/chat/tool/ApprovalCard.tsx) 用同一套 `row`（`label` + `value`）把六类信息平铺输出。信息**有**，但没有回答「我该不该点允许」。
+后端把审批上下文装配成 `ToolApprovalRequest`（`toolName` / `arguments` / `intents` / `context{tier,behavior,reasons,preview,extensions}`），前端 [ApprovalCard.tsx](../../../src/chat/tool/ApprovalCard.tsx) 用同一套 `row`（`label` + `value`）把六类信息平铺输出。信息**有**，但没有回答「我该不该点允许」。
 
 ### 1.2 具体症状
 
@@ -115,7 +115,7 @@ Q1 是**陈述句**（不是疑问句）：用户不需要自己从「没看到�
 | 预演耗时 | 预演超时 / 降级为 `None` | 不进卡片，只记日志 |
 | 工具内部实现 | 临时目录名、shell 程序路径、可写根 | 不进卡片 |
 
-**分界线**：`permanent=true` 是后果（数据永久消失）→ 进卡片；「目录非空会失败」是有效性（调用能否成功）→ 不进卡片。而且正是「回收站不可用时直接失败、不降级为永久删除」这条后端保证（[agent_delete/mod.rs](../../src-tauri/crates/assistant-tools/src/os/tools/agent_delete/mod.rs) 工具描述），才让卡片可以放心写「可恢复」——**保证本身不需要展示**。
+**分界线**：`permanent=true` 是后果（数据永久消失）→ 进卡片；「目录非空会失败」是有效性（调用能否成功）→ 不进卡片。而且正是「回收站不可用时直接失败、不降级为永久删除」这条后端保证（[agent_delete/mod.rs](../../../src-tauri/crates/assistant-tools/src/os/tools/agent_delete/mod.rs) 工具描述），才让卡片可以放心写「可恢复」——**保证本身不需要展示**。
 
 ### 2.3 三个筛选判据
 
@@ -202,7 +202,7 @@ Q1 是**陈述句**（不是疑问句）：用户不需要自己从「没看到�
 
 ### 2.5 卡片存在的前提：受众过滤必须执行期强制
 
-卡片只对**模型可见**的工具产生。`fs_link` 的 `audience()` 返回 `ToolAudience::TOOLBOX_ONLY`（[fs_link/mod.rs](../../src-tauri/crates/assistant-tools/src/os/tools/fs_link/mod.rs)）：ToolBox 入口经 `os_tool_exec` 直调 `invoke`、**不经网关**（不调用 `permission_intents`），因此**永远不产生审批卡片**，只记 `bypassed` 审计。本文档的全部规则不覆盖它。
+卡片只对**模型可见**的工具产生。`fs_link` 的 `audience()` 返回 `ToolAudience::TOOLBOX_ONLY`（[fs_link/mod.rs](../../../src-tauri/crates/assistant-tools/src/os/tools/fs_link/mod.rs)）：ToolBox 入口经 `os_tool_exec` 直调 `invoke`、**不经网关**（不调用 `permission_intents`），因此**永远不产生审批卡片**，只记 `bypassed` 审计。本文档的全部规则不覆盖它。
 
 但「对模型不可见」目前只靠**列举过滤**实现，按名查找没有受众判断，属 fail-open：
 
@@ -211,21 +211,21 @@ Q1 是**陈述句**（不是疑问句）：用户不需要自己从「没看到�
 | `tool_definitions_for_tier` | `audience().agent` | 模型 `tools` 列表 |
 | `ToolCatalog::list` | `audience().agent` | `request_tool` 候选 |
 | `find_for_toolbox` | `audience().toolbox` | ToolBox 入口（`os_tool_exec`） |
-| `find_by_name` | **无** | [pipeline.rs](../../src-tauri/crates/assistant-tools/src/runtime/pipeline.rs) 三处 + [tool_escalation.rs](../../src-tauri/src/adapters/tool_escalation.rs) 的 `resolve`；另作注册期存在性检查 |
+| `find_by_name` | **无** | [pipeline.rs](../../../src-tauri/crates/assistant-tools/src/runtime/pipeline.rs) 三处 + [tool_escalation.rs](../../../src-tauri/src/adapters/tool_escalation.rs) 的 `resolve`；另作注册期存在性检查 |
 | `find` | **无** | 管理 / 诊断入口；`resolve` 的回落分支 |
 
 后果链：模型输出 `tool_name: "fs_link"`（幻觉、提示注入、跨会话历史）→ Pipeline 按名解析成功 → **用 Agent 上下文执行**（`workspace_root` 已填、走网关、按 `edit` 意图求值）→ `workspace_write` 档 `edit → Allow` → **零审批**就在工作区内建出 symlink / hardlink / junction。链接建好后解析目标在界外，而 `ensure_within_root` 只校验路径字符串，后续经链接读写即绕过边界。
 
 处置（与卡片改版同批，不改 wire）：
 
-1. **执行期强制**：新增 `find_for_agent(name)`（过滤 `audience().agent`），替换 [pipeline.rs](../../src-tauri/crates/assistant-tools/src/runtime/pipeline.rs) 的三处 `find_by_name`（`partition_tool_batches` 并发判定、`inline_output_limit` 落盘阈值回查、`run_call` 的 Find 阶段）与 [tool_escalation.rs](../../src-tauri/src/adapters/tool_escalation.rs) 的 `resolve`；`find` / `find_for_toolbox` 保留为显式管理入口与 ToolBox 入口。`find_by_name` 保留，用途收窄为「注册期存在性检查」+ `find_for_agent` 的内部实现（其文档注释须写明这条边界，替换现在「模型回传的调用名走这条路径」的表述）。
-2. **命名承担契约**：`register_os_tools` → `register_bridge_tools`，名字即受众声明，不靠注释约束（[os/mod.rs](../../src-tauri/crates/assistant-tools/src/os/mod.rs)）。
+1. **执行期强制**：新增 `find_for_agent(name)`（过滤 `audience().agent`），替换 [pipeline.rs](../../../src-tauri/crates/assistant-tools/src/runtime/pipeline.rs) 的三处 `find_by_name`（`partition_tool_batches` 并发判定、`inline_output_limit` 落盘阈值回查、`run_call` 的 Find 阶段）与 [tool_escalation.rs](../../../src-tauri/src/adapters/tool_escalation.rs) 的 `resolve`；`find` / `find_for_toolbox` 保留为显式管理入口与 ToolBox 入口。`find_by_name` 保留，用途收窄为「注册期存在性检查」+ `find_for_agent` 的内部实现（其文档注释须写明这条边界，替换现在「模型回传的调用名走这条路径」的表述）。
+2. **命名承担契约**：`register_os_tools` → `register_bridge_tools`，名字即受众声明，不靠注释约束（[os/mod.rs](../../../src-tauri/crates/assistant-tools/src/os/mod.rs)）。
 3. **两条守卫测试**：`TOOLBOX_ONLY` 工具的 `find_for_agent` 必为 `None`；Pipeline 收到该名字必在 `Find` 阶段失败且无执行副作用（§11 B18b / B18c）。
 
 **三处全换的依据（含 `inline_output_limit` 回查）：**
 
 - **它解析的是模型给的调用名。** `ToolOutcome::new` 取 `call.tool_name`，回查用的 `outcome.tool_name` 与 `call.tool_name` 同源，因此命中「模型调用名唯一解析入口」这条规则。
-- **换与不换当前等价。** `inline_output_limit()` 默认 `None`（[trait.rs](../../src-tauri/crates/assistant-tools/src/contract/trait.rs)），只有 `agent_read` 覆写；`fs_link` 不覆写。而带 `fs_link` 名字的 outcome 只可能来自 Find 失败信封（正文是 `unknown tool '…'`），永远触及不到落盘阈值。等价即无需权衡风险，取口径更干净的一侧。
+- **换与不换当前等价。** `inline_output_limit()` 默认 `None`（[trait.rs](../../../src-tauri/crates/assistant-tools/src/contract/trait.rs)），只有 `agent_read` 覆写；`fs_link` 不覆写。而带 `fs_link` 名字的 outcome 只可能来自 Find 失败信封（正文是 `unknown tool '…'`），永远触及不到落盘阈值。等价即无需权衡风险，取口径更干净的一侧。
 - **保留宽松路径等于保护一个「必须不存在」的状态。** 若日后真有 `TOOLBOX_ONLY` 的输出来到这里，恰恰是 §2.5 要消灭的情形；宽松解析会让它静默通过而非报错。
 
 不采用的替代方案：让 `run_call` 把 `inline_output_limit` 直接写进 `ToolOutcome`（查「跑过的那个工具」而非「这个名字」）。语义更准，但 `run_call` 有 5 处早返回构造 `ToolOutcome`，需全量补赋值或拆内外两层，代价是重构一个长函数、收益只是一个语义标签，本次不做；留待将来需要「执行期工具快照」时再动。
@@ -266,20 +266,20 @@ Q1 是**陈述句**（不是疑问句）：用户不需要自己从「没看到�
 
 | `kind` | `code` 取值 | 产出来源 |
 | --- | --- | --- |
-| `workspace` | `inside` / `outside` / `partial` | [`workspace_extensions`](../../src-tauri/crates/assistant-tools/src/runtime/gateway/context.rs) |
-| `sandbox.enforcement` | `full` / `partial` | [`sandbox_extensions`](../../src-tauri/crates/assistant-tools/src/runtime/gateway/context.rs) |
+| `workspace` | `inside` / `outside` / `partial` | [`workspace_extensions`](../../../src-tauri/crates/assistant-tools/src/runtime/gateway/context.rs) |
+| `sandbox.enforcement` | `full` / `partial` | [`sandbox_extensions`](../../../src-tauri/crates/assistant-tools/src/runtime/gateway/context.rs) |
 
 不保留 `label` / `value` 的理由：前后端同批交付，不存在旧客户端/旧后端并存窗口，没有「过渡期原文」可渲染；保留它只会让同一事实同时存在散文与 `code` 两份，而散文必然回落到英文（判据 B 判为噪声）。`kind` 与 `code` 在 wire 上均为 `String`（开放集合）：N4 要求未知条目原样保留、不窄化，因此不做 `enum`；未知 `kind.code` 折叠区渲染原文，不本地化。
 
-`sandbox.root` / `output.scope` 的产出点（[`writable_root_name`](../../src-tauri/crates/assistant-tools/src/runtime/gateway/context.rs)、[`output_extensions`](../../src-tauri/crates/assistant-tools/src/runtime/gateway/context.rs)）随本次改动删除，不做「产出但前端不显示」：产出即后端事实，恒定不显示的条目属于白算的 IO 与路径比较。
+`sandbox.root` / `output.scope` 的产出点（[`writable_root_name`](../../../src-tauri/crates/assistant-tools/src/runtime/gateway/context.rs)、[`output_extensions`](../../../src-tauri/crates/assistant-tools/src/runtime/gateway/context.rs)）随本次改动删除，不做「产出但前端不显示」：产出即后端事实，恒定不显示的条目属于白算的 IO 与路径比较。
 
 ### 3.2 常量字段清单（判据 A 的落地）
 
 | 工具 | 恒定 | 为什么是零信息 |
 | --- | --- | --- |
 | `delete` | `destructive=true` | 删除即破坏性，动词已表达 |
-| `shell` | `destructive=true`、`openWorld=true` | 硬编码常量（[agent_shell/mod.rs](../../src-tauri/crates/assistant-tools/src/os/tools/agent_shell/mod.rs) `behavior_hints`），连 `git status` 也报「破坏性 + 会出网」 |
-| `super_edit` | `destructive=true` | 同上，硬编码常量（[super_edit/mod.rs](../../src-tauri/crates/assistant-tools/src/os/tools/super_edit/mod.rs) `behavior_hints`）；不登记就会每张卡刷「不可逆 · 破坏性」 |
+| `shell` | `destructive=true`、`openWorld=true` | 硬编码常量（[agent_shell/mod.rs](../../../src-tauri/crates/assistant-tools/src/os/tools/agent_shell/mod.rs) `behavior_hints`），连 `git status` 也报「破坏性 + 会出网」 |
+| `super_edit` | `destructive=true` | 同上，硬编码常量（[super_edit/mod.rs](../../../src-tauri/crates/assistant-tools/src/os/tools/super_edit/mod.rs) `behavior_hints`）；不登记就会每张卡刷「不可逆 · 破坏性」 |
 | `write` / `edit` / `move` / `mkdir` | `destructive=false`、`openWorld=false` | 默认值，判据 B 也不显示 |
 
 `read` / `ls` / `grep` / `glob` / `super_read` 的 `readOnly=true` **不进本表**：只读工具被要求审批本身是异常，要按 N7 进折叠区诊断（现状文案「只读操作被要求确认（配置异常）」），不能按判据 A 静默删除。
@@ -309,7 +309,7 @@ Q1 是**陈述句**（不是疑问句）：用户不需要自己从「没看到�
 | 对象为命令（命令块独占一行） | 4 |
 | **硬顶** | **4** |
 
-异常标记（「工作区外」「沙箱降级」）**不占行**，附着在行 1 末尾；图标由 `ExclamationCircleOutlined` 承载，文案为纯文字（本项目 UI 不用 emoji，见 [ToolCallRenderer.tsx](../../src/chat/tool/ToolCallRenderer.tsx)）。超过 4 行即说明有非决策信息混入。
+异常标记（「工作区外」「沙箱降级」）**不占行**，附着在行 1 末尾；图标由 `ExclamationCircleOutlined` 承载，文案为纯文字（本项目 UI 不用 emoji，见 [ToolCallRenderer.tsx](../../../src/chat/tool/ToolCallRenderer.tsx)）。超过 4 行即说明有非决策信息混入。
 
 **守恒规则：新增一行必须挤掉一行。** 不允许「这行更清楚、旧行也留着」——否则每轮改版净增，几轮后回到 10 行。
 
@@ -434,7 +434,7 @@ Q1 是**陈述句**（不是疑问句）：用户不需要自己从「没看到�
 | 目标为符号链接 | — | 后果「只删链接，不碰目标」 | `preview.symlink` |
 | 命令含控制操作符 | — | 不写可逆性；类别取 §6.7 结构化输出 | `preview` 结构化 |
 
-`overwrite` 的默认语义来自后端明写（[agent_move.rs](../../src-tauri/crates/assistant-tools/src/os/tools/agent_move.rs)「rejected unless `overwrite = true`」），前端不得自行假设「覆盖目标」。但**卡片只陈述后果**（「不会覆盖已有目标」），不陈述有效性（「会失败」）——后者是 N13 的禁区。
+`overwrite` 的默认语义来自后端明写（[agent_move.rs](../../../src-tauri/crates/assistant-tools/src/os/tools/agent_move.rs)「rejected unless `overwrite = true`」），前端不得自行假设「覆盖目标」。但**卡片只陈述后果**（「不会覆盖已有目标」），不陈述有效性（「会失败」）——后者是 N13 的禁区。
 
 **只写字典能证明的。** 字典里没有的语义 → 该要素无值，不猜。
 
@@ -457,16 +457,16 @@ Q1 是**陈述句**（不是疑问句）：用户不需要自己从「没看到�
 
 `edit` 类 diff **不进首屏**：它是逐行核对材料，不是决策结论；行 1 的 `N 行 → M 行` 已给量级（修复 S3：保留换行但默认折叠）。
 
-**diff 的唯一来源是 `arguments`。** 后端 `build_preview` 已经把 diff 拼进 `preview.summary`（`"编辑 <绝对路径>：N 行 → M 行（按参数估算）\n<diff>"`，见 [report.rs](../../src-tauri/crates/assistant-tools/src/os/tools/agent_edit/report.rs)）。若同时渲染 `summary` 与参数合成 diff，折叠区会出现两份 diff，且 `summary` 里那份还带绝对路径。处置：
+**diff 的唯一来源是 `arguments`。** 后端 `build_preview` 已经把 diff 拼进 `preview.summary`（`"编辑 <绝对路径>：N 行 → M 行（按参数估算）\n<diff>"`，见 [report.rs](../../../src-tauri/crates/assistant-tools/src/os/tools/agent_edit/report.rs)）。若同时渲染 `summary` 与参数合成 diff，折叠区会出现两份 diff，且 `summary` 里那份还带绝对路径。处置：
 
 **`preview.summary` 与结构化证据的共存规则**（后端 `summary` 的形态各不相同，不能一刀切）：
 
 | 工具 | `summary` 内容 | 与结构化证据的关系 | 处置 |
 | --- | --- | --- | --- |
-| `edit` / `super_edit` | `"编辑 <绝对路径>：N 行 → M 行（按参数估算）\n<diff>"`（[report.rs](../../src-tauri/crates/assistant-tools/src/os/tools/agent_edit/report.rs)） | diff **重复**，且带绝对路径 | `summary` 不渲染；仅「诊断」子项留原文，标「后端预演」 |
-| `write` | 目标存在：`"追加到 1 个现有文件（当前 N 行 / X）"` 或 `"覆盖 1 个现有文件（当前 N 行 / X）"`；目标不存在：`"新建文件（N 行 / X）"`（[preview.rs](../../src-tauri/crates/assistant-tools/src/os/tools/agent_write/preview.rs)） | 与 `preview.exists` / `entries` / `bytes` 同内容 | 同内容不重复渲染；仅 `exists=null` 的降级态进折叠区并标「后端预演」 |
+| `edit` / `super_edit` | `"编辑 <绝对路径>：N 行 → M 行（按参数估算）\n<diff>"`（[report.rs](../../../src-tauri/crates/assistant-tools/src/os/tools/agent_edit/report.rs)） | diff **重复**，且带绝对路径 | `summary` 不渲染；仅「诊断」子项留原文，标「后端预演」 |
+| `write` | 目标存在：`"追加到 1 个现有文件（当前 N 行 / X）"` 或 `"覆盖 1 个现有文件（当前 N 行 / X）"`；目标不存在：`"新建文件（N 行 / X）"`（[preview.rs](../../../src-tauri/crates/assistant-tools/src/os/tools/agent_write/preview.rs)） | 与 `preview.exists` / `entries` / `bytes` 同内容 | 同内容不重复渲染；仅 `exists=null` 的降级态进折叠区并标「后端预演」 |
 | `delete` | 路径 + 条目数 + 字节数 | 与 `preview.entries` / `bytes` 同内容 | 同内容不重复渲染；`entries=null` 时进折叠区标「后端预演」 |
-| `read` / `super_read` | 工作区内返回 `null`；跨出到工具输出目录时给「读 <文件> · 第 N–M 行 · X」（[agent_read/mod.rs](../../src-tauri/crates/assistant-tools/src/os/tools/agent_read/mod.rs)、[super_read/mod.rs](../../src-tauri/crates/assistant-tools/src/os/tools/super_read/mod.rs)） | 与结构化证据无重复 | 仅异常审批时进折叠区，标「后端预演」 |
+| `read` / `super_read` | 工作区内返回 `null`；跨出到工具输出目录时给「读 <文件> · 第 N–M 行 · X」（[agent_read/mod.rs](../../../src-tauri/crates/assistant-tools/src/os/tools/agent_read/mod.rs)、[super_read/mod.rs](../../../src-tauri/crates/assistant-tools/src/os/tools/super_read/mod.rs)） | 与结构化证据无重复 | 仅异常审批时进折叠区，标「后端预演」 |
 | `move` / `mkdir` / `ls` / `glob` / `grep` / MCP 桥接工具 | `preview_for_approval` 未实现，`preview` 为 `null` | 无结构化证据 | 折叠区只有原因 / 参数 / 授权范围，**无「后端预演」子项** |
 | `shell` | 现为 `"执行 1 条命令 · <类别> · 隔离：<强度>"`；本次改为**空串**（语句数 / 类别 / 隔离强度全部由结构化字段给出，见下行） | 三部分均与结构化证据重复（隔离强度另由 `sandbox.enforcement` 扩展给出） | `summary` 为空，**不渲染**；折叠区改渲染结构化摘要（§6.5、§6.7） |
 
@@ -511,7 +511,7 @@ mcp     mcp__* 动态名      调用外部工具  <toolName> <参数摘要>（�
 
 **本表不收录 `TOOLBOX_ONLY` 工具**（当前 `fs_link`）：它不产生审批卡片（§2.5），收录只会让「恒定字段」清单与实际渲染集合漂移。
 
-**id 必须用 wire 上的 `toolName`，不是 Rust 路径名。** 工具 id 常量是 `"delete"` / `"shell"` / `"super_edit"` 等（各工具 `TOOL_ID`，[agent_delete/mod.rs](../../src-tauri/crates/assistant-tools/src/os/tools/agent_delete/mod.rs)、[agent_shell/mod.rs](../../src-tauri/crates/assistant-tools/src/os/tools/agent_shell/mod.rs)），`Tool::name()` 默认返回 `id()`（[contract/trait.rs](../../src-tauri/crates/assistant-tools/src/contract/trait.rs)），因此 wire `toolName` 就是这些常量。写成 `agent_delete` / `agent_shell` 会让查表全部落空、常量过滤失效。
+**id 必须用 wire 上的 `toolName`，不是 Rust 路径名。** 工具 id 常量是 `"delete"` / `"shell"` / `"super_edit"` 等（各工具 `TOOL_ID`，[agent_delete/mod.rs](../../../src-tauri/crates/assistant-tools/src/os/tools/agent_delete/mod.rs)、[agent_shell/mod.rs](../../../src-tauri/crates/assistant-tools/src/os/tools/agent_shell/mod.rs)），`Tool::name()` 默认返回 `id()`（[contract/trait.rs](../../../src-tauri/crates/assistant-tools/src/contract/trait.rs)），因此 wire `toolName` 就是这些常量。写成 `agent_delete` / `agent_shell` 会让查表全部落空、常量过滤失效。
 
 护栏：`TOOL_PROFILES` 的键集合必须等于「后端注册工具 id 扣除 `TOOLBOX_ONLY` 集合」（当前 14 个）；条目内容只是「恒定字段」，显示逻辑仍由 §5.1 求值决定。测试口径为**源码扫描**：用 `node:fs` 递归读取 `src-tauri/crates/assistant-tools/src/os/tools/` 下全部 `*.rs`（不新增 glob 依赖，**不维护文件清单**——清单本身会漂移，反而削弱护栏），提取全部 `const TOOL_ID: &str = "…"`，扣除前端 `TOOLBOX_ONLY_IDS` 后与 `TOOL_PROFILES` 逐一比对；`TOOLBOX_ONLY_IDS` 与 Rust `audience()` 实际结果的一致性由 Rust 侧测试断言（§11 B18b）。
 
@@ -519,7 +519,7 @@ mcp     mcp__* 动态名      调用外部工具  <toolName> <参数摘要>（�
 
 ### 5.6 真实工具卡片形态（与代码侧 1:1）
 
-本节示例由卡片取到的真实数据构成：`arguments` 是模型原文；`intents` 由各工具 `permission_intents` 产出；`preview` 由 `preview_for_approval` 产出（未实现的工具为 `null`，此时规模段与文件系统事实无值即省略）；`extensions` 由 [gateway/context.rs](../../src-tauri/crates/assistant-tools/src/runtime/gateway/context.rs) 装配。
+本节示例由卡片取到的真实数据构成：`arguments` 是模型原文；`intents` 由各工具 `permission_intents` 产出；`preview` 由 `preview_for_approval` 产出（未实现的工具为 `null`，此时规模段与文件系统事实无值即省略）；`extensions` 由 [gateway/context.rs](../../../src-tauri/crates/assistant-tools/src/runtime/gateway/context.rs) 装配。
 
 **哪些工具会弹卡**（`audience().agent = true` 且 `permission_intents` 非空）：
 
@@ -700,7 +700,7 @@ mcp     mcp__* 动态名      调用外部工具  <toolName> <参数摘要>（�
 
 | # | 缺口 | 当前代码行为 | 处置 |
 | --- | --- | --- | --- |
-| G1 | `workspace` 扩展对非路径资源误判 | [context.rs](../../src-tauri/crates/assistant-tools/src/runtime/gateway/context.rs) 对每条 `pending.resource` 直接做工作区成员判定；`shell` 的资源是命令原文、MCP 的是 `mcp:<server>:<hash>`，路径解析必然失败 → 恒判「工作区外」 | 只对路径型 action（`read` / `readToolOutput` / `edit` / `delete` / `purge`）判定，`shell` / MCP 不产出 `workspace` 条目（§10.2） |
+| G1 | `workspace` 扩展对非路径资源误判 | [context.rs](../../../src-tauri/crates/assistant-tools/src/runtime/gateway/context.rs) 对每条 `pending.resource` 直接做工作区成员判定；`shell` 的资源是命令原文、MCP 的是 `mcp:<server>:<hash>`，路径解析必然失败 → 恒判「工作区外」 | 只对路径型 action（`read` / `readToolOutput` / `edit` / `delete` / `purge`）判定，`shell` / MCP 不产出 `workspace` 条目（§10.2） |
 | G2 | 无动词工具 | `mkdir` 参数只有 `path` + `recursive`，`intents` 的 action 与 `write` / `edit` 同为 `edit`；参数无法区分「新建目录」与「修改文件」，按 `toolName` 分支被禁令 3 禁止 | 由 `preview.verbCode` 给出动词（§10.2），前端按 code 取词，参数形态不参与 |
 | G3 | 动词组合 | `permanent` 与 `recursive` 各贡献一个动词，同时为 `true` 时按字符串拼接会得到「永久删除删除目录」 | 动词 key 取**判别参数组合**查表（四种组合四条），不拼接（§5.2） |
 | G4 | `move` 无 `preview` | `move` 未实现 `preview_for_approval`，无条目数 / 字节数可给 | 规模段与后果由参数与 `intents` 求值，不依赖 `preview`；`move` / 只读类 / MCP 的 `preview` 为 `null`（§5.3） |
@@ -713,7 +713,7 @@ mcp     mcp__* 动态名      调用外部工具  <toolName> <参数摘要>（�
 
 ### 6.1 现状能力边界
 
-[classify.rs](../../src-tauri/crates/assistant-tools/src/os/tools/agent_shell/classify.rs) 的判定路径是：遇到任何控制操作符 → `Unknown`；否则用 `argv[0]` 查四张清单（只读 / 联网 / 破坏性 / 未知）。方向安全（永远偏向更危险），但**没有解析语义**，在四类场景必然失效：
+[classify.rs](../../../src-tauri/crates/assistant-tools/src/os/tools/agent_shell/classify.rs) 的判定路径是：遇到任何控制操作符 → `Unknown`；否则用 `argv[0]` 查四张清单（只读 / 联网 / 破坏性 / 未知）。方向安全（永远偏向更危险），但**没有解析语义**，在四类场景必然失效：
 
 | 失效类型 | 例子 | 现状 | 真实语义 |
 | --- | --- | --- | --- |
@@ -733,7 +733,7 @@ mcp     mcp__* 动态名      调用外部工具  <toolName> <参数摘要>（�
 ④ 置信层：Certain / Inferred / Unknown → 决定措辞强度
 ```
 
-**①必须先做**。真实执行是 `cmd /d /C <整段>` / `sh -c <整段>`（[spawn.rs](../../src-tauri/crates/assistant-tools/src/os/tools/agent_shell/spawn.rs)），字符串就是 shell 语法；不切分就没有语义。
+**①必须先做**。真实执行是 `cmd /d /C <整段>` / `sh -c <整段>`（[spawn.rs](../../../src-tauri/crates/assistant-tools/src/os/tools/agent_shell/spawn.rs)），字符串就是 shell 语法；不切分就没有语义。
 
 ### 6.3 结构层产出
 
@@ -825,7 +825,7 @@ pub struct StatementEffect {
 
 ### 7.1 六种原因 → 一句主句
 
-沿用 [ApprovalCard.tsx](../../src/chat/tool/ApprovalCard.tsx) 现有 `reasonText` 分支（六种全覆盖、无 `default` 兜底，已由 `approvalRulesUi.test.ts` 锁定），只调整**选取规则**与**呈现位置**：
+沿用 [ApprovalCard.tsx](../../../src/chat/tool/ApprovalCard.tsx) 现有 `reasonText` 分支（六种全覆盖、无 `default` 兜底，已由 `approvalRulesUi.test.ts` 锁定），只调整**选取规则**与**呈现位置**：
 
 职责切分：**选取**（§7.2 优先级排序，产出 `primary` 与 `rest` 两个数据槽）归视图模型 `buildApprovalView`；**文案**（`reasonText` 六分支）仍留在卡片，视图模型不产出任何本地化文本。因此 A11 继续由 `approvalRulesUi.test.ts` 的现有断言覆盖，A12（主句优先级）写在 `approvalPresentation.test.ts`。
 
@@ -860,14 +860,14 @@ pub struct StatementEffect {
 
 ### 8.2 范围说明（Q2 的落点）
 
-删除固定一行 `always_hint`（[ApprovalCard.tsx](../../src/chat/tool/ApprovalCard.tsx) `alwaysHint` 块，与具体授权键无关的固定提示），改为**按当前可点范围生成、按需展示**：
+删除固定一行 `always_hint`（[ApprovalCard.tsx](../../../src/chat/tool/ApprovalCard.tsx) `alwaysHint` 块，与具体授权键无关的固定提示），改为**按当前可点范围生成、按需展示**：
 
 | 按钮 | 说明内容 |
 | --- | --- |
 | `本会话允许` | 同「<动作人话> <对象末段>」不再询问，会话结束失效 · 可在此撤销 |
 | `始终允许` | 所有会话都不再询问，将放行 <`intents` 全量清单> · 可在此撤销 |
 
-`intents` 全量清单的渲染规则（`PermissionIntentDto` 只有 `action` + `resources`，没有 `displayedResource`，[agent.rs](../../src-tauri/crates/assistant-protocol/src/agent.rs)）：
+`intents` 全量清单的渲染规则（`PermissionIntentDto` 只有 `action` + `resources`，没有 `displayedResource`，[agent.rs](../../../src-tauri/crates/assistant-protocol/src/agent.rs)）：
 
 | 部分 | 首屏 | 折叠区 |
 | --- | --- | --- |
@@ -892,14 +892,14 @@ pub struct StatementEffect {
 
 ### 8.5 拒绝理由（可选输入）
 
-**现状：wire 已就绪，前端从未使用。** `ToolApprovalDecisionDto` 已有 `reason: Option<String>`（`#[ts(optional = nullable)]`，[agent.rs](../../src-tauri/crates/assistant-protocol/src/agent.rs)），后端链路完整：
+**现状：wire 已就绪，前端从未使用。** `ToolApprovalDecisionDto` 已有 `reason: Option<String>`（`#[ts(optional = nullable)]`，[agent.rs](../../../src-tauri/crates/assistant-protocol/src/agent.rs)），后端链路完整：
 
 | 环节 | 现状 |
 | --- | --- |
-| 命令层 | `resolve_agent_tool_call` 把 `args.reason` 装进 `ApprovalDecision::Deny { reason }`（[cmd/agent/mod.rs](../../src-tauri/src/cmd/agent/mod.rs)） |
-| 网关 | `Deny { reason }` → `GatewayDecision::RejectedByUser { reason }`（[gateway/mod.rs](../../src-tauri/crates/assistant-tools/src/runtime/gateway/mod.rs)） |
-| 工具结果 | `Some(reason)` → `"rejected by user: <reason>"`；`None` → `"rejected by user"`（[pipeline.rs](../../src-tauri/crates/assistant-tools/src/runtime/pipeline.rs)） |
-| 前端 | `chatService.resolveAgentToolApproval` 原样透传 `ToolApprovalDecision`，**当前调用未传 `reason`**（[ApprovalCard.tsx](../../src/chat/tool/ApprovalCard.tsx) `decide`） |
+| 命令层 | `resolve_agent_tool_call` 把 `args.reason` 装进 `ApprovalDecision::Deny { reason }`（[cmd/agent/mod.rs](../../../src-tauri/src/cmd/agent/mod.rs)） |
+| 网关 | `Deny { reason }` → `GatewayDecision::RejectedByUser { reason }`（[gateway/mod.rs](../../../src-tauri/crates/assistant-tools/src/runtime/gateway/mod.rs)） |
+| 工具结果 | `Some(reason)` → `"rejected by user: <reason>"`；`None` → `"rejected by user"`（[pipeline.rs](../../../src-tauri/crates/assistant-tools/src/runtime/pipeline.rs)） |
+| 前端 | `chatService.resolveAgentToolApproval` 原样透传 `ToolApprovalDecision`，**当前调用未传 `reason`**（[ApprovalCard.tsx](../../../src/chat/tool/ApprovalCard.tsx) `decide`） |
 
 **因此拒绝理由这部分无需新增 wire 字段**：生成类型里 `reason?: string | null` 已存在（`src/types/protocol.contract.ts`），改动集中在前端 UI + i18n（§10.2 的结构化字段是另一组改动，两组同批交付）。
 
@@ -993,7 +993,7 @@ pub struct StatementEffect {
 
 | 议题 | 现状 | 改动 | 改 wire | 对应验收项 |
 | --- | --- | --- | --- | --- |
-| 目录非空检查位置 | 在 `execute` 阶段才调用 `ensure_empty_directory`——回收站分支 [trash.rs](../../src-tauri/crates/assistant-tools/src/os/tools/agent_delete/trash.rs) 与永久分支 [exec.rs](../../src-tauri/crates/assistant-tools/src/os/tools/agent_delete/exec.rs) 各一处，用户先批准再失败 | 上移到 `validate_input`，审批前即返回「pass recursive = true」。这是 N13 与 N5 冲突（`summary` 里的 `"only deleted if it is empty"` 有效性陈述会被原样渲染）的唯一低成本解法 | 否 | D21 |
+| 目录非空检查位置 | 在 `execute` 阶段才调用 `ensure_empty_directory`——回收站分支 [trash.rs](../../../src-tauri/crates/assistant-tools/src/os/tools/agent_delete/trash.rs) 与永久分支 [exec.rs](../../../src-tauri/crates/assistant-tools/src/os/tools/agent_delete/exec.rs) 各一处，用户先批准再失败 | 上移到 `validate_input`，审批前即返回「pass recursive = true」。这是 N13 与 N5 冲突（`summary` 里的 `"only deleted if it is empty"` 有效性陈述会被原样渲染）的唯一低成本解法 | 否 | D21 |
 | `summary_for` 语句数与语言混排（S9） | 固定输出「执行 1 条命令」，`a && b` 仍说 1 条；`delete` 英文、其余中文 | 删除 `summary_for`，`shell` 的 `summary` 置空串（语句数 / 类别 / 隔离强度全部改由结构化字段给出，§5.3、§6.7） | 是 | A8、S9 |
 | 受众过滤 fail-open | 列表接口按 `audience()` 过滤，但执行期 `find_by_name` / `find` 无受众判断——模型回传 `fs_link` 即可在工作区建链接绕过沙箱边界（§2.5） | 新增 `find_for_agent(name)` 作为模型调用名的唯一解析入口，`pipeline` 与 `tool_escalation` 全改用它；`register_os_tools` 改名 `register_bridge_tools` | 否 | B18b / B18c |
 | `workspace` 扩展误判（§5.6.8 G1） | `workspace_extensions` 对每条 `pending.resource` 无条件做工作区成员判定；`shell`（命令原文）与 MCP（`mcp:<server>:<hash>`）不是路径，解析必然失败 → 恒判「工作区外」 | 只对路径型 action（`read` / `readToolOutput` / `edit` / `delete` / `purge`）判定，其余不产出 `workspace` 条目 | 否 | B18d |

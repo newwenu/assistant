@@ -8,7 +8,7 @@
 
 | 域 | 内容 | 文件数 |
 |---|---|---|
-| [agent/](./agent/) | Agent 运行时、工具框架与 MCP、Agent Loop、审批、压缩与节点布局、身份与能力事实、运行时审计、沙箱与代码规模审计、Turn 观测面、长行读取与超级工具、工具三阶段状态 | 70 |
+| [agent/](./agent/) | Agent 运行时、工具框架与 MCP、Agent Loop、审批、压缩与节点布局、身份与能力事实、运行时审计、沙箱与代码规模审计、Turn 观测面、长行读取与超级工具、工具三阶段状态、审批粒度与卡片决策化 | 76 |
 | [vault/](./vault/) | 密码箱：密钥体系、条目加密、同步、审计、生物识别、恢复与 IPC 契约 | 38 |
 | [chat/](./chat/) | 对话与消息链路：服务拆分、流事件、历史、分支、重试、附件/多模态、截图提问、Token Usage | 35 |
 | [ui/](./ui/) | Orb、主窗口与 mini 模式、设置系统、i18n、Mascot、时钟与布局、观测画布与存储管理器 | 45 |
@@ -16,7 +16,7 @@
 
 ## 文档清单
 
-### agent/ (70)
+### agent/ (76)
 
 | 文档 | 原批次 | 标题 |
 |---|---|---|
@@ -90,6 +90,12 @@
 | [`I58-super-tool-tasklist.md`](./agent/I58-super-tool-tasklist.md) | achievement | I58 — P17 超级工具任务清单（T1–T8 全部勾选） |
 | [`I59-chat-error-null-contract-spec.md`](./agent/I59-chat-error-null-contract-spec.md) | achievement | I59 — 前端 ChatError null 语义与守卫对齐（含同类判据合并） |
 | [`I60-tool-running-status-spec.md`](./agent/I60-tool-running-status-spec.md) | achievement | I60 — 工具调用三阶段状态（preparing / running / 终态与全局活动指示器） |
+| [`I70-approval-granularity-spec.md`](./agent/I70-approval-granularity-spec.md) | achievement | I70 — 审批粒度规格（预设档 / 用户规则 / 不可放宽底线） |
+| [`I70-approval-granularity-tasklist.md`](./agent/I70-approval-granularity-tasklist.md) | achievement | I70 — 审批粒度任务清单 |
+| [`I71-tool-execution-reliability-spec.md`](./agent/I71-tool-execution-reliability-spec.md) | achievement | I71 — 工具执行链路加固规格（取消兜底 / 调用来源归因 / 单工具内联预算） |
+| [`I71-tool-execution-reliability-tasklist.md`](./agent/I71-tool-execution-reliability-tasklist.md) | achievement | I71 — 工具执行链路加固任务清单 |
+| [`I72-approval-card-decision-design.md`](./agent/I72-approval-card-decision-design.md) | achievement | I72 — 审批卡片决策化设计（决策句 / 证据块 / 按钮 / 折叠区） |
+| [`I72-approval-card-decision-tasklist.md`](./agent/I72-approval-card-decision-tasklist.md) | achievement | I72 — 审批卡片决策化任务清单 |
 
 ### vault/ (38)
 

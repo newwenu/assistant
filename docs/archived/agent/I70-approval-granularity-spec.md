@@ -6,13 +6,13 @@
 | 日期 | 2026-11-23 |
 | 归属 | 审批链轴的配置面扩展（P6 已完成能力的粒度补强）；不新增阶段编号、不改 P0–P18 门禁 |
 | 事实来源 | `docs/analysis/APPROVAL-STRATEGY-CONFIGURATION-ANALYSIS.md`（2026-11-23 快照：G1–G6、候选 A/B/C、R1–R7、OQ1–OQ7；**时点记录，不随后续代码追改**；与本文冲突以本文为准） |
-| 关联 | [I38g](./I38g-agent-approval-advisor-spec.md)（P10 顾问：单向放宽）· [I52](./I52-shell-sandbox-spec.md)（沙箱不替代审批；`readToolOutput` 恒 `Ask`）· I38e（已归档）（MCP 精确键）· I38d（已归档）（审批卡片 L0–L3、`policy_for_tool_config` 装配）· I38a（已归档）（Policy / Gateway 求值）· [I69a](./I69a-agent-orchestration-base-spec.md) §3（编排层保持调用级授权） |
+| 关联 | [I38g](../../store/I38g-agent-approval-advisor-spec.md)（P10 顾问：单向放宽）· [I52](../../store/I52-shell-sandbox-spec.md)（沙箱不替代审批；`readToolOutput` 恒 `Ask`）· I38e（已归档）（MCP 精确键）· I38d（已归档）（审批卡片 L0–L3、`policy_for_tool_config` 装配）· I38a（已归档）（Policy / Gateway 求值）· [I69a](../../store/I69a-agent-orchestration-base-spec.md) §3（编排层保持调用级授权） |
 | 影响范围 | 后端：`src-tauri/crates/assistant-protocol/src/agent.rs`、`src-tauri/crates/assistant-storage/src/agent_modes.rs`、`src-tauri/crates/assistant-tools/src/runtime/policy.rs`、`src-tauri/crates/assistant-tools/src/runtime/gateway/context.rs`、`src-tauri/src/adapters/permission_policy.rs`、`src-tauri/src/cmd/agent_mode.rs`；前端：`src/chat/core/toolConfig.ts`、`ToolConfigPanel`、`ToolAssemblySection`、`ApprovalCard`、`src/i18n/locales/{zh-CN,en-US}.json` |
 | 契约影响 | `ApprovalLevelDto` 追加 `workspace_write`（六处枚举镜像同步，A14）；新增 `ApprovalRuleDto` / `ApprovalRuleEffectDto`；`ConversationToolConfigDto` 追加 `approvalRules`；`ApprovalReasonDto` 追加 `userRule` 分支。改后必须 `npm run contract:gen` 并提交生成物 |
 | 判据 | 本文 §9 A1–A16 |
 
 > **本文管理**：粒度模型（§3）、求值顺序与合并（§4）、DTO 与持久化（§5）、校验与失败语义（§6）、解释链与 UI（§7）、不可放宽底线（§8）、验收（§9）、与相邻规格的关系（§10）、未决清单（§11）。
-> **本文不管理**：预设档的求值实现细节（以 `policy.rs` 与 I38d（已归档）为基线，本文只定义档位语义与规则集，不复述求值机制）、AI 顾问的判断逻辑（[I38g](./I38g-agent-approval-advisor-spec.md)）、沙箱边界（[I52](./I52-shell-sandbox-spec.md)）、工具注册与白名单（I58（已归档））。
+> **本文不管理**：预设档的求值实现细节（以 `policy.rs` 与 I38d（已归档）为基线，本文只定义档位语义与规则集，不复述求值机制）、AI 顾问的判断逻辑（[I38g](../../store/I38g-agent-approval-advisor-spec.md)）、沙箱边界（[I52](../../store/I52-shell-sandbox-spec.md)）、工具注册与白名单（I58（已归档））。
 > **与分析的差异**：分析 §4.1 的候选 A 同时提出 `approvalRules` 与 `flowApproval` 两个字段；本文**只保留 `approvalRules`**，「按来源开关」降级为 UI 快捷规则（§3.3）。理由：`flowApproval` 与规则表达同一维度，两套真值必然漂移（同一件事两处改、两处解释），而规则已能精确表达其全部语义（分析 R5 的结论）。
 
 > 本文中的「必须 / 禁止」为可验收约束；「应当」为默认做法，偏离须在代码注释写明理由。
@@ -35,7 +35,7 @@
 - **不做按来源的布尔开关**：不做 `flowApproval` 这类按来源的开关（理由见文首「与分析的差异」）；档位只有 §3.1 列出的四值，不再派生 `read_only` / `custom` 等与既有档语义重叠的档。
 - **不细化授权的作用域**：不做工作区级 / 目录级授权，也不做按调用参数细分的授权（如「只允许 `git status`」）；授权缓存仍以会话 + 作用域为界（I38d（已归档）），命令级细分属 `shell` 工具规格。
 - **不做规则继承**：模式 → 会话是整体覆盖，不做逐条 merge（§5.4）。
-- **不开新的配置写入口**：审批卡片只写授权缓存，AI 顾问不写规则（[I38g](./I38g-agent-approval-advisor-spec.md)）；项目级 `permissions.json` 由设置界面用与模式级相同的规则编辑器写入（§7.5），不引入第三种规则语法。
+- **不开新的配置写入口**：审批卡片只写授权缓存，AI 顾问不写规则（[I38g](../../store/I38g-agent-approval-advisor-spec.md)）；项目级 `permissions.json` 由设置界面用与模式级相同的规则编辑器写入（§7.5），不引入第三种规则语法。
 
 > 「哪些放宽被禁止」属约束而非范围问题，集中在 §8 INV-3 / INV-6，本节不重复。
 
@@ -72,8 +72,8 @@
 |---|---|---|
 | 审批粒度（本文） | 决定一次调用「要不要问」 | 决定「允许做什么」（沙箱）、「记不记得住答案」（授权缓存） |
 | 授权缓存 | 记住用户对某作用域的「本会话允许」 | 不产生规则、不跨会话、不写配置 |
-| 沙箱（[I52](./I52-shell-sandbox-spec.md)） | 决定「最多能做到哪」 | 不替代审批；沙箱内也要审批 |
-| AI 顾问（[I38g](./I38g-agent-approval-advisor-spec.md)） | 在 `Ask` 之后给建议 | 不放宽 `Deny`、不写规则、不跳过卡片 |
+| 沙箱（[I52](../../store/I52-shell-sandbox-spec.md)） | 决定「最多能做到哪」 | 不替代审批；沙箱内也要审批 |
+| AI 顾问（[I38g](../../store/I38g-agent-approval-advisor-spec.md)） | 在 `Ask` 之后给建议 | 不放宽 `Deny`、不写规则、不跳过卡片 |
 | 审计（I50（已归档）） | 记录 `Allow` / `Deny` 与命中原因 | 不参与决策 |
 | 工具白名单（I58（已归档）） | 决定模型看得见哪些工具 | 不决定审批粒度；规则不能把未注入工具变可见 |
 
@@ -153,9 +153,9 @@
 | D2 | **采纳** OpenBitFun 的 `.env` 例外，但只放进 `workspace_write`（W2–W4） | 它成立的前提是「宽泛 `allow` 之后跟例外」，这正是 W1 → W2–W5 的结构。`dangerous_only` 不加：该档 `edit` 本身就是 `Ask`，例外无效果且会破坏档位文案（§7.4）。两处差异：① 模式由 `*/.env` 改为 `**/.env`——本项目 glob 引擎里 `*` 不跨分隔符，`*/.env` 只能匹配一级目录，会漏掉 `src/.env` 这类子目录；② 额外把 `.git/**` 列为例外（W5），理由是写入 `.git/**` 即可通过钩子获得代码执行 |
 | D3 | **不采纳** openhuman 的命令白名单 | 命令级细分属 `shell` 工具规格（§1.2）；在 `dangerous_only` 下白名单会让「免确认执行任意 `git` 子命令」成立，绕开审批，且我们无命令解析的可信边界 |
 | D4 | **本期不扩**凭证目录底线（`~/.ssh` / `~/.aws` / `~/.gnupg` / `~/.kube`） | 扩 `hard_deny_rules()` 会改变出厂行为（A1 / A3 都需重写），且归属安全基线而非审批粒度；已登记 §11，用户规则层**可以**先写 `deny` 自行收紧（规则可收紧，不受本条限制） |
-| D5 | **不采纳** goose 的「默认全自动」与 codex 的「模型决定何时问」 | 前者与我们「读取与工作区写入放行、执行仍确认」的出厂承诺相反；后者把「要不要问」交给模型，等于在审批链里引入第二个决策者，与 [I38g](./I38g-agent-approval-advisor-spec.md) 的单向顾问约束冲突 |
+| D5 | **不采纳** goose 的「默认全自动」与 codex 的「模型决定何时问」 | 前者与我们「读取与工作区写入放行、执行仍确认」的出厂承诺相反；后者把「要不要问」交给模型，等于在审批链里引入第二个决策者，与 [I38g](../../store/I38g-agent-approval-advisor-spec.md) 的单向顾问约束冲突 |
 | D6 | **结构上对齐** OpenBitFun（预设档 + 基线规则 + 用户规则 + 只收紧的约束层） | 这正是本文 §4 的模型；差异只在「用户规则位置」——OpenBitFun 放在 preset 之后，我们同样如此，故无迁移成本；档数从三扩到四不影响结构 |
-| D7 | **不采纳** DSH 的「无规则表、免确认面交给沙箱」 | 它成立的前提是「沙箱能表达全部免确认边界」。我们的沙箱虽有 `writable_root` 写边界（I53（已归档）），但 [I52](./I52-shell-sandbox-spec.md) §2.3 硬规则 1 规定「沙箱不得改变审批决策」——`execute` 在 `workspace_write` 下恒为 `Ask`，故免确认面不能交给沙箱；且 DSH 的审批无记忆（只 `allowed-once`），我们已有授权缓存，两者不可互换。可借的只有「把沙箱与审批捆成一个用户选项」这一层——我们已由 `ModeToolConfig`（`maxToolTier` + `approvalLevel`）承担，档位命名与放行面另见 D8 |
+| D7 | **不采纳** DSH 的「无规则表、免确认面交给沙箱」 | 它成立的前提是「沙箱能表达全部免确认边界」。我们的沙箱虽有 `writable_root` 写边界（I53（已归档）），但 [I52](../../store/I52-shell-sandbox-spec.md) §2.3 硬规则 1 规定「沙箱不得改变审批决策」——`execute` 在 `workspace_write` 下恒为 `Ask`，故免确认面不能交给沙箱；且 DSH 的审批无记忆（只 `allowed-once`），我们已有授权缓存，两者不可互换。可借的只有「把沙箱与审批捆成一个用户选项」这一层——我们已由 `ModeToolConfig`（`maxToolTier` + `approvalLevel`）承担，档位命名与放行面另见 D8 |
 | D8 | **采纳** DSH 的 `workspace-write` 作为出厂默认的**命名与放行面**，但不采纳其边界执行者 | 放行面（工作区写入免确认、执行与删除仍问）正是 §3.1 的 `workspace_write`。区别在边界由谁保证：DSH 靠 OS 沙箱让写入根本不进审批，我们靠 `path::resolve` 的 `ensure_within_root` 保证写入目标恒在工作区内，再由审批层显式 `Allow`。后者不依赖平台沙箱后端、跨平台一致，且保留审批链的可解释性与授权缓存 |
 
 ### 3.2 用户规则层
@@ -431,10 +431,10 @@ UserRule { action: String, resource: String },
 |---|---|---|
 | INV-1 | 硬保护规则（`/etc/shadow`、`/etc/ssh/**`、`/etc/**` 写入、`C:/Windows/**`、`C:/Program Files/**`）在任何档位与规则下恒 `Deny` | 规则顺序被破坏 → 安全回归，A3 失败 |
 | INV-2 | tier 上限层恒生效：沙箱档看不到 `tier:os` / `tier:external`，`os` 档看不到 `tier:external` | 规则进约束层 → A4 失败 |
-| INV-3 | `readToolOutput` 恒 `Ask`（[I52](./I52-shell-sandbox-spec.md) §5.11.4(3)）；`mcp` 不得被用户规则放宽为 `allow`（MCP 信任由授权缓存的「本会话允许」承担） | `allow` 规则被接受 → A5 失败 |
+| INV-3 | `readToolOutput` 恒 `Ask`（[I52](../../store/I52-shell-sandbox-spec.md) §5.11.4(3)）；`mcp` 不得被用户规则放宽为 `allow`（MCP 信任由授权缓存的「本会话允许」承担） | `allow` 规则被接受 → A5 失败 |
 | INV-4 | 项目级 `permissions.json` 恒只能收紧；非法即全拒绝 | 项目层被跳过 → A4 失败 |
 | INV-5 | 已禁用 MCP server 的 `Deny` 层恒生效 | 规则覆盖 → A4 失败 |
-| INV-6 | AI 顾问不得放宽用户 `deny` 与 `readToolOutput`，且不写规则 | [I38g](./I38g-agent-approval-advisor-spec.md) 单向约束被破坏 |
+| INV-6 | AI 顾问不得放宽用户 `deny` 与 `readToolOutput`，且不写规则 | [I38g](../../store/I38g-agent-approval-advisor-spec.md) 单向约束被破坏 |
 | INV-7 | 规则不改变工具可见性：未注入 / 已禁用的工具不会因规则而出现 | 白名单被绕过 → A12 失败 |
 | INV-8 | 运行时规则校验失败（解码成功、校验不过）一律 fail-closed 到 `all_os_tools`；解码失败则整条配置退缺省装配（沙箱 + `none` + 空规则）。两条路径都**没有**「忽略校验、按原档位继续」的选项 | A6 失败 |
 
@@ -469,11 +469,11 @@ UserRule { action: String, resource: String },
 
 | 规格 | 关系 |
 |---|---|
-| [I38g](./I38g-agent-approval-advisor-spec.md) | 顾问在策略求值**之后**运行；用户 `deny` 为终局，顾问不得放宽；顾问不读写规则（INV-6） |
-| [I52](./I52-shell-sandbox-spec.md) | 沙箱不替代审批；`readToolOutput` 恒 `Ask` 由本文 INV-3 承接 |
+| [I38g](../../store/I38g-agent-approval-advisor-spec.md) | 顾问在策略求值**之后**运行；用户 `deny` 为终局，顾问不得放宽；顾问不读写规则（INV-6） |
+| [I52](../../store/I52-shell-sandbox-spec.md) | 沙箱不替代审批；`readToolOutput` 恒 `Ask` 由本文 INV-3 承接 |
 | I38d（已归档） | 审批卡片 L0–L3 结构不变，本文只追加一种 `reason`；`policy_for_tool_config` 装配顺序在本文 §4.1 处补一层 |
 | I38e（已归档） | MCP 精确键 `mcp:{server}:{tool}` 不变；禁用层语义不变 |
-| [I69a](./I69a-agent-orchestration-base-spec.md) | 编排层保持**调用级**授权，不做图级 / 批量授权；规则仍是单次调用求值 |
+| [I69a](../../store/I69a-agent-orchestration-base-spec.md) | 编排层保持**调用级**授权，不做图级 / 批量授权；规则仍是单次调用求值 |
 | I58（已归档） | 白名单与元工具注入规则不变；规则不参与可见性（INV-7） |
 
 ---
