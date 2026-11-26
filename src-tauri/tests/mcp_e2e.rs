@@ -424,8 +424,15 @@ async fn a_large_result_is_persisted_by_the_round_budget() {
         "MCP layer must not truncate: persisted payload keeps full length"
     );
     assert!(
-        outcome.assistant_text.contains(&persisted.path),
-        "assistant text must reference the persisted file"
+        outcome.assistant_text.contains(&persisted.model_ref()),
+        "assistant text must reference the persisted file by model_ref（I73 §3.6 R1）：{}",
+        outcome.assistant_text
+    );
+    let work = fixture.work_path();
+    assert!(
+        !outcome.assistant_text.contains(work.to_str().unwrap()),
+        "模型可见引用不得带本机绝对路径（I73 §3.6 R1）：{}",
+        outcome.assistant_text
     );
     manager.disable(SERVER_ID).await;
 }

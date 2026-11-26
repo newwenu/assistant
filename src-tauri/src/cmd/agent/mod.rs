@@ -8,12 +8,11 @@ use assistant_agent::kernel::{
 };
 use assistant_agent::multimodal;
 use assistant_storage::attachment_store::AttachmentStore;
-use assistant_tools::{ApprovalDecision, QuestionAnswerItem, ToolRegistry};
+use assistant_tools::{ApprovalDecision, QuestionAnswerItem};
 
 use crate::adapters::{
     build_turn_runner, mcp_disabled_layer, policy_for_tool_config, resolve_available_tools,
-    PendingApprovalRegistry, PendingQuestionRegistry, PipelineToolExecution, TauriEventSink,
-    TauriInputSource,
+    TauriEventSink, TauriInputSource,
 };
 use crate::protocol::{
     AgentQuestionAnswerDto, AgentToolCallDto, CommandErrorCodeDto, CommandErrorDto,
@@ -27,7 +26,7 @@ pub async fn send_agent_message(
     conversation_id: String,
     args: SendChatMessageArgsDto,
 ) -> Result<(), CommandErrorDto> {
-    let registry = app.state::<Arc<ToolRegistry>>().inner().clone();
+    let registry = crate::boot::tools(&app).map_err(cap_error)?;
 
     // 缺省配置即 deny-by-default：空白名单 → 空工具集，模型看不到任何工具。
     let tool_config = args.tool_config.clone().unwrap_or_default();
@@ -41,7 +40,7 @@ pub async fn send_agent_message(
 
     // 权限策略随本次发送的配置逐轮现算（I38d §4.6）：审批级别 → 主规则集，
     // 层级上限 → 约束层，项目级 `.assistant/permissions.json` → 额外约束层。
-    let tool_exec = policy_executor(&app, &conversation_id, &tool_config);
+    let tool_exec = policy_executor(&app, &conversation_id, &tool_config)?;
 
     let mut spec = TurnSpec::agent();
     spec.tools = Some(tools);
@@ -54,20 +53,25 @@ fn policy_executor(
     app: &AppHandle,
     conversation_id: &str,
     tool_config: &ConversationToolConfigDto,
-) -> Arc<dyn assistant_agent::agent::round_executor::ToolExecutionPort> {
-    let base = app.state::<Arc<PipelineToolExecution>>().inner().clone();
+) -> Result<Arc<dyn assistant_agent::agent::round_executor::ToolExecutionPort>, CommandErrorDto> {
+    let base = crate::boot::tool_exec(app).map_err(cap_error)?;
     let mut policy =
         policy_for_tool_config(tool_config, workspace_root(app, conversation_id).as_deref());
     // 已禁用 server 的迟到调用按 `Deny` 兜底（工具此时已注销，见 I38e §5）。
     if let Some(layer) = mcp_disabled_layer(&disabled_mcp_servers(app)) {
         policy = policy.with_constraint_layer(layer);
     }
-    Arc::new(base.with_policy(policy))
+    Ok(Arc::new(base.with_policy(policy)))
+}
+
+/// 能力未就绪 / 装配失败：命令层显式降级为 `InternalError`（不 panic、不静默）。
+fn cap_error(error: crate::boot::CapErr) -> CommandErrorDto {
+    CommandErrorDto::new(CommandErrorCodeDto::InternalError, error.to_string())
 }
 
 /// 当前 `enabled = 0` 的 server id：策略层只关心「开关为关」，与运行时状态无关。
 fn disabled_mcp_servers(app: &AppHandle) -> Vec<String> {
-    let state = app.state::<crate::setup::DbState>();
+    let state = app.state::<crate::db_state::DbState>();
     let rows = match state.0.lock() {
         Ok(conn) => assistant_storage::mcp_servers::list_servers(&conn),
         Err(e) => {
@@ -91,7 +95,7 @@ fn disabled_mcp_servers(app: &AppHandle) -> Vec<String> {
 /// 工作区根目录：与执行期同源（`tool_setup::resolve_workspace`），
 /// 保证项目级 `.assistant/permissions.json` 与工具边界锚在同一目录（I38h §4 #4）。
 fn workspace_root(app: &AppHandle, conversation_id: &str) -> Option<String> {
-    let state = app.state::<crate::setup::DbState>();
+    let state = app.state::<crate::db_state::DbState>();
     let resolved = match state.0.lock() {
         Ok(conn) => crate::tool_setup::resolve_workspace(&conn, conversation_id),
         Err(e) => {
@@ -120,7 +124,7 @@ pub fn resolve_agent_tool_call(
     app: AppHandle,
     args: ToolApprovalDecisionDto,
 ) -> Result<(), CommandErrorDto> {
-    let pending = app.state::<PendingApprovalRegistry>();
+    let pending = crate::boot::pending_approval(&app).map_err(cap_error)?;
     let decision = match args.decision {
         ToolApprovalKindDto::Approve => ApprovalDecision::Approve,
         ToolApprovalKindDto::Deny => ApprovalDecision::Deny {
@@ -150,7 +154,7 @@ pub fn resolve_agent_question(
     app: AppHandle,
     args: AgentQuestionAnswerDto,
 ) -> Result<(), CommandErrorDto> {
-    let pending = app.state::<PendingQuestionRegistry>();
+    let pending = crate::boot::pending_question(&app).map_err(cap_error)?;
     let answers: Vec<QuestionAnswerItem> = args
         .answers
         .into_iter()
@@ -176,7 +180,7 @@ pub fn list_pending_questions(
     app: AppHandle,
     conversation_id: String,
 ) -> Result<Vec<AgentToolCallDto>, String> {
-    let pending = app.state::<PendingQuestionRegistry>();
+    let pending = crate::boot::pending_question(&app).map_err(|e| e.to_string())?;
     Ok(pending.snapshot(&conversation_id))
 }
 
@@ -186,7 +190,7 @@ pub fn list_pending_questions(
 /// 白名单仍由 `resolve_available_tools` 在发送时按 `max_tool_tier` 过滤，二者口径不同。
 #[command]
 pub async fn list_available_tools(app: AppHandle) -> Result<Vec<ToolDescriptorDto>, String> {
-    let registry = app.state::<Arc<ToolRegistry>>().inner().clone();
+    let registry = crate::boot::tools(&app).map_err(|e| e.to_string())?;
     Ok(registry
         .agent_tool_descriptors()
         .await
@@ -226,7 +230,7 @@ pub(crate) async fn start_turn(
     })?;
 
     let inserted = {
-        let state = app.state::<crate::setup::DbState>();
+        let state = app.state::<crate::db_state::DbState>();
         let attachments = app.state::<AttachmentStore>().inner().clone();
         super::get_db_conn(&state)
             .map_err(|msg| CommandErrorDto::new(CommandErrorCodeDto::StorageFailure, msg))
@@ -278,7 +282,7 @@ pub(crate) async fn start_turn(
             level: reasoning_level,
         },
     ));
-    let runner = build_turn_runner(app, sink, input, tool_exec);
+    let runner = build_turn_runner(app, sink, input, tool_exec).map_err(cap_error)?;
 
     let ctx = TurnContext::new(
         conversation_id,

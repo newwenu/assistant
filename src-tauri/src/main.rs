@@ -1,6 +1,9 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
+    // 启动时钟必须是第一件事：`t0` 与 `t0_epoch_ms` 同点采集，首帧回传才有同域基准。
+    let clock = assistant_app::boot::BootClock::start();
+
     // 崩溃目录由应用层解析后传入：崩溃 crate 不自算基根，也不回落到当前目录。
     let dirs = match assistant_app::app_dirs::AppDirs::resolve() {
         Ok(dirs) => dirs,
@@ -35,5 +38,5 @@ fn main() {
         );
     }
 
-    assistant_app::run();
+    assistant_app::run(clock, dirs);
 }

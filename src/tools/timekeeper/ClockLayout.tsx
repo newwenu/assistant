@@ -39,7 +39,7 @@ export function ClockLayout({
         disabled={status === "running" || busy}
         disabledReason={
           status === "running"
-            ? translateKey("tools.clock.mode_switch_running")
+            ? translateKey("tools.timekeeper.mode_switch_running")
             : undefined
         }
         onChange={onModeChange}
@@ -60,7 +60,7 @@ export function ClockLayout({
           type="error"
           showIcon
           className={styles.alert}
-          title={translateKey("tools.clock.error")}
+          title={translateKey("tools.timekeeper.error")}
           description={error}
         />
       )}
@@ -76,7 +76,7 @@ export function ClockLayout({
                 className={minutes === preset ? styles.presetActive : undefined}
                 onClick={() => onPreset(preset)}
               >
-                {preset} {translateKey("tools.clock.minutes")}
+                {preset} {translateKey("tools.timekeeper.minutes")}
               </Button>
             ))}
           </Space>
@@ -87,16 +87,16 @@ export function ClockLayout({
               max={MAX_MINUTES}
               value={minutes}
               disabled={busy || !durationEditable}
-              aria-label={translateKey("tools.clock.custom_minutes")}
+              aria-label={translateKey("tools.timekeeper.custom_minutes")}
               onChange={onMinutesChange}
               style={{ width: 110 }}
             />
             <Typography.Text type="secondary" className={styles.unit}>
-              {translateKey("tools.clock.minutes")}
+              {translateKey("tools.timekeeper.minutes")}
             </Typography.Text>
             {durationEditable && (
               <Button type="primary" disabled={busy} onClick={onStart}>
-                {translateKey("tools.clock.start")}
+                {translateKey("tools.timekeeper.start")}
               </Button>
             )}
           </div>
@@ -110,23 +110,23 @@ export function ClockLayout({
           </Button>
         ) : showStopwatchStart ? (
           <Button type="primary" disabled={busy} onClick={onStart}>
-            {translateKey("tools.clock.start")}
+            {translateKey("tools.timekeeper.start")}
           </Button>
         ) : null}
         <Button disabled={busy || status === "idle"} onClick={onReset}>
-          {translateKey("tools.clock.reset")}
+          {translateKey("tools.timekeeper.reset")}
         </Button>
       </Space>
 
       {mode === "stopwatch" && status === "idle" && (
         <Typography.Text type="secondary" className={styles.hint}>
-          {translateKey("tools.clock.stopwatch_hint")}
+          {translateKey("tools.timekeeper.stopwatch_hint")}
         </Typography.Text>
       )}
 
       {mode === "countdown" && isFinished && (
         <Typography.Text type="secondary" className={styles.hint}>
-          {translateKey("tools.clock.finished_hint")}
+          {translateKey("tools.timekeeper.finished_hint")}
         </Typography.Text>
       )}
     </div>

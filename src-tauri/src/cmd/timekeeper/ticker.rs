@@ -10,7 +10,7 @@ use assistant_protocol::ClockSnapshotDto;
 
 use crate::protocol::events::emit_broadcast;
 
-pub(crate) const CLOCK_FINISHED: &str = "clock:finished";
+pub(crate) const TIMEKEEPER_FINISHED: &str = "timekeeper:finished";
 
 pub(crate) fn spawn_ticker(app: &AppHandle, rt: Arc<ClockRuntime>, generation: u64) {
     let app = app.clone();
@@ -52,15 +52,15 @@ fn on_finished(app: &AppHandle, snapshot: ClockSnapshot) {
         }
     }
 
-    emit_broadcast(app, CLOCK_FINISHED, dto);
+    emit_broadcast(app, TIMEKEEPER_FINISHED, dto);
 }
 
 fn send_notification(app: &AppHandle) -> bool {
     use tauri_plugin_notification::NotificationExt;
     app.notification()
         .builder()
-        .title(assistant_i18n::t("clock.notification_title"))
-        .body(assistant_i18n::t("clock.notification_body"))
+        .title(assistant_i18n::t("timekeeper.notification_title"))
+        .body(assistant_i18n::t("timekeeper.notification_body"))
         .show()
         .is_ok()
 }

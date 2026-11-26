@@ -28,7 +28,7 @@ pub async fn manual_compact_conversation(
 ) -> Result<(), String> {
     // DB 锁必须在下一次 `await` 之前释放：`execute_compaction` 内部会再次取同一把锁。
     let (detail, provider_row) = {
-        let state = app.state::<crate::setup::DbState>();
+        let state = app.state::<crate::db_state::DbState>();
         let conn = super::get_db_conn(&state)?;
 
         let detail = conversations::get_conversation_detail(&conn, &conversation_id)?
@@ -60,7 +60,7 @@ pub async fn manual_compact_conversation(
 
 #[command]
 pub fn unlock_conversation(app: AppHandle, conversation_id: String) -> Result<(), String> {
-    let state = app.state::<crate::setup::DbState>();
+    let state = app.state::<crate::db_state::DbState>();
     let conn = super::get_db_conn(&state)?;
 
     conversations::set_conversation_is_full(&conn, &conversation_id, false)?;
@@ -150,7 +150,7 @@ pub(crate) async fn execute_compaction(
     let summary_msg_id = Uuid::new_v4().to_string();
     let summary_parent_id = detail.messages.last().map(|m| m.id.clone());
     {
-        let state = app.state::<crate::setup::DbState>();
+        let state = app.state::<crate::db_state::DbState>();
         let conn = super::get_db_conn(&state)?;
         // 摘要行不并入被压缩的 turn（ADR OQ3 默认值）：`(NULL, 0)` 永久平铺。
         // 写行与后续删除旧分支须同事务，任一失败整体回滚。
@@ -351,7 +351,7 @@ fn commit_summary(
     summary: &str,
     usage_records: &[assistant_storage::token_usage::TokenUsageRecord],
 ) -> Result<(), String> {
-    let state = app.state::<crate::setup::DbState>();
+    let state = app.state::<crate::db_state::DbState>();
     let conn = super::get_db_conn(&state)?;
 
     let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
@@ -386,7 +386,7 @@ fn save_compaction_partial(
     partial: &PartialOutcome,
     usage_records: &[assistant_storage::token_usage::TokenUsageRecord],
 ) {
-    let state = app.state::<crate::setup::DbState>();
+    let state = app.state::<crate::db_state::DbState>();
     let Ok(conn) = super::get_db_conn(&state) else {
         log::error!("compaction: get_db_conn failed, msg_id={}", msg_id);
         return;

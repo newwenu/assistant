@@ -525,7 +525,10 @@ pub fn init_db_localized(
     )
     .map_err(|e| e.to_string())?;
 
-    info!("Database initialized at {:?}", db_path);
+    // 落点只在 dev 档可见：release 档（`Info`）静默，阶段行已覆盖「初始化完成」这一事实，
+    // 但库路径属于阶段行没有的上下文，排查「写进了哪个库」时必须能拿到。
+    log::debug!("Database initialized at {}", db_path.display());
+
     Ok(conn)
 }
 

@@ -153,13 +153,13 @@ ssh-key = { version = "0.6", features = ["encryption", "rsa", "ed25519"] }
 rsa = { version = "0.9", features = ["pem"] }
 
 [features]
-default = ["vault", "clock"]
+default = ["vault", "timekeeper"]
 vault = [
     "dep:assistant-vault",
     "dep:assistant-sync",
     "dep:assistant-security",
 ]
-clock = ["dep:assistant-clock"]
+timekeeper = ["dep:assistant-clock"]
 
 # P7-C5 端到端夹具：仅测试用，不进 Tauri bundle
 [[bin]]

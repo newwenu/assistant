@@ -12,7 +12,7 @@ fn with_conn<T>(
     app: &tauri::AppHandle,
     f: impl FnOnce(&Connection) -> Result<T, String>,
 ) -> Result<T, String> {
-    let state = app.state::<crate::setup::DbState>();
+    let state = app.state::<crate::db_state::DbState>();
     let conn = state.0.lock().map_err(|e| e.to_string())?;
     f(&conn)
 }

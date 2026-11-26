@@ -4,6 +4,13 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+mod support;
+
+use support::scan::{
+    collect_rs_files, declared_type_names, manifest_dir, read, src_root, strip_rust_comments,
+    window_labels,
+};
+
 const REGISTRATION_OPEN: &str = "generate_handler![";
 const CFG_PREFIX: &str = "#[cfg(";
 const CFG_FEATURE_MARKER: &str = "feature = \"";
@@ -26,40 +33,16 @@ const CARGO_MANIFEST: &str = "Cargo.toml";
 const TAURI_CONF_FILE: &str = "tauri.conf.json";
 const CONTEXT_MACRO: &str = "generate_context!";
 const MANIFEST_KEYS: [&str; 3] = ["default", "cargoFeature", "env"];
-const CALLER_FILES: [&str; 7] = [
+const CALLER_FILES: [&str; 8] = [
     "plugins.rs",
     "lifecycle.rs",
-    "setup.rs",
+    "boot/build/state.rs",
+    "boot/runner.rs",
     "ipc.rs",
-    "window.rs",
+    "window/mod.rs",
     "tray.rs",
     "cmd/config.rs",
 ];
-
-fn manifest_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).to_path_buf()
-}
-
-fn src_root() -> PathBuf {
-    manifest_dir().join("src")
-}
-
-fn collect_rs_files(dir: &Path, out: &mut Vec<PathBuf>) {
-    let entries = fs::read_dir(dir).expect("source directory is readable");
-    for entry in entries {
-        let path = entry.expect("source entry is readable").path();
-        if path.is_dir() {
-            collect_rs_files(&path, out);
-        } else if path.extension().and_then(|ext| ext.to_str()) == Some("rs") {
-            out.push(path);
-        }
-    }
-}
-
-fn read(relative: &str) -> String {
-    let path = src_root().join(relative);
-    fs::read_to_string(&path).unwrap_or_else(|e| panic!("{} is readable: {}", relative, e))
-}
 
 fn plugin_registry_files() -> Vec<PathBuf> {
     let mut files = Vec::new();
@@ -88,41 +71,6 @@ fn plugin_registry_names() -> Result<Vec<String>, String> {
         names.extend(registered_names(&text)?);
     }
     Ok(names)
-}
-
-fn strip_rust_comments(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    let mut chars = text.chars().peekable();
-    while let Some(ch) = chars.next() {
-        if ch == '/' {
-            match chars.peek() {
-                Some('/') => {
-                    for c in chars.by_ref() {
-                        if c == '\n' {
-                            out.push('\n');
-                            break;
-                        }
-                    }
-                    continue;
-                }
-                Some('*') => {
-                    chars.next();
-                    let mut prev = '\0';
-                    for c in chars.by_ref() {
-                        if prev == '*' && c == '/' {
-                            break;
-                        }
-                        prev = c;
-                    }
-                    out.push(' ');
-                    continue;
-                }
-                _ => {}
-            }
-        }
-        out.push(ch);
-    }
-    out
 }
 
 fn registration_bodies(text: &str) -> Vec<String> {
@@ -1356,27 +1304,6 @@ fn context_macro_count(src_dir: &Path) -> usize {
     total
 }
 
-fn window_labels() -> Vec<String> {
-    let path = manifest_dir().join(TAURI_CONF_FILE);
-    let text =
-        fs::read_to_string(&path).unwrap_or_else(|e| panic!("{} 不可读: {}", path.display(), e));
-    let value: serde_json::Value =
-        serde_json::from_str(&text).expect("tauri.conf.json 是合法 JSON");
-    let mut labels = Vec::new();
-    if let Some(windows) = value
-        .get("app")
-        .and_then(|app| app.get("windows"))
-        .and_then(|windows| windows.as_array())
-    {
-        for window in windows {
-            if let Some(label) = window.get("label").and_then(|label| label.as_str()) {
-                labels.push(label.to_string());
-            }
-        }
-    }
-    labels
-}
-
 fn capability_permissions(value: &serde_json::Value, path: &Path) -> Vec<serde_json::Value> {
     value
         .get("permissions")
@@ -1650,33 +1577,6 @@ fn g5_domain_placement_relocations() {
     }
 
     assert!(problems.is_empty(), "领域归属回流检查失败: {:?}", problems);
-}
-
-fn declared_type_names(dir: &Path) -> BTreeSet<String> {
-    let mut files = Vec::new();
-    if dir.is_dir() {
-        collect_rs_files(dir, &mut files);
-    }
-    let mut names = BTreeSet::new();
-    for file in files {
-        let text = fs::read_to_string(&file).expect("source file is readable");
-        for line in text.lines() {
-            let trimmed = line.trim();
-            for prefix in ["pub struct ", "pub enum ", "pub type "] {
-                let Some(rest) = trimmed.strip_prefix(prefix) else {
-                    continue;
-                };
-                let name = rest
-                    .split(|c: char| c.is_whitespace() || matches!(c, '{' | '(' | '<' | ';'))
-                    .next()
-                    .unwrap_or("");
-                if !name.is_empty() {
-                    names.insert(name.to_string());
-                }
-            }
-        }
-    }
-    names
 }
 
 fn type_last_segment(path: &str) -> String {

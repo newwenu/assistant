@@ -62,6 +62,6 @@ impl ScreenLockMonitor {
             log::info!("Screen lock listener not supported on this platform");
         }
 
-        log::info!("Screen lock listener spawned");
+        log::debug!("Screen lock listener spawned");
     }
 }

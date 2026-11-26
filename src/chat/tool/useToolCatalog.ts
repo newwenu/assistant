@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { chatService } from "@/services/chat/chatService";
 import { createLogger } from "@/services/system/logger";
+import { useStartupStore } from "@/stores/system/startupStore";
 import type { ToolDescriptorDto } from "@/types/protocol.contract";
 
 const log = createLogger("toolCatalog");
@@ -35,11 +36,25 @@ export function useToolCatalog(enabled: boolean): {
 } {
   const [tools, setTools] = useState<ToolDescriptorDto[]>(() => cached ?? []);
   const [loading, setLoading] = useState(false);
+  /**
+   * 工具运行时是 Idle 泳道的能力（I75 §4.3）：未就绪时 `listAvailableTools` 必回 `NotReady`，
+   * 若照常拉取会把「还没装配」显示成「没有工具」。`pending` 期间只置 loading（C5「正在准备」），
+   * `ready` 后自动补拉一次；`failed` 的提示与重试入口由 `StartupReadinessNotice` 承担。
+   */
+  const capabilityState = useStartupStore((s) => s.states.tool_runtime?.state);
 
   useEffect(() => {
     if (!enabled) return;
     if (cached) {
       setTools(cached);
+      return;
+    }
+    if (capabilityState === "pending") {
+      setLoading(true);
+      return;
+    }
+    if (capabilityState === "failed") {
+      setLoading(false);
       return;
     }
     let alive = true;
@@ -55,7 +70,7 @@ export function useToolCatalog(enabled: boolean): {
     return () => {
       alive = false;
     };
-  }, [enabled]);
+  }, [enabled, capabilityState]);
 
   return { tools, loading };
 }

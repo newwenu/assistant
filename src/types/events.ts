@@ -37,7 +37,7 @@ export enum UiEvent {
   OrbNewConversation = "orb-new-conversation",
   OrbBlur = "orb-blur",
   WindowModeChanged = "ui:window-mode-changed",
-  ClockFinished = "clock:finished",
+  TimekeeperFinished = "timekeeper:finished",
   ScreenshotSession = "screenshot-session",
   ScreenshotPreparing = "screenshot-preparing",
   ScreenshotError = "screenshot-error",

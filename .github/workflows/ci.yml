@@ -70,15 +70,15 @@ jobs:
         run: npm run build
 
       # slim 态：两个特性都关，特性模块不得进入产物图，产物图断言在此硬失败。
-      - name: 前端构建（slim / VAULT_ENABLED=0 CLOCK_ENABLED=0）
-        run: VAULT_ENABLED=0 CLOCK_ENABLED=0 npm run build
+      - name: 前端构建（slim / VAULT_ENABLED=0 TIMEKEEPER_ENABLED=0）
+        run: VAULT_ENABLED=0 TIMEKEEPER_ENABLED=0 npm run build
 
-      # 字符串探针作为 slim 态的补充证据：产物中不得出现 settings.vault.* / tools.clock.* 文案。
+      # 字符串探针作为 slim 态的补充证据：产物中不得出现 settings.vault.* / tools.timekeeper.* 文案。
       - name: 关闭态产物字符串探针（vault）
         run: node scripts/assert-feature-absent.mjs --feature vault --dist dist
 
-      - name: 关闭态产物字符串探针（clock）
-        run: node scripts/assert-feature-absent.mjs --feature clock --prefix tools --dist dist
+      - name: 关闭态产物字符串探针（timekeeper）
+        run: node scripts/assert-feature-absent.mjs --feature timekeeper --prefix tools --dist dist
 
   rust:
     name: Rust 实机测试（${{ matrix.os }}）
@@ -162,7 +162,7 @@ jobs:
         working-directory: src-tauri
         run: node ../scripts/assert-feature-shed.mjs
 
-      # 单特性独立性：--features vault 时 clock 必须整块消失（assistant-clock 不在 normal-edge 图）。
+      # 单特性独立性：--features vault 时 timekeeper 必须整块消失（assistant-clock 不在 normal-edge 图）。
       - name: 单特性编译（--features vault）
         if: runner.os == 'Linux'
         working-directory: src-tauri
@@ -178,18 +178,18 @@ jobs:
         working-directory: src-tauri
         run: node ../scripts/assert-feature-shed.mjs --features vault
 
-      # 单特性独立性：--features clock 时 vault 必须整块消失（三个 vault crate 不在 normal-edge 图）。
-      - name: 单特性编译（--features clock）
+      # 单特性独立性：--features timekeeper 时 vault 必须整块消失（三个 vault crate 不在 normal-edge 图）。
+      - name: 单特性编译（--features timekeeper）
         if: runner.os == 'Linux'
         working-directory: src-tauri
-        run: cargo check -p assistant-app --no-default-features --features clock
+        run: cargo check -p assistant-app --no-default-features --features timekeeper
 
-      - name: 单特性装配契约（--features clock）
+      - name: 单特性装配契约（--features timekeeper）
         if: runner.os == 'Linux'
         working-directory: src-tauri
-        run: cargo test -p assistant-app --no-default-features --features clock --test assembly_contract
+        run: cargo test -p assistant-app --no-default-features --features timekeeper --test assembly_contract
 
-      - name: 单特性依赖断开断言（--features clock）
+      - name: 单特性依赖断开断言（--features timekeeper）
         if: runner.os == 'Linux'
         working-directory: src-tauri
-        run: node ../scripts/assert-feature-shed.mjs --features clock
+        run: node ../scripts/assert-feature-shed.mjs --features timekeeper

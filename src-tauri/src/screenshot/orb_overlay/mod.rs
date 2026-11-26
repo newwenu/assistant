@@ -117,15 +117,16 @@ pub fn recover_leftover(app: &AppHandle) {
     let Some(window) = app.get_webview_window(WINDOW_ORB) else {
         return;
     };
-    crate::window::apply_orb_window_attrs(app);
+    let conf = OrbConf::load().ok();
+    if let Some(conf) = conf.as_ref() {
+        crate::window::apply_orb_window_attrs(app, conf);
+    }
     let scale = window.scale_factor().unwrap_or(1.0);
     let edge = (ORB_COLLAPSED_WINDOW_SIZE as f64 * scale).round() as u32;
-    let position = OrbConf::load()
-        .ok()
-        .and_then(|conf| match (conf.position_x, conf.position_y) {
-            (Some(x), Some(y)) => Some(PhysicalPosition::new(x, y)),
-            _ => None,
-        });
+    let position = conf.and_then(|conf| match (conf.position_x, conf.position_y) {
+        (Some(x), Some(y)) => Some(PhysicalPosition::new(x, y)),
+        _ => None,
+    });
     // 与 `restore` 同理：窗口可能正以全屏覆盖层形态停在原点，先隐藏再改几何并禁用过渡，
     // 否则缩回小球的那一帧会把小球画在左上角、实时桌面也会透过淡出动画。
     let result = platform::suppress_transitions(&window, || {

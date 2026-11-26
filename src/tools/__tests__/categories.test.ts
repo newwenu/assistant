@@ -25,18 +25,18 @@ const EXPECTED_CATEGORIES: Record<string, string> = {
   "image-compressor": "media",
   "svg-preview": "media",
   "fs-link": "dev",
-  clock: "productivity",
+  timekeeper: "productivity",
 };
 
 describe("工具分类回归", () => {
   it("既有工具的归类结果不因新增 productivity 而改变", () => {
     for (const tool of tools) {
-      if (tool.id === "clock") continue;
+      if (tool.id === "timekeeper") continue;
       expect(tool.category, tool.id).toBe(EXPECTED_CATEGORIES[tool.id]);
     }
   });
 
-  it("clock 的 keywords 归入 productivity", () => {
+  it("timekeeper 的 keywords 归入 productivity", () => {
     expect(
       classifyKeywords([
         "pomodoro",

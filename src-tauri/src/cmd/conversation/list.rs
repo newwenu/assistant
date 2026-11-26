@@ -18,7 +18,7 @@ pub fn create_conversation(
     model_id: String,
     mode_id: Option<String>,
 ) -> Result<String, String> {
-    let state = app.state::<crate::setup::DbState>();
+    let state = app.state::<crate::db_state::DbState>();
     let conn = get_db_conn(&state)?;
     provider_store::get_provider_by_id(&conn, &provider_id)?
         .ok_or_else(|| assistant_i18n::t("error.provider_not_found"))?;
@@ -60,7 +60,7 @@ pub fn list_conversations(
     app: AppHandle,
     provider_id: Option<String>,
 ) -> Result<Vec<ConversationDto>, String> {
-    let state = app.state::<crate::setup::DbState>();
+    let state = app.state::<crate::db_state::DbState>();
     let conn = get_db_conn(&state)?;
     let rows = conversations::get_conversations(&conn, provider_id.as_deref())?;
     Ok(rows.into_iter().map(Into::into).collect())
@@ -68,7 +68,7 @@ pub fn list_conversations(
 
 #[command]
 pub fn search_conversations(app: AppHandle, query: String) -> Result<Vec<ConversationDto>, String> {
-    let state = app.state::<crate::setup::DbState>();
+    let state = app.state::<crate::db_state::DbState>();
     let conn = get_db_conn(&state)?;
     let rows = conversations::search_conversations(&conn, &query)?;
     Ok(rows.into_iter().map(Into::into).collect())

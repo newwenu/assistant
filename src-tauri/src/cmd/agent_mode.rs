@@ -21,7 +21,7 @@ fn resolve_avatar(input: Option<String>, existing: Option<&AgentModeRow>) -> Opt
 
 #[command]
 pub fn list_agent_modes(app: AppHandle) -> Result<Vec<AgentModeDto>, String> {
-    let state = app.state::<crate::setup::DbState>();
+    let state = app.state::<crate::db_state::DbState>();
     let conn = super::get_db_conn(&state)?;
     let modes = agent_modes::get_modes(&conn)?;
     Ok(modes.iter().map(row_to_dto).collect())
@@ -29,7 +29,7 @@ pub fn list_agent_modes(app: AppHandle) -> Result<Vec<AgentModeDto>, String> {
 
 #[command]
 pub fn save_agent_mode(app: AppHandle, mode: AgentModeInputDto) -> Result<(), String> {
-    let state = app.state::<crate::setup::DbState>();
+    let state = app.state::<crate::db_state::DbState>();
     let conn = super::get_db_conn(&state)?;
 
     let is_new = mode.id.is_empty();
@@ -96,14 +96,14 @@ pub fn save_agent_mode(app: AppHandle, mode: AgentModeInputDto) -> Result<(), St
 
 #[command]
 pub fn delete_agent_mode(app: AppHandle, id: String) -> Result<(), String> {
-    let state = app.state::<crate::setup::DbState>();
+    let state = app.state::<crate::db_state::DbState>();
     let conn = super::get_db_conn(&state)?;
     agent_modes::delete_mode(&conn, &id).map_err(super::translate_storage_error)
 }
 
 #[command]
 pub fn reset_builtin_mode(app: AppHandle, id: String) -> Result<(), String> {
-    let state = app.state::<crate::setup::DbState>();
+    let state = app.state::<crate::db_state::DbState>();
     let conn = super::get_db_conn(&state)?;
     agent_modes::reset_builtin_mode(&conn, &id, &|key| assistant_i18n::t(key))
         .map_err(super::translate_storage_error)

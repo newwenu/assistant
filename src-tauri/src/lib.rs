@@ -3,8 +3,9 @@
 
 pub mod adapters;
 pub mod app_dirs;
-mod clock_plugin;
+pub mod boot;
 pub mod cmd;
+pub mod db_state;
 mod feature_mounts;
 mod ipc;
 mod lifecycle;
@@ -14,16 +15,21 @@ mod menu;
 mod plugins;
 pub mod protocol;
 mod screenshot;
-mod setup;
+mod shortcuts;
+mod timekeeper_plugin;
 mod tool_setup;
 mod tray;
 mod vault_plugin;
 mod window;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run() {
-    plugins::attach(tauri::Builder::default())
-        .setup(setup::init)
+pub fn run(clock: boot::BootClock, dirs: app_dirs::AppDirs) {
+    let report = boot::StartupReport::new();
+    plugins::attach(tauri::Builder::default(), &dirs)
+        .manage(clock)
+        .manage(report)
+        .manage(boot::Registry::new())
+        .setup(move |app| boot::run_boot(app.handle(), dirs))
         .invoke_handler(ipc::handler())
         .on_menu_event(|app, event| menu::on_menu_event(app, event.id.as_ref()))
         .on_window_event(window::on_window_event)

@@ -256,7 +256,7 @@ pub(super) fn windows_listen(
         }
     };
 
-    log::info!("ScreenLockListener: hidden window created, listening for session changes");
+    log::debug!("ScreenLockListener: hidden window created, listening for session changes");
 
     unsafe {
         let mut msg = std::mem::zeroed();

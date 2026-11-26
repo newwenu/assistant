@@ -1,0 +1,28 @@
+{
+  "date": "2026-11-26",
+  "profile": "release",
+  "scale": { "screen_scaling": 1.0, "db_rows": 0 },
+  "runs": 0,
+  "phases": {
+    "dirs": { "p50": 0, "p95": 0 },
+    "boot_conf": { "p50": 0, "p95": 0 },
+    "i18n": { "p50": 0, "p95": 0 },
+    "feature_on_setup": { "p50": 0, "p95": 0 },
+    "storage": { "p50": 0, "p95": 0 },
+    "attachment_store": { "p50": 0, "p95": 0 },
+    "runtime_state": { "p50": 0, "p95": 0 },
+    "tool_runtime": { "p50": 0, "p95": 0 },
+    "tray": { "p50": 0, "p95": 0 },
+    "orb_shell": { "p50": 0, "p95": 0 },
+    "screen_inspection": { "p50": 0, "p95": 0 },
+    "shortcuts": { "p50": 0, "p95": 0 },
+    "window_main": { "p50": 0, "p95": 0 },
+    "storage_maintenance": { "p50": 0, "p95": 0 },
+    "mcp_start": { "p50": 0, "p95": 0 }
+  },
+  "totals": {
+    "t_process": { "p50": 0, "p95": 0 },
+    "t_visible": { "p50": 0, "p95": 0 },
+    "t_wake": { "p50": 0, "p95": 0 }
+  }
+}

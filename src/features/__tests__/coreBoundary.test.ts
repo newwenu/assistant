@@ -21,9 +21,9 @@ const TRAVERSAL_FILES = [
   "src-tauri/capabilities/default.json",
   "src-tauri/src/plugins.rs",
   "src-tauri/src/lifecycle.rs",
-  "src-tauri/src/setup.rs",
+  "src-tauri/src/boot/build/state.rs",
   "src-tauri/src/ipc.rs",
-  "src-tauri/src/window.rs",
+  "src-tauri/src/window/mod.rs",
   "src-tauri/src/tray.rs",
   "src-tauri/src/cmd/config.rs",
   "src-tauri/tauri.conf.json",
@@ -86,30 +86,12 @@ const FEATURE_FOOTPRINT_ALLOWLIST: Record<string, FootprintAllowance[]> = {
       ],
     },
   ],
-  clock: [
+  timekeeper: [
     {
       file: "src-tauri/src/cmd/mod.rs",
       reason:
-        '装配点：`#[cfg(feature = "clock")] pub(crate) mod clock;` 的 cfg 谓词必须点名特性名',
-      markers: ['#[cfg(feature = "clock")]', "mod clock;"],
-    },
-    {
-      file: "src/features/observation/InspectorPanel.tsx",
-      reason:
-        "`remainingWallClockMs` 是后端 DTO 派生的 wire 字段（`BudgetRemainingDto`），改名等于改 wire 契约，无法用无名词表达",
-      markers: ['"remainingWallClockMs",', "budget.remainingWallClockMs"],
-    },
-    {
-      file: "src-tauri/src/adapters/system_time_source.rs",
-      reason:
-        "`Clock` 是 core 内核端口 `assistant_agent::kernel::Clock` 的既有 trait 名（与 clock 特性无关）；改 trait 名等于改内核契约，只能按行豁免",
-      markers: ["use assistant_agent::kernel::Clock as TimeSource;"],
-    },
-    {
-      file: "src-tauri/src/cmd/compaction.rs",
-      reason:
-        "同上的内核端口 trait 名，出现在 `use assistant_agent::kernel::{..}` 分组导入里；别名 `TimeSource` 已保证语义无特性色彩",
-      markers: ["Clock as TimeSource,"],
+        '装配点：`#[cfg(feature = "timekeeper")] pub(crate) mod timekeeper;` 的 cfg 谓词必须点名特性名',
+      markers: ['#[cfg(feature = "timekeeper")]', "mod timekeeper;"],
     },
   ],
 };
@@ -120,7 +102,7 @@ const FEATURE_KEYS = ["default", "cargoFeature", "env"];
 // 关闭态探针前缀：默认 `settings`（vault 的设置项文案），工具型特性用 `tools`
 // （文案键在 `tools.<id>.*`，源码在 `src/tools/<id>/`）。
 const FEATURE_PROBE_PREFIX: Record<string, string> = {
-  clock: "tools",
+  timekeeper: "tools",
 };
 
 interface FeatureEntry {
@@ -192,6 +174,7 @@ function isFeatureBody(relative: string, feature: string): boolean {
 // 都是同一个特性泄漏，扫描不能只认 ASCII。新增特性若也有中文名，在此登记。
 const FEATURE_ALIASES: Record<string, string[]> = {
   vault: ["保险库"],
+  timekeeper: ["计时器"],
 };
 
 interface FootprintViolation {

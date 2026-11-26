@@ -362,7 +362,7 @@ CI 必须两种都跑；不能只跑默认态。
 
 ```json
 {
-  "full": { "features": ["vault", "clock"] },
+  "full": { "features": ["vault", "timekeeper"] },
   "slim": { "features": [] },
   "vault-only": { "features": ["vault"] }
 }

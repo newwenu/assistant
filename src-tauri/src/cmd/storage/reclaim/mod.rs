@@ -20,7 +20,7 @@ use assistant_tools::ToolResultStorage;
 
 use crate::app_dirs::AppDirs;
 use crate::cmd::storage::section::StorageSectionHandle;
-use crate::setup::DbState;
+use crate::db_state::DbState;
 
 pub use execute::execute_storage_reclaim;
 pub use plan::plan_storage_reclaim;

@@ -940,10 +940,28 @@ async fn webview_profile_registers_pending_and_purges_only_cache_on_startup() {
     assert_eq!(report.removed_bytes, 10);
     assert!(!gpu.exists(), "白名单缓存已删");
     assert!(user_state.join("leveldb.bin").exists(), "用户态数据永不删");
+
+    // 单次启动限量清理（§14 R2）：本轮没用完的清单写回标记，逐次启动推进。
+    let marker = assistant_app::app_dirs::webview_profile::pending_marker(&profile);
+    assert!(marker.exists(), "限额未用完时必须写回剩余清单");
+    let leftover = std::fs::read_to_string(&marker).expect("剩余清单可读");
     assert!(
-        !assistant_app::app_dirs::webview_profile::pending_marker(&profile).exists(),
-        "标记只消费一次"
+        !leftover.lines().any(|line| line.trim() == "GPUCache"),
+        "已清理的子目录不得留在剩余清单：{leftover}"
     );
+
+    // 继续推进直到清单清空；只剩不存在的子目录，不得再产生删除。
+    let mut extra_removed = 0;
+    for _ in 0..16 {
+        if !marker.exists() {
+            break;
+        }
+        let next = assistant_app::app_dirs::webview_profile::run_pending_purge(&profile)
+            .expect("标记存在时必须执行一次清理");
+        extra_removed += next.removed;
+    }
+    assert_eq!(extra_removed, 0, "后续启动只剩不存在的子目录");
+    assert!(!marker.exists(), "清单清空后必须删标记");
 
     // 再次启动无标记 → 零副作用，返回 None。
     assert!(

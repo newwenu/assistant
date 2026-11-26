@@ -64,7 +64,7 @@ static APP_SIDE_EFFECTS: &[(&str, AppSideEffectFn)] = &[
     }),
     ("keybindings", |app, prev, conf| {
         if prev.keybindings != conf.keybindings {
-            crate::setup::register_global_shortcuts(app);
+            crate::shortcuts::register_global_shortcuts(app, conf);
         }
         Ok(())
     }),
@@ -91,7 +91,7 @@ static APP_SIDE_EFFECTS: &[(&str, AppSideEffectFn)] = &[
 static ORB_SIDE_EFFECTS: &[(&str, OrbSideEffectFn)] = &[
     ("always_on_top", |_app, prev, conf| {
         if prev.always_on_top != conf.always_on_top {
-            crate::window::apply_orb_window_attrs(_app);
+            crate::window::apply_orb_window_attrs(_app, conf);
         }
         Ok(())
     }),

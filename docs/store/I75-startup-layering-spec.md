@@ -21,12 +21,12 @@
 | J2 | 启动期的唯一声明是 `RESOURCES` 一张表；`lane` 是表的一列，表序即执行序；`needs` 只做静态校验，不做拓扑排序 | 拓扑排序会静默改变既有顺序；单表可读、可 diff，与 `MOUNTS` 范式一致；D10 亦要求「启动初始化必须可并行、可延迟；阻塞首屏的串行链即为缺陷」 |
 | J3 | 预热不需要独立清单：`lane: Idle` 的项就是预热清单；`Capability` 枚举与 `WARMUP` 表都不存在，id 即能力名 | 四份声明（阶段表 / 能力枚举 / 预热清单 / 前端需求表）描述同一件事，同步成本全转嫁到门禁；单表 + 一列即可 |
 | J4 | `severity` 不作为表字段手写，由四份集合（`PRIMARY_ENTRY` / `BOOT_REQUIRED` / `OBSERVABLE` / `BEST_EFFORT`）的成员关系派生；G1 断言四份集合构成表的全划分 | 手写无法表达「入口类至少存活一个」；派生让「tray + orb_shell 同时降级 = 幽灵进程」在结构上不可能出现 |
-| J5 | `budget_ms: 0` 表示未测量；G1 放行 0，G8 只对非零项断言 p95 | 若要求 `> 0`，P0 脚手架填任意值即可全绿，门禁形同虚设 |
+| J5 | 阶段耗时只进 dev 档 `debug` 日志，不设预算列、基线文件与预算门禁 | 预算需要「release 实测 + 人工回填」，没有回填机制的门禁只校验 schema、不校验性能，反而让人误以为有保护 |
 | J6 | 配置只在启动期做一次快照（`BootConf`），不引入带失效机制的全局缓存 | 运行期「改设置立即生效」是既有语义，缓存会与之冲突 |
 | J7 | 窗口规格的唯一来源是 `WINDOW_SPECS`；其 `confs` 列是前端窗口配置需求表的唯一来源，经 `contract:gen` 生成前端常量与 `WindowLabel` 联合类型 | 跨语言「两边各写一份 + 正则断言相等」既脆又漂；生成物把 G4 变成类型等式（漏一个窗口编译不过）。后端本来就知道 label，把知识拆到两种语言才需要补丁 |
 | J8 | 主窗口懒建不是特例：`window_main` 是普通表项，`lane` 就是性能开关（`Idle` ↔ `Boot` 一行切换） | 有了统一 `ensure`，预热调度器、抢焦点启发式、幂等约束都是「缺少统一机制」的产物，随之消失 |
 | J9 | 时钟同域：`startup_id` 与 `t0` 由 `initialization_script` 注入 webview；前端回报 epoch 毫秒（`performance.timeOrigin + performance.now()`），Rust 直接相减；首帧回报不占 IPC 往返 | 现设计「Rust 一段 + 前端一段相加」是跨时钟域相加，`startup_id` 只解决关联不解决时基 |
-| J10 | 前端核心配置槽（`app`/`orb`/`mascot`）静态声明（零 `import`）；特性槽随页面进入时 `import` 并注册 | `await loadFeatures()` 留在 render 前会把 vault/clock/observation/orchestration 全量拉入首帧，G7 会绿而 T_visible 几乎不动 |
+| J10 | 前端核心配置槽（`app`/`orb`/`mascot`）静态声明（零 `import`）；特性槽随页面进入时 `import` 并注册 | `await loadFeatures()` 留在 render 前会把 vault/timekeeper/observation/orchestration 全量拉入首帧，G7 会绿而 T_visible 几乎不动 |
 
 ---
 
@@ -35,7 +35,7 @@
 ### 1.1 本规格管什么
 
 - 启动链路的**结构**：资源表、泳道归属、失败语义、就绪状态、单一来源。
-- 启动链路的**可观测与门禁**：`startup_id`、阶段日志、首帧回传、预算、契约测试。
+- 启动链路的**可观测与门禁**：`startup_id`、阶段日志、首帧回传、契约测试。
 - 首帧前的最小依赖集，以及前后端各自的最小启动路径。
 
 ### 1.2 本规格不管什么
@@ -68,7 +68,7 @@
 | N10 | 命令层与适配层直接 `state::<Arc<ToolRegistry>>()` / `state::<Arc<PipelineToolExecution>>()` 取用共 5 处（`cmd/agent/mod.rs` 3 处、`cmd/mcp.rs` 1 处、`adapters/runner.rs` 1 处）；另有 2 处装配内部取用（`tool_setup.rs`、`mcp/config.rs`）；`cmd/storage` 的 2 处已用 `try_state` 可降级。未就绪即 panic | 同上 |
 | N11 | 前端 `bootstrap()` 无条件 `loadFeatures()` + 加载**全部**配置组，再单独 `applyLocaleChange`；`loadConf("app")` 内部已经会应用语言 | `src/main.tsx`、`src/stores/settingsStore.ts` |
 | N12 | `themeStore.init` 再次 `fetchConf("app")`，与 `bootstrap` 的 `app` 组重复 IPC | `src/stores/system/themeStore.ts` |
-| N13 | `App.tsx` 静态 `import` 两个布局，Orb 窗口也会拉入 `MainLayout` 整包；`loadFeatures` 无条件加载 vault/clock/observation/orchestration | `src/App.tsx`、`src/features/registry.ts` |
+| N13 | `App.tsx` 静态 `import` 两个布局，Orb 窗口也会拉入 `MainLayout` 整包；`loadFeatures` 无条件加载 vault/timekeeper/observation/orchestration | `src/App.tsx`、`src/features/registry.ts` |
 | N14 | 启动路径无 `Instant`、无预算、无回归阈值；D10 判据：「启动关键路径必须有可测量的预算与回归阈值；无预算记录或持续超标且无处理即为缺陷」 | 全链路 |
 | N15 | `AppDirs::resolve()` 在启动期被解析 6 处：`main.rs`、`plugins.rs::log_plugin`（取日志目录）、`setup.rs`、`tool_setup.rs`、`window.rs::show_or_create`（每次建窗各一次）、特性 `on_setup`（`vault_plugin.rs`）。此外 `assistant-config::conf_dir_root()` 在另一 crate 内自解析，启动期每次配置读盘各一次——该点不在 `src-tauri/src` 内，源码断言天然覆盖不到 | 同上 |
 | N16 | `ipc.rs` 的 `generate_handler!` 未含任何 startup 命令；`assistant-protocol` 的 `lib.rs` 无 startup 模块，新增 DTO 需同步登记 | `src-tauri/src/ipc.rs`、`src-tauri/crates/assistant-protocol/src/lib.rs` |
@@ -148,7 +148,6 @@ pub struct Res {
     pub id: &'static str,
     pub lane: Lane,
     pub needs: &'static [&'static str],
-    pub budget_ms: u32,          // 0 = 未测量
     pub build: BuildFn,          // 幂等装配；不读配置；只从 ctx 取
 }
 
@@ -165,10 +164,9 @@ pub static RESOURCES: &[Res] = &[ /* 见 §9 接入矩阵 */ ];
 | S1 | 执行顺序 = 表内声明顺序 | `run_boot` |
 | S2 | `needs` 中的每个 id 必须在本项之前声明，且 `needs` 闭包完整 | §8 G1 |
 | S3 | `id` 唯一；`PRIMARY_ENTRY ⊆ lane Boot`；`BOOT_REQUIRED ⊆ lane Boot`；`lane Idle` 不得致命 | §8 G1 |
-| S4 | `budget_ms` 允许为 0（未测量），非零项由 G8 断言 | §8 G1 / G8 |
-| S5 | `build` 内不得读配置、不得 `manage` 之外产生全局副作用；跨项产物只经 `ctx` 取。唯一例外是 `boot_conf` 自身（它就是唯一读盘点，且只经 `ctx.dirs()` 定位路径） | §8 G3 |
-| S6 | 被 `BOOT_REQUIRED` 依赖的 `Degraded` 项，其 `build` 不得返回 `Err`：失败必须回退默认值并 `ctx.report.degrade(id, reason)`。否则下游拿到 `NotReady` 会升级为 Fatal，等于「配置读失败 = 进程退出」，与 §4.3 的「只记日志」相反。`boot_conf` 即此类 | §4.3 / §11 I4 |
-| S7 | 依赖项失败只让本项 `NotReady` 并记一次降级，**不把本项升级为 Fatal**；`Fatal` 只由本项自身失败或 `BOOT_REQUIRED` 成员自身失败产生 | §11 I4 |
+| S4 | `build` 内不得读配置、不得 `manage` 之外产生全局副作用；跨项产物只经 `ctx` 取。唯一例外是 `boot_conf` 自身（它就是唯一读盘点，路径由 `assistant_config::get_conf_dir()` 一次定位，不依赖 `ctx.dirs()`） | §8 G3 |
+| S5 | 被 `BOOT_REQUIRED` 依赖的 `Degraded` 项，其 `build` 不得返回 `Err`：失败必须回退默认值并记一条 `warn`。否则下游拿到 `NotReady` 会升级为 Fatal，等于「配置读失败 = 进程退出」，与 §4.3 的「只记日志」相反。`boot_conf` 即此类 | §4.3 / §11 I4 |
+| S6 | 依赖项失败只让本项 `NotReady` 并记一次 warn，**不把本项升级为 Fatal**；`Fatal` 只由本项自身失败或 `BOOT_REQUIRED` 成员自身失败产生 | §11 I4 |
 
 `needs` 取代原设计的 `after`：`after` 在「顺序 = 表序」下恒真，是没有信息量的第二份顺序副本；`needs` 可被 G1 断言为真实依赖闭包（例如「凡读 `ctx.boot()` 的项必须 `needs` 含 `boot_conf`」）。由于 `build` 是函数指针、运行期不可内省，该闭包断言必须由**源码扫描**实现：`boot/build/*.rs` 中出现 `ctx.boot()` 的文件，其对应表项 `needs` 必含 `boot_conf`（文件↔id 映射见 §9）。
 
@@ -195,16 +193,15 @@ pub struct BootClock {
 }
 
 pub struct StartupReport {
-    pub phases: Mutex<Vec<PhaseRecord>>,
-    pub degraded: Mutex<Vec<CapIssue>>,
-    pub first_frame: Mutex<Option<FrameRecord>>,
+    pub phases: Mutex<HashSet<String>>,        // 只记「已跑过哪些阶段」，供 run_idle 去重
+    pub wake_starts: Mutex<HashMap<String, i64>>, // 唤起起点，首帧回传时取出相减
 }
 ```
 
 - `BootClock` 与 `StartupReport` 均 `manage` 进 Tauri state，供命令层与退出期读取。
-- `t0` 与 `t0_epoch_ms` 在同一行同时采集；跨端只做一次减法（§7.3 M4），不做时钟校准。
-- `PhaseRecord { id, ms, outcome }` 只保留 id 级粒度，不记录参数，避免把配置内容写进日志。
-- `BootConf` 由 `boot_conf` 表项构建后进入槽；`window.rs` 中**启动路径上的**几何与 Orb 属性函数改为收 `&BootConf`。运行期调用点（`set_main_window_mode`、`cmd/config.rs` 的 Orb 属性刷新、`orb_overlay`）保持现读 `AppConf`/`OrbConf`，否则会把配置冻结在启动时刻（§11 I2）。
+- `t0` 与 `t0_epoch_ms` 在同一行同时采集；跨端只做一次减法（§7.2 M1），不做时钟校准。
+- `StartupReport` 不存阶段毫秒与降档集合：阶段毫秒只进日志，降档/失败状态由 `Registry` 的槽位与 `startup:capability-changed` 广播承载，避免同一状态有两份读源。
+- `BootConf` 由 `boot_conf` 表项构建后进入槽；`window/` 中**启动路径上的**几何与 Orb 属性函数（`geometry.rs::restore_main_window`、`create.rs::apply_orb_window_attrs`）改为收 `&BootConf`。运行期调用点（`set_main_window_mode`、`cmd/config.rs` 的 Orb 属性刷新、`orb_overlay`）保持现读 `AppConf`/`OrbConf`，否则会把配置冻结在启动时刻（§11 I2）。
 
 ### 4.3 失败语义：集合成员派生
 
@@ -230,8 +227,8 @@ pub fn severity(id: &str) -> Severity {
 
 | `Severity` | runner 行为 | 适用判据 | 典型表项 |
 |---|---|---|---|
-| `Fatal` | 记日志 + 记 `PhaseRecord` + 终止启动 | 继续跑会写错数据，或失去唯一入口 | `dirs`、`storage`、`i18n`、`runtime_state`、`orb_shell`、`tool_runtime`（P1） |
-| `Degraded` | 记日志 + 记 `CapIssue` + 广播 + 继续 | 功能缺失但应用可用，且**可观测**（`StartupReport.degraded` 有记录）、**不级联** | `boot_conf`、`attachment_store`、`feature_on_setup`、`tray`、`window_main`、`storage_maintenance`、`tool_runtime`（P3） |
+| `Fatal` | 记 error + 终止启动 | 继续跑会写错数据，或失去唯一入口 | `dirs`、`storage`、`i18n`、`runtime_state`、`orb_shell`、`tool_runtime`（P1） |
+| `Degraded` | 记 warn + 广播 `Failed` + 继续 | 功能缺失但应用可用，且**可观测**（广播与日志可查）、**不级联** | `boot_conf`、`attachment_store`、`feature_on_setup`、`tray`、`window_main`、`storage_maintenance`、`tool_runtime`（P3） |
 | `Ignore` | 只 warn | 尽力而为 | `screen_inspection`、`shortcuts`、`mcp_start` |
 
 降级规则比原设计更宽松也更诚实：原设计要求 Degraded 必须有「用户可见降级提示」，但表内 Degraded 项大多没有 UI，规则自身不成立。现规则改为「可观测 + 不级联」，**仅当降级对用户可操作（如工具不可用）时才额外要求前端提示**，该提示由 `ACTIONABLE` 集合驱动（P3 的 `startupStore` 只覆盖 `tool_runtime`）。
@@ -278,8 +275,8 @@ pub enum CapErr {
 | 窗口规格 | `WINDOW_SPECS` | `tauri.conf.json` 的 `windows` 必须为空数组 |
 | 窗口配置需求（前端） | `WINDOW_SPECS[i].confs` → 生成物 | 前端不手写、组件不自调 `loadConf` |
 | 窗口 profile 落点 | `show_or_create` 中的 `data_directory` | 无第二处 |
-| 目录解析 | `main.rs` 一次，`run(dirs)` 沿调用链下传，注入 `dirs` 表项 | 启动路径（`plugins.rs`、`setup.rs`、`tool_setup.rs`、`window.rs` 建窗路径、特性 `on_setup`）内不再 `AppDirs::resolve()` |
-| 配置目录 | `dirs` 表项（`BootConf::load_all(&dirs)` 经 `load_from` 显式传路径） | `assistant-config::conf_dir_root()` 在启动路径上不再被触发（它在另一 crate，源码断言覆盖不到，只能靠这条约束守） |
+| 目录解析 | `main.rs` 一次，`run(dirs)` 沿调用链下传，注入 `dirs` 表项 | 启动路径（`plugins.rs`、`boot/**`、`tool_setup.rs`、`window/**` 建窗路径、特性 `on_setup`）内不再 `AppDirs::resolve()` |
+| 配置目录 | `boot/conf.rs` 内 `assistant_config::get_conf_dir()` **一次**定位，再逐组 `load_from(path)` | 其余启动路径不再触发 `get_conf_dir()`。`AppDirs` 只有 data / local 两根、不含配置目录，因此 `BootConf::load_all()` **不收 `&dirs`**；该函数在另一 crate，源码断言覆盖不到，只能靠这条约束守 |
 | 启动期配置 | `BootConf`（`boot_conf` 表项） | 启动路径不得再 `AppConf::load()` / `OrbConf::load()` |
 | 能力就绪 | `ensure` + `access` | 命令层不得直取未就绪实例 |
 
@@ -296,19 +293,39 @@ pub enum CapErr {
 | `boot/registry.rs` | single-flight 槽、重试状态机、`manage` 一次性 | 90 行 |
 | `boot/runner.rs` | `run_boot`（表序 + 计时 + severity 分派）、`run_idle` | 80 行 |
 | `boot/ctx.rs` | `StartupCtx` / `BootClock` / `StartupReport` / `PhaseRecord` / `CapIssue` | 120 行 |
-| `boot/conf.rs` | `BootConf::load_all(&dirs)`：经 `load_from` 显式传路径，启动期唯一读盘点；失败回退默认值 + `ctx.report.degrade`，永不返回 `Err`（S6） | 80 行 |
+| `boot/conf.rs` | `BootConf::load_all()`：`get_conf_dir()` 一次定位后逐组 `load_from(path)`，启动期唯一读盘点；失败回退默认值 + `ctx.report.degrade`，永不返回 `Err`（S6） | 80 行 |
 | `boot/access.rs` | 每资源一行的类型化访问器 | 资源数 ×6 行 |
 | `boot/build/dirs.rs` | `AppDirs` 注入 + profile 建目录与清理标记消费 | 60 行 |
-| `boot/build/storage.rs` | DB 打开、迁移、种子、`DbState` | 120 行 |
+| `boot/build/storage.rs` | DB 打开、迁移、种子、`manage(DbState)`（`DbState` 结构本身在 `src-tauri/src/db_state.rs`） | 120 行 |
 | `boot/build/attachments.rs` | 附件目录 + `AttachmentStore` | 60 行 |
 | `boot/build/state.rs` | 5 个运行状态槽 | 40 行 |
-| `boot/build/tools.rs` | 工具基础设施装配（现 `tool_setup::init` 主体迁入，保留 `tool_setup.rs` 的纯函数） | 现状 + 少量 |
+| `boot/build/tools.rs` | 工具基础设施装配（现 `tool_setup::init` 主体 + 沙箱探测 `sandbox_host_paths` / `shell_registration_allowed` 一并迁入）；结果保留策略改由 `ctx.boot()` 传值，超时值以**函数引用**传入（运行期现读，I2） | 现状 + 少量 |
 | `boot/build/mcp.rs` | `mcp_start`（拉起已启用 server） | 40 行 |
-| `boot/build/windows.rs` | `orb_shell` / `window_main` 的 build 函数（调 `window.rs` 的 spec 与建窗） | 80 行 |
-| `boot/build/shell.rs` | 托盘、快捷键、屏幕巡检线程 | 180 行 |
+| `boot/build/windows.rs` | `orb_shell` / `window_main` 的 build 函数（调 `window/` 的 spec 与建窗） | 80 行 |
+| `boot/build/shell.rs` | 托盘、快捷键注册、屏幕巡检线程的**调用与 spawn**（三者实体都在 `boot/` 之外，见下） | 60 行 |
 | `boot/build/maintenance.rs` | 审计裁剪、工具结果清理、附件 `clean_tmp` | 80 行 |
 
-`WindowSpec` 与 `WINDOW_SPECS` 迁到 `assistant-config/src/window_spec.rs`（纯数据、无 tauri 依赖），`window.rs` 与 `boot/build/windows.rs` 都只是调用方。这样 `contract:gen` 的生成器可以落在 `assistant-config` 的测试里——`assistant-protocol` 只依赖 `serde`/`ts-rs`，读不到这张表。`boot/mod.rs` 只做组装，永远不成为最大文件——这是拆分原则对「god file」的直接约束。
+`WindowSpec` 与 `WINDOW_SPECS` 迁到 `assistant-config/src/window_spec.rs`（纯数据、无 tauri 依赖），`window/` 与 `boot/build/windows.rs` 都只是调用方。这样 `contract:gen` 的生成器可以落在 `assistant-config` 的测试里——`assistant-protocol` 只依赖 `serde`/`ts-rs`，读不到这张表。`boot/mod.rs` 只做组装，永远不成为最大文件——这是拆分原则对「god file」的直接约束。
+
+`src-tauri/src/window.rs`（617 行，含模式语义 / Orb 属性修补 / 规格表 / 建窗 / 几何 / Orb 面板 UI / Orb 定位与巡检六类变化原因）同批目录化为 `window/`：
+
+| 文件 | 职责 |
+|---|---|
+| `window/mod.rs` | 导出面 + 跨文件共享状态（`MAIN_WINDOW_MODE`、`WINDOW_LOCKS`） |
+| `window/spec.rs` | 表查询（P1 暂存本地表，P2 改为查 `assistant_config::window_spec`） |
+| `window/create.rs` | `show_or_create` / `toggle` / `get_or_error` / `destroy_all` + `apply_orb_window_attrs` |
+| `window/geometry.rs` | 几何族（`logical_scale` / `saved_normal_size` / `snap_position` / `apply_mini` / `apply_normal` / `persist_main_geometry`；P1 删 `restore_main_window`） |
+| `window/mode.rs` | 模式语义 + `set_main_window_mode` + `on_window_event` |
+| `window/orb_panel.rs` | `expand_orb_panel` / `collapse_orb_panel` / `show_orb_context_menu` |
+| `window/placement.rs` | `position_orb_window` / `show_orb_window` / `spawn_screen_inspection` |
+
+`ipc.rs` 已按 `window::open_main_window` 这类路径形式注册命令，`mod.rs` 用 `pub use` 转发即可，`generate_handler!` 不需改动。`placement.rs` 是**运行期**模块（巡检线程每轮现读并回写 `OrbConf`），不属于 `boot/`；`boot/build/shell.rs` 只 spawn。
+
+`tool_setup.rs`（568 行）按职责拆两段：启动装配（`init` 主体 + 沙箱探测）迁入 `boot/build/tools.rs`；运行期职责（结果保留策略、审批 / 提问超时现读、`resolve_workspace`、`validate_workspace_root`）留在 `tool_setup.rs`（约 250 行）。这样 `boot/` 与运行期策略在结构上分离，而不是靠注释约束。
+
+`setup.rs` 里的两个非启动实体也必须迁出：`DbState` → `src-tauri/src/db_state.rs`（`crate::setup::DbState` 的 29 个文件 / 71 处引用同批改路径），`register_global_shortcuts` 及其 `SHORTCUT_SPECS` / 动作 / 警告广播 → `src-tauri/src/shortcuts.rs`（`cmd/config.rs` 运行期改快捷键也要调用它，且需现读配置，不能留在 `boot/`）。
+
+`tests/support/scan.rs`：`assembly_contract.rs` 的源码扫描工具（`collect_rs_files` / `read` / `strip_rust_comments` / `declared_type_names` / `window_labels`）抽为共享模块，`startup_contract.rs` 复用同一份（先例：`tests/storage_reclaim.rs` 的 `#[path = "support/fake_section.rs"]`）。两套门禁各留一份拷贝，判定口径会立即分叉。
 
 ---
 
@@ -427,64 +444,58 @@ requestAnimationFrame(() => {
 
 主窗口懒建时（P2 之后）由 `show_or_create` 注入 `wake-<uuid>` 前缀的新 id，T_wake 用同一机制测量。
 
+**阶段归属**：`initialization_script` 只能由 `show_or_create` 的 `WebviewWindowBuilder` 设置，而 P0 阶段两个窗口仍由 `tauri.conf.json` 声明（配置声明的窗口不接受 init script）。因此 P0 只产出 `startup_id` 与阶段日志；注入 `window.__STARTUP_ID__` 与前端首帧回传随 P2 的建窗路径改造同批交付，A13 相应在 P2 验收。不用 `eval` / `on_page_load` 过渡——那会产生「首帧后才注入」的竞态，与 J9 的初衷相反。
+
 ---
 
-## 7 度量与预算
+## 7 度量与日志
 
 ### 7.1 结构化日志
 
-`main.rs` 首行 `let t0 = Instant::now()`，`manage(BootClock)`。每次阶段结束输出一行：
+`main.rs` 首行 `let t0 = Instant::now()`，`manage(BootClock)`。日志只有一层：
+
+**单阶段行（`debug`，dev 档可见）**：每阶段结束一行，用于定位卡在哪个阶段：
 
 ```text
-startup stage=<id> lane=<boot|idle> startup_id=<uuid> ms=<n> budget_ms=<n> outcome=<ok|degraded|fatal|ignored>
+startup stage=<id> lane=<boot|idle> startup_id=<uuid> ms=<n> outcome=<ok|degraded|fatal|ignored>
 ```
 
-`budget_ms > 0` 且 `ms > budget_ms` 时额外 warn 一行（`startup budget exceeded`）。`budget_ms = 0` 表示未测量，不参与比较——否则每个未测项在每次启动时都会刷一行假告警。
+release 档日志级别是 `Info`，本行自然静默：release 不做阶段级取数。**不在 release 另出泳道汇总行**——它没有读者（devtools 关闭、无取数脚本、无人回填基线），而 dev 已有每阶段自己的行，再加一行只是把同一批毫秒打两遍。度量只在 dev 做，结论写进对应的验收记录，不维护机器可读基线文件。
 
-### 7.2 预算来源
+`outcome` 取值语义（健康路径必须只出现 `ok`）：
 
-`budget_ms` **不预设**：P0 在 release 包上实测，取「中位数 ×2」回填，并把该值写入表。`0` 表示未测量：G1 放行，G8 跳过。预算表在实施期回填，字段格式固定如下（示例行为 P0 产出后填写）：
+| 取值 | 含义 |
+|---|---|
+| `ok` | 阶段成功，含 `Degraded` / `Ignore` 类表项成功（成功不因 severity 而改变取值） |
+| `degraded` | `Degraded` 项失败：已记 warn + 广播 `Failed` |
+| `fatal` | `Fatal` 项失败：启动终止 |
+| `ignored` | `Ignore` 项（`BEST_EFFORT`）失败：只 warn |
 
-| 表项 | budget_ms | 来源 |
+`Ignored` 专指 best-effort 失败，不得用于「成功」，否则健康启动的每个 `Degraded` 项都会显示成失败，`warn` / `error` 被无信息量的行淹没。
+
+**本规格只管自己的一行，不裁撤别人的日志**。阶段行是启动链路为度量产出的日志，行数固定为「每表项 1 条 `debug`」，不占 release 的 `info` 档。其它模块自己的 `debug` 自述行（如 `Database initialized at <path>`、`AttachmentStore initialized at <dir>`、`Created window: <label>`、`OS tool registry initialized: <n> tool(s)`、零删除的清理结论、`ScreenLockListener: hidden window created`）**保留**：它们承载阶段行没有的上下文（落点、label、数量、是否真跑过），dev 档可见，release 档默认 `Info` 自然静默，代价为零。
+
+判据不是「有没有阶段行承载同一事实」，而是「这行会不会在 release 档占 `info`」：`info` 只留给生命周期锚点与真有动作/异常的结论；同一事实禁止在 `info` 档重复第二遍。按「阶段行已覆盖」去删别的模块的 `debug`，是拿度量口径去裁别人的观测点——`debug` 与 `info` 不同档，不构成重复。
+
+### 7.1.1 失败日志：原因只记一次
+
+健康路径静默、失败路径带原因，这是 §7.1 的配套规则，不是实现取舍：
+
+| 位置 | 记什么 | 级别 |
 |---|---|---|
-| `dirs` | 0 | P0 |
-| `boot_conf` | 0 | P0 |
-| `storage` | 0 | P0 |
-| `orb_shell` | 0 | P0 |
-| `tray` | 0 | P0 |
-| `shortcuts` | 0 | P0 |
+| `Registry::build` 的 `Err` 分支 | 失败原因（唯一装配入口，boot / idle / `ensure` / 重试四条路径共用） | `Fatal` → `error`；`Degraded` / `Ignore` → `warn` |
+| `StartupReport::stage*` | 只落阶段行（`outcome`），不再重复记同一失败 | `debug` |
 
-### 7.3 度量口径
+由此每个失败恰好留下「一行原因 + 一行阶段行」，`boot_conf` 这类按 S5 必须返回 `Ok` 的项除外（它的降级原因由自身 `warn` 提供，`outcome` 仍是 `ok`）。`ensure` / `retry_capability` 这类不经过 `runner` 的路径同样带原因——这是把日志写在 `Registry::build` 而非 `runner` 的唯一理由。健康启动因此不产生任何 `warn` / `error`，失败启动不缺少原因，不会出现「正常路径日志多、错误路径日志少」的倒置。
+
+### 7.2 度量口径
 
 | 编号 | 口径 |
 |---|---|
-| M1 | 只在 **release** 包取数：dev 为 Vite dev server + devtools + stdout 日志，数字失真 |
-| M2 | 取数环境固定：冷启动（进程不在内存）+ 固定屏幕缩放 + 固定库规模，规模写入日志头 |
-| M3 | 每组至少 10 次，报 p50 / p95 |
-| M4 | T_visible = Orb 首帧 epoch 毫秒 − 进程起点 epoch 毫秒；两端同域，不做分段相加 |
-| M5 | T_wake 单列：`show_or_create_main` 入口打点生成 `wake-<uuid>`，主窗口回传同域首帧 |
+| M1 | T_visible = Orb 首帧 epoch 毫秒 − 进程起点 epoch 毫秒；两端同域，不做分段相加 |
+| M2 | T_wake 单列：`show_or_create_main` 入口打点生成 `wake-<uuid>`，主窗口回传同域首帧 |
 
-### 7.4 预算基线文件格式
-
-G8 需要一份机器可读的基线，格式固定为 JSON（不是 md 表格——门禁要解析，md 表格解析脆弱）：
-
-```json
-// docs/analysis/startup-budget-baseline.json
-{
-  "date": "YYYY-MM-DD",
-  "profile": "release",
-  "scale": { "screen_scaling": 1.0, "db_rows": 0 },
-  "runs": 10,
-  "phases": { "dirs": { "p50": 0, "p95": 0 }, "...": {} },
-  "totals": { "t_process": { "p50": 0, "p95": 0 },
-              "t_visible": { "p50": 0, "p95": 0 },
-              "t_wake":    { "p50": 0, "p95": 0 } }
-}
-```
-
-- `phases` 的键必须与 `RESOURCES` 的 id 一一对应；多出的键 G8 报错（防止改名后留下死数据）。
-- 文件缺失即 G8 失败（不静默跳过）；`budget_ms == 0` 的项从比较中剔除，与 §7.2 一致。
-- 每次重新取数覆盖该文件，`date` 变化即历史对比点；不做多份历史文件（git 历史就是历史）。
+两项指标各由一条 `info` 锚点落地（`startup first_frame` / `startup wake_first_frame`），与阶段行共用同一个 `startup_id`，是 A13 的唯一证据。阶段级耗时只在 dev 档可见，用于定位瓶颈，不设机器可读基线与预算门禁——没有回填机制的门禁会让人误以为性能有保护，比没有门禁更危险。
 
 ---
 
@@ -496,14 +507,16 @@ Rust 侧沿用 `src-tauri/tests/assembly_contract.rs` 的「读源码 + 断言�
 |---|---|---|---|
 | G1 | 资源表自洽 | (a) 遍历 `RESOURCES`：id 唯一；`needs ⊆ 表` 且指向声明在前；四份集合（`PRIMARY_ENTRY`/`BOOT_REQUIRED`/`OBSERVABLE`/`BEST_EFFORT`）互斥且覆盖全表；`ACTIONABLE ⊆ OBSERVABLE`；`PRIMARY_ENTRY ⊆ Boot`；`BOOT_REQUIRED ⊆ Boot`；`lane Idle` 无 Fatal。(b) `needs` 闭包用源码扫描补足：`boot/build/*.rs` 中出现 `ctx.boot()` 的文件，其对应表项（文件↔id 映射按 §9）`needs` 必含 `boot_conf`——`build` 是函数指针，运行期不可内省 | 有人删/错序/错泳道/错档；闭包漏声明 |
 | G2 | Builder 段顺序 | 读 `src-tauri/src/plugins.rs` 源码，断言 `single_instance` 出现位置早于 `log_plugin()` | 注释约束被破坏（N3） |
-| G3 | 启动路径无第二来源 | 断言 `boot/` 下除 `conf.rs` 外不出现 `AppConf::load()` / `OrbConf::load()`；`AppDirs::resolve()` 在**启动路径白名单**（`main.rs`、`plugins.rs`、`window.rs`、`tool_setup.rs`、`vault_plugin.rs`、`clock_plugin.rs`、`boot/**`）内只允许出现在 `main.rs`。`cmd/**`、`adapters/**` 的运行期解析不在断言范围（今日合法且应保留）；`assistant-config::conf_dir_root()` 在另一 crate，由 §4.5「配置目录」一行 + `BootConf::load_all(&dirs)` 守住 | 单点被绕过（N4/N5/N15） |
+| G3 | 启动路径无第二来源 | 断言 `boot/` 下除 `conf.rs` 外不出现 `AppConf::load()` / `OrbConf::load()`；`AppDirs::resolve()` 在**启动路径白名单**（`main.rs`、`plugins.rs`、`window/**`、`tool_setup.rs`、`vault_plugin.rs`、`timekeeper_plugin.rs`、`boot/**`）内只允许出现在 `main.rs`。`cmd/**`、`adapters/**` 的运行期解析不在断言范围（今日合法且应保留）；`assistant-config::get_conf_dir()` 在另一 crate，由 §4.5「配置目录」一行 + `BootConf::load_all()` 守住 | 单点被绕过（N4/N5/N15） |
 | G4 | 窗口单一来源 + 生成物新鲜 | 解析 `tauri.conf.json`：`app.windows` 为空数组；`contract:verify` 对生成物 `git diff --exit-code` | 双来源复发（N6）/ 生成物过期 |
 | G5 | 能力门禁 | 断言 `cmd/`、`adapters/` 源码不出现对 `boot/access.rs` 已登记类型的 `state::<Arc<T>>()` / `try_state::<Arc<T>>()`，且不出现 `boot::registry::` 内部符号；类型清单由 `boot/access.rs` 访问器的返回类型**源码扫描派生**，不手工维护 | 绕过 `ensure`（N10） |
 | G6 | 前端槽自洽 | 核心三组的静态槽齐全；`WINDOW_CONF_REQUIREMENTS` 的每个组都能被 `getConfSlot` 解析（特性组按「页面注册」豁免）；`getConfSlot` 未注册时 `loadConf` 返回而非抛错 | 死组 / 漏组 |
 | G7 | 前端视图懒加载 | 断言 `src/App.tsx` 不含对 `MainLayout` / `OrbWindow` 的静态 `import` | 减载回退（N13） |
-| G8 | 预算回归 | 只对 `budget_ms > 0` 的表项断言 p95 ≤ `budget_ms`；数据源固定为 `docs/analysis/startup-budget-baseline.json`（格式见 §7.4），文件缺失即失败 | 静默劣化（N14） |
 
-G8 的取数文件入库（便于门禁读取与历史对比），格式与判定口径见 §7.4。
+两条补充约束：
+
+- **G3 的扫描范围只有 `boot/`**。因此 `window/` 侧的启动期读盘点（`geometry.rs::restore_main_window`、`create.rs::apply_orb_window_attrs`）必须在 P1 改为收 `&BootConf`，否则 P1 的 I1 只是纸面承诺（G3 抓不到）。
+- **`boot/**` 与 `window/**` 内不得出现 `#[cfg(feature = "...")]`**。`a2_feature_cfg_only_in_boundary_files` 与 `b4_feature_cfg_budget_and_mutual_blocks` 递归扫 `src/**/*.rs`，新增目录会被扫到；`#[cfg(target_os)]` 不受此约束。
 
 ### 8.1 既有测试的连带修改
 
@@ -511,12 +524,14 @@ G8 的取数文件入库（便于门禁读取与历史对比），格式与判�
 
 | 常量 / 测试 | 现值 | 影响 |
 |---|---|---|
-| `CALLER_FILES` | 含 `"setup.rs"` | 目录化后需改为 `boot/mod.rs` 等实际路径 |
+| `CALLER_FILES` | 含 `"setup.rs"`、`"window.rs"` | 目录化后需改为 `boot/**`、`window/**` 等实际路径 |
 | `LIB_RS_LINE_LIMIT` | 40 | 新增 `mod boot` 声明会增加 `lib.rs` 行数，需按实际调整 |
-| `PLUGIN_FILE_SUFFIX` / 插件发现 | 扫 `src` 根 | 新增 `boot/` 子目录不应被误判为插件文件 |
+| `PLUGIN_FILE_SUFFIX` / 插件发现 | 扫 `src` 根 | 新增 `boot/`、`window/` 子目录不应被误判为插件文件 |
+| `a2_feature_cfg_only_in_boundary_files` / `b4_feature_cfg_budget_and_mutual_blocks` | 递归扫 `src/**/*.rs` | 新目录被扫到：`boot/**`、`window/**` 内不得出现 `#[cfg(feature = "...")]` |
+| `src/features/__tests__/coreBoundary.test.ts` 的 `TRAVERSAL_FILES` | 含 `src-tauri/src/setup.rs`、`src-tauri/src/window.rs` | 路径消失后 `readRepoFile` 直接抛错；须改为 `boot/**` + `window/**` + `main.rs` / `lib.rs`，且只列真正遍历挂载表的文件（不是全部启动文件） |
 | `window_labels()`（`b10_feature_capabilities_are_minimal`） | 从 `tauri.conf.json` 的 `app.windows` 读 label 并断言非空 | `windows` 置空后该断言必红；须改读 `assistant_config::window_spec::WINDOW_SPECS`，**与 P2 同批**，否则 P2 一落地就红 |
 
-这些修改属于机械跟随，但**必须与对应阶段同一批提交**（前三条随 P1，第四条随 P2）。
+这些修改属于机械跟随，但**必须与对应阶段同一批提交**（`window_labels()` 随 P2，其余随 P1）。
 
 ---
 
@@ -529,17 +544,17 @@ G8 的取数文件入库（便于门禁读取与历史对比），格式与判�
 | 1 | `dirs` | Boot | `[]` | Fatal | `AppDirs::resolve()` | 唯一解析点；结果由 `run(dirs)` 下传并注入槽；`tool_setup` / `plugins` / `window` / 特性 `on_setup` 内不再解析 |
 | 2 | `boot_conf` | Boot | `[dirs]` | Degraded | `AppConf::load()` + `OrbConf::load()`（均忽略错误） | 合并为一次 `BootConf` 快照，经 `load_from(dirs)` 显式路径；失败回退默认值 + 记降级（S6） |
 | 3 | `i18n` | Boot | `[boot_conf]` | Fatal | `init_global` | 语言取自 `BootConf`，不再二次 `load` |
-| 4 | `feature_on_setup` | Boot | `[dirs, boot_conf]` | Degraded | 特性 `on_setup` 循环（vault/clock） | 按 `feature_mounts` 遍历；`SetupHook` 签名改收 `&StartupCtx`，dirs 从 ctx 取 |
+| 4 | `feature_on_setup` | Boot | `[dirs, boot_conf]` | Degraded | 特性 `on_setup` 循环（vault/timekeeper） | 按 `feature_mounts` 遍历；`SetupHook` 签名改收 `&StartupCtx`，dirs 从 ctx 取 |
 | 5 | `storage` | Boot | `[dirs, boot_conf]` | Fatal | DB 打开 + 审计裁剪 + `manage(DbState)` | 审计裁剪移出，改由 `storage_maintenance` |
 | 6 | `attachment_store` | Boot | `[dirs]` | Degraded | 附件目录 + `AttachmentStore` + `clean_tmp` | `clean_tmp` 改由 `storage_maintenance` |
 | 7 | `runtime_state` | Boot | `[storage]` | Fatal | 5 个状态槽 `manage` | 不变 |
 | 8 | `tool_runtime` | Boot（P1）→ Idle（P3） | `[dirs, boot_conf]` | Fatal（P1）→ Degraded（P3） | `tool_setup::init` | 装配函数化，由 `ensure` 调用；P3 与降档（lane + 集合 + `ACTIONABLE`）同批改 |
 | 9 | `tray` | Boot | `[boot_conf, i18n]` | Degraded | `tray::create_tray` | 不变 |
 | 10 | `orb_shell` | Boot | `[dirs, boot_conf]` | Fatal | `position_orb_window` + `apply_orb_window_attrs` + `show_orb_window` + E14 漂移守卫 | 合并为一项；属性在构建期一次给出；T_visible 终点 |
-| 11 | `screen_inspection` | Boot | `[]` | Ignore | `spawn_screen_inspection` | 不变（线程自身循环） |
-| 12 | `shortcuts` | Boot | `[boot_conf]` | Ignore | `register_global_shortcuts` | 收 `&BootConf` |
-| 13 | `window_main` | Boot（P1）→ Idle（P2） | `[boot_conf]` | Degraded | `restore_main_window`（P1 保留原路径，P2 并入） | 几何挂建窗路径；`visible(false)`；托盘/快捷键/单实例经 `ensure` 触发 |
-| 14 | `storage_maintenance` | Idle | `[storage, attachment_store]` | Degraded | 步骤 5/6 中被移出的清理 | 审计裁剪 + 工具结果清理 + `clean_tmp` |
+| 11 | `screen_inspection` | Boot | `[]` | Ignore | `spawn_screen_inspection` | 线程体留在 `window/placement.rs`（每轮现读并回写 `OrbConf`），本项只 spawn；`boot/` 内不得出现该线程体 |
+| 12 | `shortcuts` | Boot | `[boot_conf]` | Ignore | `register_global_shortcuts` | 实体移到 `src-tauri/src/shortcuts.rs`（`cmd/config.rs` 运行期改配置也要调用，且需现读），本项只调用并传 `&BootConf` |
+| 13 | `window_main` | Boot（P1）→ Idle（P2） | `[boot_conf]` | Degraded | `restore_main_window`（P1 改收 `&BootConf` 保留原路径，P2 并入建窗路径） | 几何挂建窗路径；`visible(false)`；托盘/快捷键/单实例经 `ensure` 触发 |
+| 14 | `storage_maintenance` | Idle | `[dirs, storage, attachment_store, boot_conf]` | Degraded | 步骤 5/6 中被移出的清理 | 审计裁剪 + 工具结果清理（保留策略取 `tool_exec` 槽的装配期快照）+ `clean_tmp` |
 | 15 | `mcp_start` | Idle | `[tool_runtime]` | Ignore | `tool_setup::init` 内的 mcp 拉起 | 单 server 失败只记日志（现状语义） |
 
 进程级（不进表，Builder 段之前，`main.rs`）：`crash::install`、`ensure_webview_profile`、`run_pending_purge`。其结果注入 `dirs` 表项；清理改为限量（见 §14 R2）。插件注册在 Builder 段，顺序由 G2 守。
@@ -555,9 +570,13 @@ G8 的取数文件入库（便于门禁读取与历史对比），格式与判�
 | 路径 | 内容 |
 |---|---|
 | `src-tauri/src/boot/`（16 个文件，见 §5） | 资源表、registry、runner、ctx、conf、access、各 build 函数 |
-| `src-tauri/src/cmd/startup.rs` | `report_first_frame`、`get_startup_report` |
-| `src-tauri/tests/startup_contract.rs` | G1–G8（按 §12.4 分阶段启用） |
-| `src-tauri/crates/assistant-protocol/src/startup.rs` | `StartupReportDto`、`CapIssueDto`、`CapStateDto` |
+| `src-tauri/src/window/`（7 个文件，由 `window.rs` 目录化，见 §5） | 导出面、表查询、建窗、几何、模式、Orb 面板、Orb 定位与巡检 |
+| `src-tauri/src/db_state.rs` | `DbState` + `Clone` + `db_file_stats`（从 `setup.rs` 迁出；`crate::setup::DbState` 的 29 文件 / 71 处引用同批改路径） |
+| `src-tauri/src/shortcuts.rs` | `register_global_shortcuts` / `SHORTCUT_SPECS` / 快捷键动作 / 警告广播（从 `setup.rs` 迁出，启动期与 `cmd/config.rs` 运行期共用） |
+| `src-tauri/tests/support/scan.rs` | `collect_rs_files` / `read` / `strip_rust_comments` / `declared_type_names` / `window_labels`，`assembly_contract.rs` 与 `startup_contract.rs` 共用 |
+| `src-tauri/src/cmd/startup.rs` | `report_first_frame` |
+| `src-tauri/tests/startup_contract.rs` | G1–G7（按 §12.4 分阶段启用） |
+| `src-tauri/crates/assistant-protocol/src/startup.rs` | `CapStateDto`、`CapabilityStateDto` |
 | `src-tauri/crates/assistant-config/src/window_spec.rs` | `WindowSpec` + `WINDOW_SPECS`（纯数据，无 tauri 依赖，`&'static [WindowSpec]`） |
 | `src-tauri/crates/assistant-config/tests/window_requirements_bindings.rs` | 生成 `windowRequirements.generated.ts`（与既有 `shortcut_defaults_bindings` 同形） |
 | `src/settings/core/runtime/windowRequirements.generated.ts` | 生成物，勿手改 |
@@ -573,13 +592,13 @@ G8 的取数文件入库（便于门禁读取与历史对比），格式与判�
 | `src-tauri/src/main.rs` | 起始计时、`startup_id` 生成、`AppDirs::resolve()` 一次后 `assistant_app::run(dirs)` 下传；清理标记限量 |
 | `src-tauri/src/lib.rs` | `pub fn run(dirs: AppDirs)`；`plugins::attach(builder, &dirs)`；`.setup(move \|app\| boot::run_boot(app, &dirs))`；删 `mod setup` |
 | `src-tauri/src/plugins.rs` | 顺序注释改为引用 G2（注释保留，断言新增）；`log_plugin(&dirs)` 不再自行 `AppDirs::resolve()` |
-| `src-tauri/src/window.rs` | `WINDOW_SPECS` 迁出（改为从 `assistant_config::window_spec` 读取）；`show_or_create(app, label, &dirs)` 收 dirs、应用几何 + 注入 `initialization_script`；`restore_main_window` 删除 |
+| `src-tauri/src/window.rs` → `window/` | 目录化（见 §5）；`spec.rs` 改为从 `assistant_config::window_spec` 读取（P2）；`create.rs` 的 `show_or_create(app, label, &dirs)` 收 dirs、应用几何（P2）+ 注入 `initialization_script`（P2）；`geometry.rs` 删除 `restore_main_window`（P2）；`placement.rs` 承接 Orb 定位与巡检线程（P1） |
 | `src-tauri/tauri.conf.json` | `app.windows` 置空数组 |
-| `src-tauri/src/tool_setup.rs` | 装配函数化（不直接 `manage`，交由 registry）；删除内部 `AppDirs::resolve()` |
+| `src-tauri/src/tool_setup.rs` | 装配主体与沙箱探测迁入 `boot/build/tools.rs`（不直接 `manage`，交由 registry）；删除内部 `AppDirs::resolve()`；保留运行期纯函数（超时现读、`resolve_workspace`、`validate_workspace_root`） |
 | `src-tauri/src/feature_mounts.rs` | `SetupHook` 改为 `fn(&StartupCtx) -> Result<(), String>` |
-| `src-tauri/src/vault_plugin.rs`、`clock_plugin.rs` | `on_setup` 改收 `&StartupCtx`，dirs 从 `ctx.dirs()` 取 |
-| `src-tauri/src/cmd/agent/mod.rs`、`cmd/mcp.rs`、`cmd/storage/mod.rs`、`adapters/runner.rs` | 改为 `access::*` 取用（直取 5 处 + `try_state` 2 处统一走同一入口） |
-| `src-tauri/src/ipc.rs` | `generate_handler!` 增 `report_first_frame`、`get_startup_report`（N16） |
+| `src-tauri/src/vault_plugin.rs`、`timekeeper_plugin.rs` | `on_setup` 改收 `&StartupCtx`，dirs 从 `ctx.dirs()` 取 |
+| `src-tauri/src/cmd/agent/mod.rs`（`ToolRegistry` ×2、`PipelineToolExecution` ×1）、`adapters/runner.rs`（`PipelineToolExecution` ×1）、`cmd/storage/mod.rs`（`try_state::<Arc<PipelineToolExecution>>` ×1） | 改为 `access::*` 取用。P1 的 `access.rs` 只登记 `tools` / `tool_exec` 两项；`DbState`、`AttachmentStore`、`McpServerManager`（`cmd/mcp.rs`）、`SectionRegistry`（非启动资源）随 P3 分批并入，不在 P1 的 G5 清单内 |
+| `src-tauri/src/ipc.rs` | `generate_handler!` 增 `report_first_frame`（N16） |
 | `src-tauri/crates/assistant-protocol/src/lib.rs` | 增 `pub mod startup;`（N16） |
 | `src-tauri/tests/assembly_contract.rs` | `CALLER_FILES` 等常量跟随（§8.1）；`window_labels()` 改读 `WINDOW_SPECS`（P2） |
 | `package.json` | 新增 `contract:gen:windows` 并接入 `contract:gen`；`contract:verify` 文件清单增生成物 |
@@ -593,7 +612,7 @@ G8 的取数文件入库（便于门禁读取与历史对比），格式与判�
 
 | 路径 | 原因 |
 |---|---|
-| `src-tauri/src/setup.rs` | 目录化为 `boot/` |
+| `src-tauri/src/setup.rs` | 目录化为 `boot/`；`DbState` 迁至 `db_state.rs`、快捷键族迁至 `shortcuts.rs`（两者先迁出再删本文件，同一提交） |
 | `window::restore_main_window` | 几何恢复并入建窗路径 |
 | 原设计的 `caps/` 目录与 `Capability` 枚举 | 能力门禁并入 `boot/registry.rs`，id 即能力名 |
 
@@ -646,20 +665,18 @@ G8 的取数文件入库（便于门禁读取与历史对比），格式与判�
 
 | 编号 | 验收项 |
 |---|---|
-| A13 | release 包能输出完整 `startup stage=…` 链路 + 前端首帧回传，同一 `startup_id` |
-| A14 | 三个阶段指标均有 p50/p95 记录；T_visible 与 T_wake 分列 |
-| A15 | 相对 P0 基线：T_visible 下降有数据支撑；T_wake 不劣化（允许 ±5%） |
+| A13 | dev 档每阶段一条 `startup stage=…` 行，`first_frame` / `wake_first_frame` 两条锚点与阶段行共用同一 `startup_id`（阶段行自 P0 起可验；首帧回传随 P2） |
 
 ### 12.4 阶段门禁子集
 
-G1–G8 不是单点门禁，按阶段生效，避免「P1 就要 G8 数据」这种不可能要求：
+G1–G7 不是单点门禁，按阶段生效，避免「P1 就要全部门禁」这种不可能要求：
 
 | 阶段 | 必须绿 | 尚未生效 |
 |---|---|---|
-| P0 | G2 | G1、G3–G8 |
-| P1 | G1、G3、G7 | G4、G5、G6、G8 |
-| P2 | G4、G6 | G5、G8 |
-| P3 | G5、G8 | — |
+| P0 | G2 | G1、G3–G7 |
+| P1 | G1、G3、G7 | G4、G5、G6 |
+| P2 | G4、G6 | G5 |
+| P3 | G5 | — |
 
 G6 依赖 `WINDOW_CONF_REQUIREMENTS` 生成物，因此不能早于 P2；P1 只做 F1–F5 中不依赖生成物的部分（`bootstrap` 去掉全量循环、主题去重），G7 可独立成立。
 
@@ -687,9 +704,9 @@ G6 依赖 `WINDOW_CONF_REQUIREMENTS` 生成物，因此不能早于 P2；P1 只�
 | R1 | `tool_runtime` 降档后，用户遇到「能启动但工具不可用」却不知情 | 与 P3 前端降级提示同批交付；A9 验收；禁止只改一列（`lane` 与集合成员必须同批，见 §4.3） |
 | R2 | `purge_cache` 改限量后，磁盘可能长期不回落 | 保留「整目录清理」入口（设置页手动触发）；标记文件记录剩余子目录，逐次推进 |
 | R3 | Orb 移入 `WINDOW_SPECS` 时漏字段 | 迁移前把 `tauri.conf.json` 的 orb 项逐字段列成对照表，至少覆盖 `url`/`title`/`width`/`height`/`resizable`/`decorations`/`transparent`/`alwaysOnTop`/`skipTaskbar`/`visible`/`shadow`/`maximizable`/`minimizable`/`acceptFirstMouse`/`zoomHotkeysEnabled`/`focus`/`backgroundColor`；程序化建窗的默认值与 conf 不同（`visible` 默认 true，漏填即启动弹窗）；A7 覆盖视觉与点击穿透 |
-| R4 | `Idle` pass 与用户首次点击并发时，`ensure` 的装配在 async runtime 上占线程，可能拖慢 Orb 交互 | 装配内的文件 I/O 走 `spawn_blocking`；`run_idle` 按表序逐项 `ensure` 并在项间让出（`.await` 天然让出）；A15 同时观察 T_wake 与 CPU 尖峰 |
+| R4 | `Idle` pass 与用户首次点击并发时，`ensure` 的装配在 async runtime 上占线程，可能拖慢 Orb 交互 | 装配内的文件 I/O 走 `spawn_blocking`；`run_idle` 按表序逐项 `ensure` 并在项间让出（`.await` 天然让出）；以 `wake_first_frame` 的 `wake_ms` 与 CPU 尖峰观察 |
 | R5 | 目录化触发 `assembly_contract` 大面积变红，被误判为回归 | §8.1 常量跟随与目录化同批提交；先单独跑该测试确认基线 |
 | R6 | `ensure` 迁移期出现「已移除 `manage`、命令层未改」的中间态 | 提交粒度约束：C3 的调用点替换与 `manage` 移除必须同一提交 |
 | R7 | 生成物被手改或忘记重跑 `contract:gen` | G4 的 `contract:verify` 步骤对生成物执行 `git diff --exit-code`；I10 明令禁止手改；新生成物须先 `git add`（`verify` 用 `git ls-files --error-unmatch`） |
-| R8 | `feature_on_setup` 挪到 `dirs` / `boot_conf` 之后，改变了特性 `on_setup` 的执行时点（今日在配置读盘前） | 逐个复核 `on_setup` 体，只允许读 `SectionRegistry` 与 `ctx`；`clock` 的首次调度若依赖「配置尚未加载」的时序，改为在 `on_setup` 内自行延迟首次 tick |
+| R8 | `feature_on_setup` 挪到 `dirs` / `boot_conf` 之后，改变了特性 `on_setup` 的执行时点（今日在配置读盘前） | 逐个复核 `on_setup` 体，只允许读 `SectionRegistry` 与 `ctx`；`timekeeper` 的首次调度若依赖「配置尚未加载」的时序，改为在 `on_setup` 内自行延迟首次 tick |
 | R9 | G3 的启动路径白名单会随文件增长而漂移（新增启动期文件时漏登记） | 白名单作为常量集中在 `startup_contract.rs` 顶部，与 §8 G3 同源；新增启动期文件必须同时改该常量，否则断言直接失败（默认拒绝） |

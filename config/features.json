@@ -2,7 +2,7 @@
   "vault": {
     "default": true
   },
-  "clock": {
+  "timekeeper": {
     "default": true
   }
 }

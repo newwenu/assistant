@@ -24,6 +24,8 @@ pub mod event_name {
     pub const SCREENSHOT_ERROR: &str = "screenshot-error";
     /// 对账余量快照更新（I61 §3.11.4）：只通知「可重拉」，不携带数字。
     pub const STORAGE_INVENTORY_UPDATED: &str = "storage:inventory-updated";
+    /// 能力状态变更（I75 §4.4 C4）：载荷 `CapabilityStateDto`，仅迁移处发。
+    pub const STARTUP_CAPABILITY_CHANGED: &str = "startup:capability-changed";
 }
 
 pub fn emit_broadcast(app: &tauri::AppHandle, event: &str, payload: impl serde::Serialize + Clone) {

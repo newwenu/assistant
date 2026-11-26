@@ -17,7 +17,7 @@ impl TauriCompactionSink {
         &self,
         conversation_id: &str,
     ) -> Result<Option<(conversations::ConversationDetail, providers::ProviderRow)>, String> {
-        let state = self.app.state::<crate::setup::DbState>();
+        let state = self.app.state::<crate::db_state::DbState>();
         let conn = state.0.lock().map_err(|e| e.to_string())?;
         let Some(detail) = conversations::get_conversation_detail(&conn, conversation_id)? else {
             return Ok(None);

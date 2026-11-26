@@ -3,8 +3,6 @@ mod agent_mode;
 mod app;
 mod attachment;
 pub(crate) mod chat;
-#[cfg(feature = "clock")]
-pub(crate) mod clock;
 mod compaction;
 mod config;
 pub(crate) mod conversation;
@@ -15,7 +13,10 @@ mod os_tool_exec;
 mod permission;
 mod provider;
 mod screenshot;
+pub mod startup;
 pub mod storage;
+#[cfg(feature = "timekeeper")]
+pub(crate) mod timekeeper;
 mod token_usage_record;
 mod tool;
 #[cfg(feature = "vault")]
@@ -38,6 +39,7 @@ pub use os_tool_exec::*;
 pub use permission::*;
 pub use provider::*;
 pub use screenshot::*;
+pub use startup::*;
 pub use storage::*;
 pub use tool::*;
 pub use workspace::*;
@@ -84,7 +86,7 @@ pub(crate) fn lock_conn<'a>(
 }
 
 pub(crate) fn get_db_conn<'a>(
-    state: &'a tauri::State<'a, crate::setup::DbState>,
+    state: &'a tauri::State<'a, crate::db_state::DbState>,
 ) -> Result<std::sync::MutexGuard<'a, rusqlite::Connection>, String> {
     lock_conn(&state.0)
 }

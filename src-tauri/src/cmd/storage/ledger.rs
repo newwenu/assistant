@@ -2,8 +2,8 @@
 
 use std::collections::{HashMap, HashSet};
 
+use crate::db_state::DbState;
 use crate::protocol::dto::{AttachmentSummary, ConversationAttachmentSummary};
-use crate::setup::DbState;
 use assistant_storage::attachment_store::{self, AttachmentEntry};
 
 use super::entries::BreakdownBase;

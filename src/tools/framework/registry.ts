@@ -211,12 +211,12 @@ const cronParser = defineTool({
   widthMode: "default",
 });
 
-const clockTools: ToolDefinition[] = __CLOCK_ENABLED__
+const timekeeperTools: ToolDefinition[] = __TIMEKEEPER_ENABLED__
   ? [
       defineTool({
-        id: "clock",
-        name: "tools.clock.name",
-        description: "tools.clock.description",
+        id: "timekeeper",
+        name: "tools.timekeeper.name",
+        description: "tools.timekeeper.description",
         icon: FieldTimeOutlined,
         keywords: [
           "pomodoro",
@@ -226,7 +226,7 @@ const clockTools: ToolDefinition[] = __CLOCK_ENABLED__
           "session",
           "break",
         ],
-        component: lazyWithRecovery(() => import("../clock")),
+        component: lazyWithRecovery(() => import("../timekeeper")),
         widthMode: "default",
         miniFriendly: true,
       }),
@@ -332,7 +332,7 @@ export const tools: ToolDefinition[] = [
   jwtParser,
   sqlFormatter,
   cronParser,
-  ...clockTools,
+  ...timekeeperTools,
   textDiff,
   textStatistics,
   qrcodeGenerator,

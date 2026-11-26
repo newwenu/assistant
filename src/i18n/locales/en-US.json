@@ -1409,6 +1409,12 @@
         "rules": "Approval rules updated",
         "separator": "; "
       },
+      "startup": {
+        "pending": "Tools are getting ready; they will be available shortly",
+        "failed": "Tools unavailable: {{reason}}",
+        "unknown_reason": "unknown reason",
+        "retry": "Retry"
+      },
       "panel": {
         "title": "Tool assembly",
         "enabled_count": "{{count}} enabled",
@@ -1717,7 +1723,7 @@
       "name": "Cron Parser",
       "description": "Parse Cron expressions and show next execution times"
     },
-    "clock": {
+    "timekeeper": {
       "name": "Timer",
       "description": "Countdown and stopwatch with presets and custom durations",
       "start": "Start",

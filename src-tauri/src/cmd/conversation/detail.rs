@@ -19,7 +19,7 @@ pub fn get_conversation(
     id: String,
     opts: Option<ConversationQueryOptsDto>,
 ) -> Result<Option<ConversationDetailDto>, String> {
-    let state = app.state::<crate::setup::DbState>();
+    let state = app.state::<crate::db_state::DbState>();
     let conn = get_db_conn(&state)?;
 
     let mode = opts.as_ref().map(|o| o.mode.as_str()).unwrap_or("detail");
@@ -120,7 +120,7 @@ pub async fn get_conversation_token_usage(
     context_window_tokens: Option<u32>,
 ) -> Result<TokenUsageSummaryDto, String> {
     let (summary, detail, provider_row, window, mode_prompt, workspace_root) = {
-        let state = app.state::<crate::setup::DbState>();
+        let state = app.state::<crate::db_state::DbState>();
         let conn = get_db_conn(&state)?;
         let window = context_window_tokens
             .filter(|&c| c > 0)

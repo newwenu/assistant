@@ -6,6 +6,7 @@ pub mod json_config;
 pub mod mascot_conf;
 pub mod orb_conf;
 pub mod shortcut;
+pub mod window_spec;
 
 pub use conf_group::{apply_patch, ConfGroup, LoadPolicy};
 mod dto_bridge;

@@ -37,7 +37,7 @@ pub fn export_conversation(
     format: String,
     path: Option<String>,
 ) -> Result<Option<String>, String> {
-    let state = app.state::<crate::setup::DbState>();
+    let state = app.state::<crate::db_state::DbState>();
     let conn = get_db_conn(&state)?;
     let content = match format.as_str() {
         "json" => {

@@ -28,7 +28,7 @@ fn remove_session_scratch(dirs: &crate::app_dirs::AppDirs, id: &str) {
 
 #[command]
 pub fn delete_conversation(app: AppHandle, id: String) -> Result<(), String> {
-    let state = app.state::<crate::setup::DbState>();
+    let state = app.state::<crate::db_state::DbState>();
     let conn = get_db_conn(&state)?;
     conversations::delete_conversation(&conn, &id)?;
     if let Ok(dirs) = crate::app_dirs::AppDirs::resolve() {
@@ -58,7 +58,7 @@ fn patch_conversation_blocking(
     id: String,
     patch: &ConversationPatchDto,
 ) -> Result<(), String> {
-    let state = app.state::<crate::setup::DbState>();
+    let state = app.state::<crate::db_state::DbState>();
     let conn = get_db_conn(&state)?;
 
     let mut changed_kinds: Vec<ConversationListChangeKindDto> = Vec::new();
@@ -183,14 +183,14 @@ fn patch_conversation_blocking(
 
 #[command]
 pub fn get_message_subtree_size(app: AppHandle, message_id: String) -> Result<i64, String> {
-    let state = app.state::<crate::setup::DbState>();
+    let state = app.state::<crate::db_state::DbState>();
     let conn = get_db_conn(&state)?;
     conversations::get_subtree_size(&conn, &message_id)
 }
 
 #[command]
 pub fn delete_message_persist(app: AppHandle, message_id: String) -> Result<(), String> {
-    let state = app.state::<crate::setup::DbState>();
+    let state = app.state::<crate::db_state::DbState>();
     let conn = get_db_conn(&state)?;
     let conv_id = conversations::get_conversation_id_by_message(&conn, &message_id)?;
     conversations::delete_subtree(&conn, &message_id)?;
@@ -215,7 +215,7 @@ pub fn delete_message_persist(app: AppHandle, message_id: String) -> Result<(), 
 
 #[command]
 pub fn toggle_conversation_pin(app: AppHandle, id: String) -> Result<bool, String> {
-    let state = app.state::<crate::setup::DbState>();
+    let state = app.state::<crate::db_state::DbState>();
     let conn = get_db_conn(&state)?;
     let result = conversations::toggle_pin(&conn, &id)?;
 
@@ -231,7 +231,7 @@ pub fn toggle_conversation_pin(app: AppHandle, id: String) -> Result<bool, Strin
 
 #[command]
 pub fn duplicate_conversation(app: AppHandle, id: String) -> Result<String, String> {
-    let state = app.state::<crate::setup::DbState>();
+    let state = app.state::<crate::db_state::DbState>();
     let conn = get_db_conn(&state)?;
     let new_id =
         conversations::duplicate_conversation(&conn, &id).map_err(translate_storage_error)?;
@@ -251,7 +251,7 @@ pub fn batch_delete_conversations(app: AppHandle, ids: Vec<String>) -> Result<()
     if ids.is_empty() {
         return Ok(());
     }
-    let state = app.state::<crate::setup::DbState>();
+    let state = app.state::<crate::db_state::DbState>();
     let conn = get_db_conn(&state)?;
     let affected = ids.clone();
     conversations::batch_delete(&conn, &ids)?;
@@ -273,7 +273,7 @@ pub fn batch_delete_conversations(app: AppHandle, ids: Vec<String>) -> Result<()
 
 #[command]
 pub fn purge_conversations(app: AppHandle) -> Result<(), String> {
-    let state = app.state::<crate::setup::DbState>();
+    let state = app.state::<crate::db_state::DbState>();
     let conn = get_db_conn(&state)?;
     // 清空会删掉全部会话，故清理临时区前先取全量 id（删表后无从枚举）。
     let ids: Vec<String> = conversations::get_conversations(&conn, None)?

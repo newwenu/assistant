@@ -3,7 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { dispatchThemeChanged } from "../../settings/core/runtime/settingsDispatcher";
 import { dispatchConfPatch } from "../../settings/core/runtime/settingsDispatcher";
-import { fetchConf } from "../../settings/core/runtime/confRuntime";
+import { useSettingsStore } from "../settingsStore";
 import { createLogger } from "@/services/system/logger";
 import { UiEvent } from "@/types/events";
 import type {
@@ -19,10 +19,13 @@ interface ThemeState {
   resolved: ResolvedThemeDto;
   setMode: (mode: ThemeModeDto) => void;
   cycleMode: () => void;
-  init: () => Promise<void>;
+  initLocal: () => Promise<void>;
+  subscribe: () => Promise<void>;
 }
 
 const SYSTEM_THEME_CYCLE: ThemeModeDto[] = ["system", "light", "dark"];
+
+let subscribed = false;
 
 function resolveTheme(
   mode: ThemeModeDto,
@@ -53,16 +56,23 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
     get().setMode(next);
   },
 
-  init: async () => {
+  initLocal: async () => {
     try {
-      const conf = await fetchConf("app");
-      const mode = conf?.theme ?? "system";
+      const mode = useSettingsStore.getState().confs.app?.theme ?? "system";
       set({ mode });
-
-      const win = getCurrentWindow();
-      const systemTheme = (await win.theme()) ?? "light";
+      const systemTheme = (await getCurrentWindow().theme()) ?? "light";
       set({ resolved: resolveTheme(mode, systemTheme) });
+    } catch (e) {
+      log.warn("Theme init failed, using defaults", e);
+      set({ mode: "system", resolved: "light" });
+    }
+  },
 
+  subscribe: async () => {
+    if (subscribed) return;
+    subscribed = true;
+    try {
+      const win = getCurrentWindow();
       await win.onThemeChanged(({ payload }) => {
         if (get().mode === "system") {
           set({ resolved: resolveTheme("system", payload) });
@@ -76,8 +86,7 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
         },
       );
     } catch (e) {
-      log.warn("Theme init failed, using defaults", e);
-      set({ mode: "system", resolved: "light" });
+      log.warn("Theme subscription failed", e);
     }
   },
 }));

@@ -29,7 +29,7 @@ use assistant_tools::ToolResultStorage;
 use crate::app_dirs::AppDirs;
 use crate::cmd::storage::entries::{EntrySample, EntryView};
 use crate::cmd::storage::section::StorageSectionHandle;
-use crate::setup::DbState;
+use crate::db_state::DbState;
 
 pub use collect::{collect, collect_with};
 pub use stats::attachment_reason;

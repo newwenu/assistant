@@ -44,7 +44,7 @@ export function ClockMiniLayout({
         disabled={status === "running" || busy}
         disabledReason={
           status === "running"
-            ? translateKey("tools.clock.mode_switch_running")
+            ? translateKey("tools.timekeeper.mode_switch_running")
             : undefined
         }
         compact
@@ -66,7 +66,7 @@ export function ClockMiniLayout({
           type="error"
           showIcon
           className={styles.alert}
-          title={translateKey("tools.clock.error")}
+          title={translateKey("tools.timekeeper.error")}
           description={error}
         />
       )}
@@ -96,12 +96,12 @@ export function ClockMiniLayout({
               min={MIN_MINUTES}
               max={MAX_MINUTES}
               value={minutes}
-              aria-label={translateKey("tools.clock.custom_minutes")}
+              aria-label={translateKey("tools.timekeeper.custom_minutes")}
               onChange={onMinutesChange}
               style={{ width: 72 }}
             />
             <Typography.Text type="secondary" className={styles.unit}>
-              {translateKey("tools.clock.minutes")}
+              {translateKey("tools.timekeeper.minutes")}
             </Typography.Text>
             <Button
               type="primary"
@@ -109,7 +109,7 @@ export function ClockMiniLayout({
               disabled={busy}
               onClick={onStart}
             >
-              {translateKey("tools.clock.start")}
+              {translateKey("tools.timekeeper.start")}
             </Button>
           </div>
         </div>
@@ -123,7 +123,7 @@ export function ClockMiniLayout({
             </Button>
           ) : showStopwatchStart ? (
             <Button type="primary" disabled={busy} onClick={onStart}>
-              {translateKey("tools.clock.start")}
+              {translateKey("tools.timekeeper.start")}
             </Button>
           ) : null}
           <Button
@@ -131,7 +131,7 @@ export function ClockMiniLayout({
             disabled={busy || status === "idle"}
             onClick={onReset}
           >
-            {translateKey("tools.clock.reset")}
+            {translateKey("tools.timekeeper.reset")}
           </Button>
         </Space>
       )}

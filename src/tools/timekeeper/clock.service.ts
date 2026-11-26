@@ -1,28 +1,28 @@
 import { featureInvoke } from "@/services/featureIpc";
-import { clockModule } from "@/features/clock/module";
+import { timekeeperModule } from "@/features/timekeeper/module";
 import type { ClockModeDto, ClockSnapshotDto } from "@/types/protocol.contract";
 
-const invoke = featureInvoke(clockModule);
+const invoke = featureInvoke(timekeeperModule);
 
 export const clockService = {
   setMode: (mode: ClockModeDto): Promise<ClockSnapshotDto> =>
-    invoke<ClockSnapshotDto>("clock_set_mode", { mode }),
+    invoke<ClockSnapshotDto>("timekeeper_set_mode", { mode }),
 
   start: (durationMs?: number): Promise<ClockSnapshotDto> =>
     invoke<ClockSnapshotDto>(
-      "clock_start",
+      "timekeeper_start",
       durationMs === undefined ? {} : { durationMs },
     ),
 
   pause: (): Promise<ClockSnapshotDto> =>
-    invoke<ClockSnapshotDto>("clock_pause"),
+    invoke<ClockSnapshotDto>("timekeeper_pause"),
 
   resume: (): Promise<ClockSnapshotDto> =>
-    invoke<ClockSnapshotDto>("clock_resume"),
+    invoke<ClockSnapshotDto>("timekeeper_resume"),
 
   reset: (): Promise<ClockSnapshotDto> =>
-    invoke<ClockSnapshotDto>("clock_reset"),
+    invoke<ClockSnapshotDto>("timekeeper_reset"),
 
   snapshot: (): Promise<ClockSnapshotDto> =>
-    invoke<ClockSnapshotDto>("clock_snapshot"),
+    invoke<ClockSnapshotDto>("timekeeper_snapshot"),
 };

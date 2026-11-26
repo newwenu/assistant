@@ -3,12 +3,11 @@
 //! 明文只在这一层出现：加密/解密只在宿主侧完成，`assistant-tools` 不感知。
 //! 日志只写 server id 与失败原因，绝不写密文、明文 `args` / `env` 值。
 
-use std::sync::Arc;
 use std::time::Duration;
 
 use assistant_crypto::api_key as crypto;
 use assistant_storage::mcp_servers::{self, McpLaunchConfig, McpServerRow};
-use assistant_tools::mcp::{McpServerConfig, McpServerManager};
+use assistant_tools::mcp::McpServerConfig;
 use tauri::{AppHandle, Manager};
 
 /// `server_id` 同时进入模型工具名与授权键，因此只接受 slug（I38e §3.1 / §3.5）。
@@ -122,9 +121,16 @@ pub fn runtime_config(row: &McpServerRow) -> Result<McpServerConfig, String> {
 ///
 /// 每个 server 独立 task，失败只记日志、不阻塞应用启动；解密失败同样只记日志。
 pub fn start_enabled_servers(app: &AppHandle) {
-    let manager = app.state::<Arc<McpServerManager>>().inner().clone();
+    // 能力门禁：`tool_runtime` 未装配时不隐式装配，拉起留给下一次 `ensure`。
+    let manager = match crate::boot::mcp_manager(app) {
+        Ok(manager) => manager,
+        Err(e) => {
+            log::warn!("mcp startup skipped: {e}");
+            return;
+        }
+    };
     let rows = {
-        let state = app.state::<crate::setup::DbState>();
+        let state = app.state::<crate::db_state::DbState>();
         let loaded = match state.0.lock() {
             Ok(conn) => mcp_servers::list_enabled_servers(&conn),
             Err(e) => {

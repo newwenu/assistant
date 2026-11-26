@@ -9,12 +9,11 @@ use tauri::{AppHandle, Manager};
 use assistant_storage::attachment_store::{AttachmentEntry, AttachmentStore};
 use assistant_tools::ToolResultStorage;
 
-use crate::adapters::PipelineToolExecution;
 use crate::app_dirs::registry::CoreEntry;
 use crate::app_dirs::AppDirs;
 use crate::cmd::storage::section::{SectionRegistry, StorageSectionHandle};
+use crate::db_state::DbState;
 use crate::protocol::dto::StorageAvailabilityDto;
-use crate::setup::DbState;
 
 use super::super::entries::{set_sample, views, EntrySample};
 use super::rows::{
@@ -41,9 +40,9 @@ pub async fn collect(
         .try_state::<Arc<SectionRegistry>>()
         .map(|state| state.inner().snapshot())
         .unwrap_or_default();
-    let tool_results: Option<Arc<dyn ToolResultStorage>> = app
-        .try_state::<Arc<PipelineToolExecution>>()
-        .map(|state| state.storage().clone());
+    let tool_results: Option<Arc<dyn ToolResultStorage>> = crate::boot::tool_exec(app)
+        .ok()
+        .map(|exec| exec.storage().clone());
     let db: Option<DbState> = app
         .try_state::<DbState>()
         .map(|state| state.inner().clone());

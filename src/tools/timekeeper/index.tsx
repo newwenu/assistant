@@ -21,13 +21,13 @@ const DEFAULT_MINUTES = 25;
 function statusLabel(status: ClockSnapshotDto["status"]): string {
   switch (status) {
     case "running":
-      return translateKey("tools.clock.status_running");
+      return translateKey("tools.timekeeper.status_running");
     case "paused":
-      return translateKey("tools.clock.status_paused");
+      return translateKey("tools.timekeeper.status_paused");
     case "finished":
-      return translateKey("tools.clock.finished");
+      return translateKey("tools.timekeeper.finished");
     default:
-      return translateKey("tools.clock.status_idle");
+      return translateKey("tools.timekeeper.status_idle");
   }
 }
 
@@ -67,7 +67,7 @@ export default function Clock() {
   useEffect(() => {
     void refresh();
     const unlisten = listen<ClockSnapshotDto>(
-      UiEvent.ClockFinished,
+      UiEvent.TimekeeperFinished,
       ({ payload }) => {
         setSnapshot(payload);
         setNowMs(Date.now());
@@ -181,9 +181,9 @@ export default function Clock() {
   const isFinished = mode === "countdown" && status === "finished";
   const primaryLabel =
     status === "running"
-      ? translateKey("tools.clock.pause")
+      ? translateKey("tools.timekeeper.pause")
       : status === "paused"
-        ? translateKey("tools.clock.resume")
+        ? translateKey("tools.timekeeper.resume")
         : null;
 
   const viewProps: ClockViewProps = {

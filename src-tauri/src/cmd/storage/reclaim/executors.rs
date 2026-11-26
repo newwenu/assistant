@@ -7,11 +7,11 @@ use assistant_tools::{DeleteReport, ExpiredCandidate, ToolResultStorage};
 
 use crate::app_dirs::AppDirs;
 use crate::cmd::storage::section::{SectionError, StorageSectionHandle};
+use crate::db_state::DbState;
 use crate::protocol::dto::{
     ReclaimPolicyDto, StorageReclaimActionDto, StorageReclaimEntryResultDto,
     StorageReclaimErrorCodeDto, StorageReclaimStatusDto,
 };
-use crate::setup::DbState;
 
 use super::super::sample::attachment_reason;
 use super::report::{entry_result, error_dto, failure_errors, status_of, Totals};

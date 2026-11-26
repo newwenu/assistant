@@ -27,8 +27,8 @@ fn launch_config(dto: &McpLaunchInputDto) -> McpLaunchConfig {
     }
 }
 
-fn manager(app: &AppHandle) -> Arc<McpServerManager> {
-    app.state::<Arc<McpServerManager>>().inner().clone()
+fn manager(app: &AppHandle) -> Result<Arc<McpServerManager>, String> {
+    crate::boot::mcp_manager(app).map_err(|e| e.to_string())
 }
 
 /// 行 → DTO。解密失败不隐藏该行：`config_error` 非空即说明「必须重填配置才能启动」。
@@ -68,7 +68,7 @@ fn server_dto(row: &McpServerRow, snapshot: Option<McpServerSnapshot>) -> McpSer
 }
 
 fn load_rows(app: &AppHandle) -> Result<Vec<McpServerRow>, String> {
-    let state = app.state::<crate::setup::DbState>();
+    let state = app.state::<crate::db_state::DbState>();
     let conn = super::get_db_conn(&state)?;
     mcp_servers::list_servers(&conn)
 }
@@ -76,7 +76,7 @@ fn load_rows(app: &AppHandle) -> Result<Vec<McpServerRow>, String> {
 #[command]
 pub async fn list_mcp_servers(app: AppHandle) -> Result<Vec<McpServerDto>, String> {
     let rows = load_rows(&app)?;
-    let snapshots = manager(&app).snapshots().await;
+    let snapshots = manager(&app)?.snapshots().await;
     Ok(rows
         .iter()
         .map(|row| {
@@ -102,7 +102,7 @@ pub async fn create_mcp_server(
 
     let now = Utc::now().timestamp_millis();
     let row = {
-        let state = app.state::<crate::setup::DbState>();
+        let state = app.state::<crate::db_state::DbState>();
         let conn = super::get_db_conn(&state)?;
         let mut id = derive_server_id(&name);
         if !is_valid_server_id(&id) {
@@ -128,7 +128,7 @@ pub async fn create_mcp_server(
         mcp_servers::insert_server(&conn, &row)?;
         row
     };
-    Ok(server_dto(&row, manager(&app).snapshot(&row.id).await))
+    Ok(server_dto(&row, manager(&app)?.snapshot(&row.id).await))
 }
 
 /// 更新：`id` 只读；`launch` 缺省表示只改展示名（不重建配置、不换授权键）。
@@ -142,7 +142,7 @@ pub async fn update_mcp_server(
 ) -> Result<McpServerDto, String> {
     let now = Utc::now().timestamp_millis();
     let (row, launch_changed) = {
-        let state = app.state::<crate::setup::DbState>();
+        let state = app.state::<crate::db_state::DbState>();
         let conn = super::get_db_conn(&state)?;
         let mut row = mcp_servers::get_server(&conn, &input.id)?
             .ok_or_else(|| format!("mcp server '{}' not found", input.id))?;
@@ -166,7 +166,7 @@ pub async fn update_mcp_server(
         (row, input.launch.is_some())
     };
 
-    let manager = manager(&app);
+    let manager = manager(&app)?;
     if launch_changed && row.enabled {
         match runtime_config(&row) {
             Ok(config) => {
@@ -186,10 +186,10 @@ pub async fn update_mcp_server(
 /// 删除：先禁用（注销工具 + 杀进程）再删行，避免残留工具指向已消失的 server。
 #[command]
 pub async fn delete_mcp_server(app: AppHandle, id: String) -> Result<(), String> {
-    let manager = manager(&app);
+    let manager = manager(&app)?;
     manager.disable(&id).await;
     {
-        let state = app.state::<crate::setup::DbState>();
+        let state = app.state::<crate::db_state::DbState>();
         let conn = super::get_db_conn(&state)?;
         mcp_servers::delete_server(&conn, &id)?;
     }
@@ -207,7 +207,7 @@ pub async fn set_mcp_server_enabled(
 ) -> Result<McpServerDto, String> {
     let now = Utc::now().timestamp_millis();
     let row = {
-        let state = app.state::<crate::setup::DbState>();
+        let state = app.state::<crate::db_state::DbState>();
         let conn = super::get_db_conn(&state)?;
         if mcp_servers::get_server(&conn, &id)?.is_none() {
             return Err(format!("mcp server '{id}' not found"));
@@ -217,7 +217,7 @@ pub async fn set_mcp_server_enabled(
             .ok_or_else(|| format!("mcp server '{id}' not found"))?
     };
 
-    let manager = manager(&app);
+    let manager = manager(&app)?;
     if enabled {
         match runtime_config(&row) {
             Ok(config) => {

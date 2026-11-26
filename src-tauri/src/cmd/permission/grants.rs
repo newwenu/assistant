@@ -74,7 +74,7 @@ fn grant_scope_summary(key_json: &str) -> String {
 
 #[command]
 pub fn list_permission_grants(app: AppHandle) -> Result<Vec<PermissionGrantDto>, String> {
-    let state = app.state::<crate::setup::DbState>();
+    let state = app.state::<crate::db_state::DbState>();
     let conn = super::super::get_db_conn(&state)?;
     let mut stmt = conn
         .prepare(
@@ -112,7 +112,7 @@ pub fn list_permission_grants(app: AppHandle) -> Result<Vec<PermissionGrantDto>,
 /// 单条撤销。返回 `false` 表示该行已不存在（并发撤销 / 已被全部清除）。
 #[command]
 pub fn revoke_permission_grant(app: AppHandle, grant_key: String) -> Result<bool, String> {
-    let state = app.state::<crate::setup::DbState>();
+    let state = app.state::<crate::db_state::DbState>();
     let conn = super::super::get_db_conn(&state)?;
     revoke_grant_row(&conn, &grant_key)
 }
@@ -147,7 +147,7 @@ pub fn set_permission_grant_scope(
     app: AppHandle,
     args: SetGrantScopeArgsDto,
 ) -> Result<bool, String> {
-    let state = app.state::<crate::setup::DbState>();
+    let state = app.state::<crate::db_state::DbState>();
     let conn = super::super::get_db_conn(&state)?;
     move_grant_scope(&conn, &args)
 }
@@ -224,7 +224,7 @@ fn move_grant_scope(conn: &Connection, args: &SetGrantScopeArgsDto) -> Result<bo
 
 #[command]
 pub fn clear_permission_grants(app: AppHandle) -> Result<(), String> {
-    let state = app.state::<crate::setup::DbState>();
+    let state = app.state::<crate::db_state::DbState>();
     let conn = super::super::get_db_conn(&state)?;
     clear_grant_rows(&conn)
 }

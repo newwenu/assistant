@@ -9,13 +9,12 @@ use std::sync::Arc;
 
 use tauri::{command, AppHandle, Manager};
 
-use crate::adapters::PipelineToolExecution;
+use crate::db_state::DbState;
 use crate::protocol::dto::{
     AttachmentDeleteResultDto, StorageBreakdownDto, StorageInventorySnapshotStatusDto,
     StorageReclaimPlanDto, StorageReclaimPlanRequestDto, StorageReclaimRequestDto,
     StorageReclaimResultDto,
 };
-use crate::setup::DbState;
 use assistant_storage::attachment_store::{self, AttachmentStore};
 use assistant_tools::ToolResultStorage;
 
@@ -93,9 +92,9 @@ impl ReclaimContext {
             .try_state::<Arc<SectionRegistry>>()
             .map(|state| state.inner().snapshot())
             .unwrap_or_default();
-        let tool_results: Option<Arc<dyn ToolResultStorage>> = app
-            .try_state::<Arc<PipelineToolExecution>>()
-            .map(|state| state.storage().clone());
+        let tool_results: Option<Arc<dyn ToolResultStorage>> = crate::boot::tool_exec(app)
+            .ok()
+            .map(|exec| exec.storage().clone());
         let db = app
             .try_state::<DbState>()
             .map(|state| state.inner().clone());
@@ -158,7 +157,7 @@ pub async fn delete_attachments(
     let attachment_store = app.state::<AttachmentStore>().inner().clone();
 
     let (removed_count, removed_bytes) = {
-        let state = app.state::<crate::setup::DbState>();
+        let state = app.state::<crate::db_state::DbState>();
         let conn = super::get_db_conn(&state)?;
         let mut removed_count: u64 = 0;
         let mut removed_bytes: u64 = 0;

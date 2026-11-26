@@ -20,7 +20,7 @@ pub fn create_branch(
     new_content: String,
     seq: Option<u32>,
 ) -> Result<MessageDto, String> {
-    let state = app.state::<crate::setup::DbState>();
+    let state = app.state::<crate::db_state::DbState>();
     let conn = get_db_conn(&state)?;
 
     let new_msg = conversations::create_branch(
@@ -60,7 +60,7 @@ pub fn switch_branch(
     target_message_id: String,
     seq: Option<u32>,
 ) -> Result<(), String> {
-    let state = app.state::<crate::setup::DbState>();
+    let state = app.state::<crate::db_state::DbState>();
     let conn = get_db_conn(&state)?;
 
     conversations::switch_branch(&conn, &conversation_id, &target_message_id)?;
@@ -92,7 +92,7 @@ pub fn get_message_siblings(
     app: AppHandle,
     message_id: String,
 ) -> Result<Vec<SiblingInfoDto>, String> {
-    let state = app.state::<crate::setup::DbState>();
+    let state = app.state::<crate::db_state::DbState>();
     let conn = get_db_conn(&state)?;
 
     let siblings = conversations::get_message_siblings(&conn, &message_id)?;
@@ -101,7 +101,7 @@ pub fn get_message_siblings(
 
 #[command]
 pub fn increment_generation(app: AppHandle, id: String) -> Result<i64, String> {
-    let state = app.state::<crate::setup::DbState>();
+    let state = app.state::<crate::db_state::DbState>();
     let conn = get_db_conn(&state)?;
     conversations::increment_generation(&conn, &id)
 }
@@ -112,7 +112,7 @@ pub fn fork_to_new_conversation(
     source_conversation_id: String,
     branch_leaf_message_id: String,
 ) -> Result<String, String> {
-    let state = app.state::<crate::setup::DbState>();
+    let state = app.state::<crate::db_state::DbState>();
     let conn = get_db_conn(&state)?;
 
     let new_conv_id = conversations::fork_to_new_conversation(

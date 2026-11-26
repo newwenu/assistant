@@ -52,7 +52,7 @@ pub async fn list_workspaces(app: AppHandle) -> Result<Vec<WorkspaceDto>, String
 }
 
 fn list_workspaces_blocking(app: &AppHandle) -> Result<Vec<WorkspaceDto>, String> {
-    let state = app.state::<crate::setup::DbState>();
+    let state = app.state::<crate::db_state::DbState>();
     // 先取快照并释放连接锁：探测最多等 500ms，不能把 DB 锁一起占住。
     let entries = {
         let conn = super::get_db_conn(&state)?;
@@ -120,7 +120,7 @@ fn register_workspace_blocking(
 ) -> Result<WorkspaceDto, String> {
     let canonical = crate::tool_setup::validate_workspace_root(path)
         .ok_or_else(|| assistant_i18n::t("error.workspace_invalid"))?;
-    let state = app.state::<crate::setup::DbState>();
+    let state = app.state::<crate::db_state::DbState>();
     let conn = super::get_db_conn(&state)?;
     let entry = assistant_storage::workspaces::upsert(&conn, &canonical, name)?;
     Ok(WorkspaceDto {
@@ -134,7 +134,7 @@ fn register_workspace_blocking(
 #[command]
 pub async fn forget_workspace(app: AppHandle, path: String) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let state = app.state::<crate::setup::DbState>();
+        let state = app.state::<crate::db_state::DbState>();
         let conn = super::get_db_conn(&state)?;
         assistant_storage::workspaces::forget(&conn, &path)
     })
@@ -154,7 +154,7 @@ pub async fn forget_workspace(app: AppHandle, path: String) -> Result<(), String
 #[command]
 pub async fn open_workspace_dir(app: AppHandle, conversation_id: String) -> Result<bool, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let state = app.state::<crate::setup::DbState>();
+        let state = app.state::<crate::db_state::DbState>();
         let conn = super::get_db_conn(&state)?;
         let Some(root) = crate::tool_setup::resolve_workspace(&conn, &conversation_id) else {
             return Ok(false);

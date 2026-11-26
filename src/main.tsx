@@ -10,17 +10,21 @@ import { useLocaleStore } from "@/stores/system/localeStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useTheme } from "@/hooks/useTheme";
 import { lightTheme, darkTheme } from "@/assets/styles/theme";
-import { WINDOW_ORB } from "@/config/constants";
+import { WINDOW_MAIN, WINDOW_ORB } from "@/config/constants";
 import { subscribeSettingEvents } from "@/services/settingEvents";
+import { subscribeStartupCapabilities } from "@/stores/system/startupStore";
 import { initSettingSystem } from "@/settings/core/registry/initSettingSystem";
 import { bootstrapLogger } from "@/services/system/logger";
 import { registerGlobalErrorHandlers } from "@/services/system/globalErrorHandler";
 import { registerPageZoomGuard } from "@/services/system/pageZoomGuard";
 import { AppErrorBoundary } from "@/components/AppErrorBoundary";
-import { applyLocaleChange } from "@/i18n/localeApplier";
 import { loadFeatures } from "@/features/registry";
-import { getConfGroups } from "@/settings/core/runtime/confRuntime";
-import { getConfValue } from "@/settings/core/runtime/useConfGroup";
+import { tauriInvoke } from "@/services/system/tauriInvoke";
+import {
+  WINDOW_CONF_REQUIREMENTS,
+  WINDOW_LABELS,
+  type WindowLabel,
+} from "@/settings/core/runtime/windowRequirements.generated";
 import "@/i18n";
 import App from "./App";
 import "./assets/styles/fonts.css";
@@ -35,6 +39,10 @@ const ANTD_LOCALE_MAP: Record<string, typeof zhCNAntd> = {
   "en-US": enUSAntd,
 };
 
+function isWindowLabel(value: string): value is WindowLabel {
+  return (WINDOW_LABELS as readonly string[]).includes(value);
+}
+
 initSettingSystem();
 
 bootstrapLogger();
@@ -42,14 +50,14 @@ registerGlobalErrorHandlers();
 registerPageZoomGuard();
 
 async function bootstrap(): Promise<void> {
-  await loadFeatures();
-  const store = useSettingsStore.getState();
-  for (const group of getConfGroups()) {
-    await store.loadConf(group);
+  const label = getCurrentWebview().label;
+  const groups = isWindowLabel(label)
+    ? WINDOW_CONF_REQUIREMENTS[label]
+    : WINDOW_CONF_REQUIREMENTS.main;
+  for (const group of groups) {
+    await useSettingsStore.getState().loadConf(group);
   }
-
-  const lang = getConfValue("app")?.language ?? "zh-CN";
-  await applyLocaleChange(lang);
+  await useThemeStore.getState().initLocal();
 }
 
 const ThemedApp: React.FC = () => {
@@ -68,6 +76,8 @@ const ThemedApp: React.FC = () => {
     const cleanup = subscribeSettingEvents();
     return cleanup;
   }, []);
+
+  React.useEffect(() => subscribeStartupCapabilities(), []);
 
   if (isOrb) {
     return (
@@ -88,6 +98,15 @@ const ThemedApp: React.FC = () => {
   );
 };
 
+function reportFirstFrame(): void {
+  const startupId = window.__STARTUP_ID__;
+  if (!startupId) return;
+  const frameEpochMs = Math.round(performance.timeOrigin + performance.now());
+  tauriInvoke("report_first_frame", { startupId, frameEpochMs }).catch(
+    () => undefined,
+  );
+}
+
 void bootstrap().then(() => {
   ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     <React.StrictMode>
@@ -96,4 +115,8 @@ void bootstrap().then(() => {
       </AppErrorBoundary>
     </React.StrictMode>,
   );
+  requestAnimationFrame(reportFirstFrame);
+  if (getCurrentWebview().label === WINDOW_MAIN) {
+    void loadFeatures();
+  }
 });

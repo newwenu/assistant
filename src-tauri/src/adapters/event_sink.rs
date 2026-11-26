@@ -87,7 +87,7 @@ impl TauriEventSink {
     /// `change_kind` 由调用方给出：chat / agent 用 `StreamFinished`，
     /// 压缩成功用 `MessagesCompacted`（前端据此决定是否刷新 token 用量）。
     pub(crate) fn emit_stream_finished(&self, change_kind: MessageChangeKindDto) {
-        let state = self.app.state::<crate::setup::DbState>();
+        let state = self.app.state::<crate::db_state::DbState>();
         let conn = match crate::cmd::get_db_conn(&state) {
             Ok(conn) => conn,
             Err(err) => {

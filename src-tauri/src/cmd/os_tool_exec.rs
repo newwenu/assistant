@@ -1,17 +1,16 @@
 use crate::protocol::{OsToolExecRequestDto, OsToolResultDto};
-use assistant_tools::{
-    invoke, AuditEntry, PermissionAuditStore, ToolRegistry, ToolUseContext, DEFAULT_TOOL_TIMEOUT,
-};
+use assistant_tools::{invoke, AuditEntry, ToolUseContext, DEFAULT_TOOL_TIMEOUT};
 use serde_json::Value;
-use std::sync::Arc;
-use tauri::State;
+use tauri::AppHandle;
 
 #[tauri::command]
 pub async fn os_tool_exec(
-    registry: State<'_, Arc<ToolRegistry>>,
-    audit: State<'_, Arc<dyn PermissionAuditStore>>,
+    app: AppHandle,
     request: OsToolExecRequestDto,
 ) -> Result<OsToolResultDto, String> {
+    // 能力门禁（C3 / C6）：一律经 `access::*` 取用，未就绪返回可判定错误而非 panic。
+    let registry = crate::boot::tools(&app).map_err(|e| e.to_string())?;
+    let audit = crate::boot::permission_audit(&app).map_err(|e| e.to_string())?;
     let registered = registry
         .find_for_toolbox(&request.tool)
         .ok_or_else(|| format!("tool '{}' not found in registry", request.tool))?;

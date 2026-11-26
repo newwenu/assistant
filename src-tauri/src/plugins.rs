@@ -2,7 +2,12 @@
 
 use tauri_plugin_log::{RotationStrategy, Target, TargetKind, TimezoneStrategy};
 
-pub fn attach(mut builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
+use crate::app_dirs::AppDirs;
+
+pub fn attach(
+    mut builder: tauri::Builder<tauri::Wry>,
+    dirs: &AppDirs,
+) -> tauri::Builder<tauri::Wry> {
     builder = builder
         // 可选功能分区的通用接收槽在 `Builder` 阶段建好：插件 `setup` 早于 app `setup`，
         // 分区注册时槽必须已存在（G18(b)）。关闭特性时槽仍存在、只是没人注册。
@@ -17,7 +22,7 @@ pub fn attach(mut builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             crate::window::show_or_create_main(app);
         }))
-        .plugin(log_plugin())
+        .plugin(log_plugin(dirs))
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
@@ -32,7 +37,7 @@ pub fn attach(mut builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::
 /// 日志插件配置
 ///
 /// 档位由 `debug_assertions` 决定，不读配置：日志配置错误会让排障链本身失效。
-fn log_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
+fn log_plugin(dirs: &AppDirs) -> tauri::plugin::TauriPlugin<tauri::Wry> {
     let is_dev = cfg!(debug_assertions);
 
     let mut builder = tauri_plugin_log::Builder::new()
@@ -62,16 +67,11 @@ fn log_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
     }
 
     let file_name = if is_dev { "assistant-dev" } else { "assistant" };
-    match crate::app_dirs::AppDirs::resolve() {
-        // 日志与崩溃同根（local 根），显式给出目录，不用插件的 LogDir 默认落点。
-        Ok(dirs) => builder.target(Target::new(TargetKind::Folder {
+    // 日志与崩溃同根（local 根），显式给出目录，不用插件的 LogDir 默认落点。
+    builder
+        .target(Target::new(TargetKind::Folder {
             path: dirs.logs(),
             file_name: Some(file_name.into()),
-        })),
-        Err(e) => {
-            eprintln!("file logging disabled: {}", e);
-            builder
-        }
-    }
-    .build()
+        }))
+        .build()
 }

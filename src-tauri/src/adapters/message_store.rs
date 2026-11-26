@@ -20,7 +20,7 @@ impl DbMessageStore {
         &self,
         f: impl FnOnce(&rusqlite::Connection) -> Result<T, String>,
     ) -> Result<T, StoreError> {
-        let state = self.app.state::<crate::setup::DbState>();
+        let state = self.app.state::<crate::db_state::DbState>();
         let conn = state
             .0
             .lock()

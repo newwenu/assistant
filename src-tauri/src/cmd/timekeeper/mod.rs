@@ -10,7 +10,7 @@ use assistant_protocol::{ClockModeDto, ClockSnapshotDto, Millis};
 use ticker::spawn_ticker;
 
 #[command]
-pub fn clock_set_mode(
+pub fn timekeeper_set_mode(
     rt: State<'_, Arc<ClockRuntime>>,
     mode: ClockModeDto,
 ) -> Result<ClockSnapshotDto, String> {
@@ -18,7 +18,7 @@ pub fn clock_set_mode(
 }
 
 #[command]
-pub fn clock_start(
+pub fn timekeeper_start(
     app: AppHandle,
     rt: State<'_, Arc<ClockRuntime>>,
     duration_ms: Option<Millis>,
@@ -31,12 +31,12 @@ pub fn clock_start(
 }
 
 #[command]
-pub fn clock_pause(rt: State<'_, Arc<ClockRuntime>>) -> Result<ClockSnapshotDto, String> {
+pub fn timekeeper_pause(rt: State<'_, Arc<ClockRuntime>>) -> Result<ClockSnapshotDto, String> {
     Ok(rt.pause(now_ms()).into())
 }
 
 #[command]
-pub fn clock_resume(
+pub fn timekeeper_resume(
     app: AppHandle,
     rt: State<'_, Arc<ClockRuntime>>,
 ) -> Result<ClockSnapshotDto, String> {
@@ -48,11 +48,11 @@ pub fn clock_resume(
 }
 
 #[command]
-pub fn clock_reset(rt: State<'_, Arc<ClockRuntime>>) -> Result<ClockSnapshotDto, String> {
+pub fn timekeeper_reset(rt: State<'_, Arc<ClockRuntime>>) -> Result<ClockSnapshotDto, String> {
     Ok(rt.reset().into())
 }
 
 #[command]
-pub fn clock_snapshot(rt: State<'_, Arc<ClockRuntime>>) -> Result<ClockSnapshotDto, String> {
+pub fn timekeeper_snapshot(rt: State<'_, Arc<ClockRuntime>>) -> Result<ClockSnapshotDto, String> {
     Ok(rt.snapshot(now_ms()).into())
 }

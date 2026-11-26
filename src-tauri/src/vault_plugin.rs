@@ -366,7 +366,8 @@ mod mounted {
             .build()
     }
 
-    pub(crate) fn on_setup(app: &tauri::AppHandle) -> Result<(), String> {
+    pub(crate) fn on_setup(ctx: &crate::boot::StartupCtx<'_>) -> Result<(), String> {
+        let app = ctx.app;
         match assistant_vault::conf::VaultConf::load() {
             Ok(_) => {}
             Err(e) => {
@@ -375,13 +376,20 @@ mod mounted {
                 log::error!("Failed to init vault config: {}", e);
             }
         }
-        register_storage_section(app);
+        let dirs = match ctx.dirs() {
+            Ok(dirs) => dirs,
+            Err(error) => {
+                log::error!("dirs 未就绪，安全域分区未注册: {}", error);
+                return Ok(());
+            }
+        };
+        register_storage_section(app, &dirs);
         Ok(())
     }
 
     /// 分区自注册（§3.10）：任一前置取不到都只记日志、不注册分区，
     /// 该分区条目随之整体消失（§7.1「未挂载 = 行不存在」），绝不 panic。
-    fn register_storage_section(app: &tauri::AppHandle) {
+    fn register_storage_section(app: &tauri::AppHandle, dirs: &AppDirs) {
         let Some(registry) = app
             .try_state::<std::sync::Arc<SectionRegistry>>()
             .map(|state| state.inner().clone())
@@ -396,18 +404,11 @@ mod mounted {
             log::error!("SecurityDbState 不存在，安全域分区未注册");
             return;
         };
-        let dirs = match AppDirs::resolve() {
-            Ok(dirs) => dirs,
-            Err(error) => {
-                log::error!("AppDirs 解析失败，安全域分区未注册: {}", error);
-                return;
-            }
-        };
         let section = std::sync::Arc::new(SecuritySection::new(
             state,
-            vault::repo_dir(&dirs),
-            vault::recovery_dir(&dirs),
-            vault::security_dir(&dirs).join(<VaultConf as ConfGroup>::FILE_NAME),
+            vault::repo_dir(dirs),
+            vault::recovery_dir(dirs),
+            vault::security_dir(dirs).join(<VaultConf as ConfGroup>::FILE_NAME),
         ));
         if let Err(error) = registry.register(section) {
             log::error!("安全域分区注册失败: {}", error);
@@ -506,7 +507,7 @@ mod mounted {
         tauri::plugin::Builder::<tauri::Wry>::new("vault").build()
     }
 
-    pub(crate) fn on_setup(_app: &tauri::AppHandle) -> Result<(), String> {
+    pub(crate) fn on_setup(_ctx: &crate::boot::StartupCtx<'_>) -> Result<(), String> {
         Ok(())
     }
 

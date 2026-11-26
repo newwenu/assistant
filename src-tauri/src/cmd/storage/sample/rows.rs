@@ -8,8 +8,8 @@ use assistant_storage::attachment_store::AttachmentEntry;
 use assistant_tools::os::index_stats;
 use assistant_tools::ToolResultStorage;
 
+use crate::db_state::DbState;
 use crate::protocol::dto::StorageAvailabilityDto;
-use crate::setup::DbState;
 
 use super::super::entries::EntrySample;
 use super::policy::config_policy;

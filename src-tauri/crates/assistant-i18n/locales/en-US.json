@@ -39,7 +39,7 @@
     "title_main": "Assistant",
     "unknown_label": "Unknown window label: %{label}"
   },
-  "clock": {
+  "timekeeper": {
     "notification_title": "Timer finished",
     "notification_body": "Your countdown has completed."
   },

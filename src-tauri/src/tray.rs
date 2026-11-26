@@ -9,8 +9,19 @@ use tauri::{
 
 use crate::protocol::events::{emit_broadcast, event_name};
 
-use crate::window;
-use assistant_config::constant::{WINDOW_MAIN, WINDOW_ORB};
+use crate::{cmd, window};
+use assistant_config::constant::WINDOW_ORB;
+
+fn show_orb_window(app: &AppHandle) {
+    match crate::boot::dirs(app) {
+        Ok(dirs) => {
+            if let Err(e) = window::show_or_create(app, WINDOW_ORB, &dirs) {
+                log::warn!("tray show_orb: show window {} failed: {e}", WINDOW_ORB);
+            }
+        }
+        Err(e) => log::warn!("tray show_orb: dirs not ready: {e}"),
+    }
+}
 
 pub fn create_tray(app: &AppHandle) -> TrayIcon {
     let new_chat = MenuItem::with_id(
@@ -107,14 +118,10 @@ pub fn create_tray(app: &AppHandle) -> TrayIcon {
                 emit_broadcast(app, event_name::ORB_NEW_CONVERSATION, ());
             }
             "show_main" => {
-                if let Err(e) = window::show_or_create(app, WINDOW_MAIN) {
-                    log::warn!("tray show_main: show window {} failed: {e}", WINDOW_MAIN);
-                }
+                window::show_or_create_main(app);
             }
             "show_orb" => {
-                if let Err(e) = window::show_or_create(app, WINDOW_ORB) {
-                    log::warn!("tray show_orb: show window {} failed: {e}", WINDOW_ORB);
-                }
+                show_orb_window(app);
             }
             "screenshot" => {
                 // 与 Orb 右键菜单同一时序问题：点中菜单项后系统会播放关闭淡出，
@@ -128,31 +135,13 @@ pub fn create_tray(app: &AppHandle) -> TrayIcon {
                 });
             }
             "settings_general" => {
-                if let Err(e) = window::show_or_create(app, WINDOW_MAIN) {
-                    log::warn!(
-                        "tray settings_general: show window {} failed: {e}",
-                        WINDOW_MAIN
-                    );
-                }
-                emit_broadcast(app, event_name::NAVIGATE, "/settings/general");
+                cmd::show_main_and_navigate_sync(app, "/settings/general");
             }
             "settings_appearance" => {
-                if let Err(e) = window::show_or_create(app, WINDOW_MAIN) {
-                    log::warn!(
-                        "tray settings_appearance: show window {} failed: {e}",
-                        WINDOW_MAIN
-                    );
-                }
-                emit_broadcast(app, event_name::NAVIGATE, "/settings/appearance");
+                cmd::show_main_and_navigate_sync(app, "/settings/appearance");
             }
             "settings_shortcuts" => {
-                if let Err(e) = window::show_or_create(app, WINDOW_MAIN) {
-                    log::warn!(
-                        "tray settings_shortcuts: show window {} failed: {e}",
-                        WINDOW_MAIN
-                    );
-                }
-                emit_broadcast(app, event_name::NAVIGATE, "/settings/shortcuts");
+                cmd::show_main_and_navigate_sync(app, "/settings/shortcuts");
             }
             "quit" => {
                 crate::cmd::perform_exit(app);
@@ -166,9 +155,7 @@ pub fn create_tray(app: &AppHandle) -> TrayIcon {
                 ..
             } = event
             {
-                if let Err(e) = window::show_or_create(tray.app_handle(), WINDOW_MAIN) {
-                    log::warn!("tray icon click: show window {} failed: {e}", WINDOW_MAIN);
-                }
+                window::show_or_create_main(tray.app_handle());
             }
         })
         .build(app)

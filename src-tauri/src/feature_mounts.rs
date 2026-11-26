@@ -2,7 +2,7 @@ use tauri::plugin::TauriPlugin;
 use tauri::{AppHandle, Wry};
 
 pub(crate) type PluginFactory = fn() -> TauriPlugin<Wry>;
-pub(crate) type SetupHook = fn(&AppHandle) -> Result<(), String>;
+pub(crate) type SetupHook = fn(&crate::boot::StartupCtx<'_>) -> Result<(), String>;
 pub(crate) type ExitHook = fn(&AppHandle);
 
 pub(crate) struct FeatureMount {
@@ -20,10 +20,10 @@ const MOUNTS: &[FeatureMount] = &[
         on_exit: crate::vault_plugin::on_exit,
     },
     FeatureMount {
-        id: "clock",
-        plugin: crate::clock_plugin::init,
-        on_setup: crate::clock_plugin::on_setup,
-        on_exit: crate::clock_plugin::on_exit,
+        id: "timekeeper",
+        plugin: crate::timekeeper_plugin::init,
+        on_setup: crate::timekeeper_plugin::on_setup,
+        on_exit: crate::timekeeper_plugin::on_exit,
     },
 ];
 

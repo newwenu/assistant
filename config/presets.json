@@ -1,6 +1,6 @@
 {
-  "full": { "features": ["vault", "clock"] },
+  "full": { "features": ["vault", "timekeeper"] },
   "slim": { "features": [] },
   "vault-only": { "features": ["vault"] },
-  "clock-only": { "features": ["clock"] }
+  "timekeeper-only": { "features": ["timekeeper"] }
 }

@@ -33,12 +33,12 @@ export function ClockModeSwitch({
         options={[
           {
             value: "countdown",
-            label: translateKey("tools.clock.mode_countdown"),
+            label: translateKey("tools.timekeeper.mode_countdown"),
             disabled,
           },
           {
             value: "stopwatch",
-            label: translateKey("tools.clock.mode_stopwatch"),
+            label: translateKey("tools.timekeeper.mode_stopwatch"),
             disabled,
           },
         ]}

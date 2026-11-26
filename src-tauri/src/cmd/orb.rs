@@ -35,7 +35,8 @@ pub fn get_mouse_position() -> Option<MousePositionDto> {
 
 #[command]
 pub fn toggle_orb_visibility(app: AppHandle) -> Result<(), String> {
-    crate::window::toggle(&app, WINDOW_ORB)
+    let dirs = crate::boot::dirs(&app).map_err(|e| e.to_string())?;
+    crate::window::toggle(&app, WINDOW_ORB, &dirs)
 }
 
 #[command]

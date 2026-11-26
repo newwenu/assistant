@@ -24,6 +24,7 @@ import {
 } from "../../screenshot/session";
 import type { ConversationFrameProps } from "./layoutProps";
 import { WorkspaceSelector } from "../selectors/WorkspaceSelector";
+import { StartupReadinessNotice } from "../tool/StartupReadinessNotice";
 import {
   ToolRegionNotice,
   ToolRegionPanel,
@@ -191,6 +192,7 @@ export function ConversationFrame(props: ConversationFrameProps) {
         />
       )}
       {agentProps ? <ToolRegionNotice view={agentProps.toolRegion} /> : null}
+      {agentProps ? <StartupReadinessNotice /> : null}
       <AttachmentPreviewBar />
       {agentProps ? <ToolRegionPanel view={agentProps.toolRegion} /> : null}
       <div className="chat-tool-bar">

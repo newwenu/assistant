@@ -190,7 +190,7 @@ pub fn list_permission_audit(
     until: Option<i64>,
     offset: Option<i64>,
 ) -> Result<PermissionAuditPageDto, String> {
-    let state = app.state::<crate::setup::DbState>();
+    let state = app.state::<crate::db_state::DbState>();
     let conn = super::super::get_db_conn(&state)?;
     query_permission_audit(
         &conn,

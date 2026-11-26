@@ -39,7 +39,7 @@ fn mask_api_key_encrypted(encrypted: &str) -> String {
 
 #[command]
 pub fn list_providers(app: AppHandle) -> Result<Vec<ProviderListDto>, String> {
-    let state = app.state::<crate::setup::DbState>();
+    let state = app.state::<crate::db_state::DbState>();
     let conn = super::get_db_conn(&state)?;
     let rows = provider_store::get_providers(&conn)?;
     let masked: Vec<ProviderListDto> = rows
@@ -84,7 +84,7 @@ pub fn save_provider(app: AppHandle, provider: ProviderInputDto) -> Result<(), S
     let machine_id = crypto::get_machine_id()?;
     let now = Utc::now().timestamp_millis();
 
-    let state = app.state::<crate::setup::DbState>();
+    let state = app.state::<crate::db_state::DbState>();
     let conn = super::get_db_conn(&state)?;
 
     if id.is_empty() {
@@ -138,7 +138,7 @@ pub fn save_provider(app: AppHandle, provider: ProviderInputDto) -> Result<(), S
 
 #[command]
 pub fn delete_provider(app: AppHandle, id: String) -> Result<(), String> {
-    let state = app.state::<crate::setup::DbState>();
+    let state = app.state::<crate::db_state::DbState>();
     let conn = super::get_db_conn(&state)?;
     provider_store::delete_provider(&conn, &id)?;
     emit_broadcast(
@@ -210,7 +210,7 @@ fn model_config_dto(m: base::ModelConfig) -> ModelConfigDto {
 
 #[command]
 pub fn list_models_cmd(app: AppHandle, provider_id: String) -> Result<Vec<ModelConfigDto>, String> {
-    let state = app.state::<crate::setup::DbState>();
+    let state = app.state::<crate::db_state::DbState>();
     let conn = super::get_db_conn(&state)?;
     let row = provider_store::get_provider_by_id(&conn, &provider_id)?
         .ok_or_else(|| "Provider not found".to_string())?;

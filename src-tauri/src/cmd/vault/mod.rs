@@ -344,7 +344,9 @@ pub fn vault_setup(handle: &AppHandle) -> Result<(), Box<dyn std::error::Error>>
     handle.manage(SshAgentState {
         added_fingerprints: std::sync::Mutex::new(std::collections::HashSet::new()),
     });
-    log::info!("SecurityDbState + RevealGuard + ClipboardGuard + SshAgentState initialized");
+    // 特性 `on_setup` 跑在 `run_boot` 之前，没有阶段行覆盖这一段，故保留 `debug`：
+    // dev 档可见、release 档静默，失败另有 `warn`。
+    log::debug!("SecurityDbState + RevealGuard + ClipboardGuard + SshAgentState initialized");
 
     let vault_dir = repo_dir(&dirs);
     let sync_config = VaultConf::load()
@@ -363,7 +365,7 @@ pub fn vault_setup(handle: &AppHandle) -> Result<(), Box<dyn std::error::Error>>
     let repo = Arc::new(VaultFileManager::new(vault_dir, Box::new(cipher_algo)));
     handle.manage(VaultRepo(repo.clone()));
     handle.manage(SyncEngine::new_with_repo(repo, sync_config));
-    log::info!("VaultRepo + SyncEngine initialized");
+    log::debug!("VaultRepo + SyncEngine initialized");
 
     spawn_screen_lock_watcher(handle);
     Ok(())
@@ -416,7 +418,7 @@ fn spawn_screen_lock_watcher(handle: &AppHandle) {
     };
     monitor.spawn_listener(on_lock, on_unlock);
     handle.manage(monitor);
-    log::info!("ScreenLockMonitor initialized");
+    log::debug!("ScreenLockMonitor initialized");
 }
 
 /// 退出路径：先锁库（写 `app_exit` 审计并清零密钥），再清剪贴板 / SSH / 揭示态。
