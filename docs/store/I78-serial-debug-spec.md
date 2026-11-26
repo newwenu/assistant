@@ -36,7 +36,7 @@
 | 0.13 | 工具分类 | `dev`；`keywords` 钉死为 `["serial","uart","baud","com-port","串口"]` | `classifyKeywords` 是「keywords 与各类签名词表**精确匹配**、取最高分，全零则落首类 dev」——dev 签名表内并无上述四个词，分类结论靠兜底成立。**禁止加入 `hex`/`encode`/`decode`/`bit`/`binary`/`time`/`timestamp`**：这些是 converter 签名，一加就使 converter 得分 > 0，工具被分到 converter，`src/tools/__tests__/categories.test.ts` 立即断言失败 |
 | 0.14 | 页面形态 | `widthMode: "full"`，上下分栏（上接收、下发送） | 收发需同时可见 |
 | 0.15 | 打开后初始信号线 | 打开成功默认置 `dtr = true`、`rts` 不动 | 部分 USB 转串口设备不拉 DTR 不出数据，避免"打开了没反应"的首因误解（OQ6） |
-| 0.16 | 持久化 | v1 无后端配置组；端口/波特率/编码/行尾/时间戳开关由前端 `localStorage` 记住上次值 | 后端零 conf 组即零 DTO 同步成本；前端本地记忆不产生 wire 契约，也不违反「无后端配置组」。跨设备/跨安装同步见 §10 |
+| 0.16 | 持久化 | v1 无后端配置组；端口/波特率/编码/行尾/时间戳开关/发送模式/接收视图由前端 `localStorage` 记住上次值 | 后端零 conf 组即零 DTO 同步成本；前端本地记忆不产生 wire 契约，也不违反「无后端配置组」。跨设备/跨安装同步见 §10 |
 | 0.17 | 插件 ACL 名 | 插件名与 capability 权限前缀用 `serial-debug`；特性 id、模块路径、文件名仍用 `serial_debug` | `tauri-utils` 的 ACL `Identifier` 只允许小写 ASCII 与连字符，含下划线直接报 `invalid plugin or permission identifier 'serial_debug:default'`。`build.rs` 把插件文件名里的 `_` 统一转 `-` 后交给 `tauri_build::Attributes::plugin()`，运行时 `plugin::Builder::new()` 与 `capabilities/*.json` 必须用同一个连字符名，三者错一个就启动即失败 |
 
 ---
@@ -274,7 +274,7 @@ rAF(16 ms) → 合并队列 → 生成行对象 → setState 一次
 - 循环发送：`setInterval(intervalMs)`，区间 `10..60000`；发送失败或会话关闭自动停。
 - 发送历史：每次成功发送把「模式 + 原文 + 行尾」压入 `localPrefs`，保留最近 20 条，下拉选择即回填输入框；失败不入历史。
 - 不做本地回显（回显由设备真实返回驱动），避免与接收区混淆。
-- 打开会话前，工具栏默认值取 `localPrefs` 的上次端口/波特率/编码/行尾；端口列表里找不到上次端口时回落到第一个可用端口，不报错。
+- 打开会话前，工具栏默认值取 `localPrefs` 的上次端口/波特率/编码/行尾/发送模式/接收视图；端口列表里找不到上次端口时回落到第一个可用端口，不报错。
 
 ### 5.4 状态与错误
 

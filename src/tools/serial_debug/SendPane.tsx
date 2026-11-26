@@ -33,7 +33,9 @@ export interface SendPayload {
 interface SendPaneProps {
   open: boolean;
   history: SendHistoryEntry[];
+  mode: SendMode;
   lineEnding: LineEnding;
+  onModeChange: (mode: SendMode) => void;
   onLineEndingChange: (lineEnding: LineEnding) => void;
   onSend: (payload: SendPayload) => Promise<boolean>;
 }
@@ -41,11 +43,12 @@ interface SendPaneProps {
 export function SendPane({
   open,
   history,
+  mode,
   lineEnding,
+  onModeChange,
   onLineEndingChange,
   onSend,
 }: SendPaneProps) {
-  const [mode, setMode] = useState<SendMode>("text");
   const [text, setText] = useState("");
   const [repeating, setRepeating] = useState(false);
   const [intervalMs, setIntervalMs] = useState(DEFAULT_INTERVAL_MS);
@@ -83,11 +86,11 @@ export function SendPane({
       if (index === undefined) return;
       const entry = history[index];
       if (entry === undefined) return;
-      setMode(entry.mode);
+      onModeChange(entry.mode);
       setText(entry.text);
       onLineEndingChange(entry.lineEnding);
     },
-    [history, onLineEndingChange],
+    [history, onLineEndingChange, onModeChange],
   );
 
   return (
@@ -103,7 +106,7 @@ export function SendPane({
           <Switch
             size="small"
             checked={mode === "hex"}
-            onChange={(checked) => setMode(checked ? "hex" : "text")}
+            onChange={(checked) => onModeChange(checked ? "hex" : "text")}
           />
         </Space>
         <Typography.Text type="secondary">

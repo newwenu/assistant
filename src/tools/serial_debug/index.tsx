@@ -17,9 +17,11 @@ import {
   pushSendHistory,
   savePrefs,
   type SendHistoryEntry,
+  type SendMode,
+  type SerialViewMode,
 } from "./localPrefs";
 import { PortToolbar, type SerialConfigDraft } from "./PortToolbar";
-import { ReceivePane, type ViewMode } from "./ReceivePane";
+import { ReceivePane } from "./ReceivePane";
 import { SendPane, type SendPayload } from "./SendPane";
 import {
   isSerialDebugErrorDto,
@@ -48,7 +50,6 @@ export default function SerialDebug() {
     flowControl: "none",
   }));
   const [ports, setPorts] = useState<SerialPortInfoDto[]>([]);
-  const [view, setView] = useState<ViewMode>("text");
   const [errorCode, setErrorCode] = useState<SerialDebugErrorCodeDto | null>(
     null,
   );
@@ -186,6 +187,16 @@ export default function SerialDebug() {
     [patchPrefs],
   );
 
+  const handleViewChange = useCallback(
+    (view: SerialViewMode) => patchPrefs({ receiveView: view }),
+    [patchPrefs],
+  );
+
+  const handleSendModeChange = useCallback(
+    (mode: SendMode) => patchPrefs({ sendMode: mode }),
+    [patchPrefs],
+  );
+
   const handleTimestampChange = useCallback(
     (timestamp: boolean) => patchPrefs({ timestamp }),
     [patchPrefs],
@@ -233,14 +244,14 @@ export default function SerialDebug() {
 
       <ReceivePane
         lines={lines}
-        view={view}
+        view={prefs.receiveView}
         encoding={prefs.encoding}
         timestamp={prefs.timestamp}
         paused={paused}
         truncated={truncated}
         rxBytes={session?.rxBytes ?? 0}
         txBytes={session?.txBytes ?? 0}
-        onViewChange={setView}
+        onViewChange={handleViewChange}
         onEncodingChange={handleEncodingChange}
         onTimestampChange={handleTimestampChange}
         onPauseChange={setPaused}
@@ -250,7 +261,9 @@ export default function SerialDebug() {
       <SendPane
         open={isOpen}
         history={prefs.history}
+        mode={prefs.sendMode}
         lineEnding={prefs.lineEnding}
+        onModeChange={handleSendModeChange}
         onLineEndingChange={handleLineEndingChange}
         onSend={handleSend}
       />

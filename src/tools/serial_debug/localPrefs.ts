@@ -1,6 +1,8 @@
 import type { LineEnding, SerialEncoding } from "./byteCodec";
 
-export type SendMode = "text" | "hex";
+export type SerialViewMode = "text" | "hex";
+
+export type SendMode = SerialViewMode;
 
 export interface SendHistoryEntry {
   mode: SendMode;
@@ -14,6 +16,8 @@ export interface SerialPrefs {
   encoding: SerialEncoding;
   lineEnding: LineEnding;
   timestamp: boolean;
+  sendMode: SendMode;
+  receiveView: SerialViewMode;
   history: SendHistoryEntry[];
 }
 
@@ -26,11 +30,14 @@ const DEFAULTS: SerialPrefs = {
   encoding: "utf8",
   lineEnding: "none",
   timestamp: false,
+  sendMode: "text",
+  receiveView: "text",
   history: [],
 };
 
 const ENCODINGS: SerialEncoding[] = ["utf8", "gbk", "latin1"];
 const LINE_ENDINGS: LineEnding[] = ["none", "cr", "lf", "crlf"];
+const VIEW_MODES: SerialViewMode[] = ["text", "hex"];
 
 function readRaw(): Record<string, unknown> {
   try {
@@ -74,6 +81,12 @@ export function loadPrefs(): SerialPrefs {
       ? (raw.lineEnding as LineEnding)
       : DEFAULTS.lineEnding,
     timestamp: raw.timestamp === true,
+    sendMode: VIEW_MODES.includes(raw.sendMode as SerialViewMode)
+      ? (raw.sendMode as SerialViewMode)
+      : DEFAULTS.sendMode,
+    receiveView: VIEW_MODES.includes(raw.receiveView as SerialViewMode)
+      ? (raw.receiveView as SerialViewMode)
+      : DEFAULTS.receiveView,
     history,
   };
 }

@@ -12,9 +12,10 @@ import {
 import { translateKey } from "@/i18n";
 import type { SerialEncoding } from "./byteCodec";
 import { decodeText, formatHex, formatTimestamp } from "./byteCodec";
+import type { SerialViewMode } from "./localPrefs";
 import type { SerialLine } from "./useSerialSession";
 
-export type ViewMode = "text" | "hex";
+export type ViewMode = SerialViewMode;
 
 const ENCODING_OPTIONS: { value: SerialEncoding; key: string }[] = [
   { value: "utf8", key: "tools.serial_debug.encodingUtf8" },
