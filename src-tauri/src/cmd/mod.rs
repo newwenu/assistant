@@ -14,6 +14,8 @@ mod permission;
 mod provider;
 mod resource;
 mod screenshot;
+#[cfg(feature = "serial_debug")]
+pub(crate) mod serial_debug;
 pub mod startup;
 pub mod storage;
 #[cfg(feature = "timekeeper")]

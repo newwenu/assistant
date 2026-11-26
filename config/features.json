@@ -4,5 +4,8 @@
   },
   "timekeeper": {
     "default": true
+  },
+  "serial_debug": {
+    "default": true
   }
 }

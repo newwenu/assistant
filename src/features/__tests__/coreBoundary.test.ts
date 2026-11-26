@@ -96,6 +96,14 @@ const FEATURE_FOOTPRINT_ALLOWLIST: Record<string, FootprintAllowance[]> = {
       markers: ['#[cfg(feature = "timekeeper")]', "mod timekeeper;"],
     },
   ],
+  serial_debug: [
+    {
+      file: "src-tauri/src/cmd/mod.rs",
+      reason:
+        '装配点：`#[cfg(feature = "serial_debug")] pub(crate) mod serial_debug;` 的 cfg 谓词必须点名特性名',
+      markers: ['#[cfg(feature = "serial_debug")]', "mod serial_debug;"],
+    },
+  ],
 };
 
 const FEATURE_ID_PATTERN = /^[a-z][a-z0-9_]*$/;
@@ -105,6 +113,7 @@ const FEATURE_KEYS = ["default", "cargoFeature", "env"];
 // （文案键在 `tools.<id>.*`，源码在 `src/tools/<id>/`）。
 const FEATURE_PROBE_PREFIX: Record<string, string> = {
   timekeeper: "tools",
+  serial_debug: "tools",
 };
 
 interface FeatureEntry {
@@ -177,6 +186,7 @@ function isFeatureBody(relative: string, feature: string): boolean {
 const FEATURE_ALIASES: Record<string, string[]> = {
   vault: ["保险库"],
   timekeeper: ["计时器"],
+  serial_debug: ["串口"],
 };
 
 interface FootprintViolation {
@@ -378,11 +388,11 @@ describe("特性扩展边界（新增特性改动 core 文件数 = 0）", () => 
     const permissionsRoot = path.join(TAURI_ROOT, "permissions");
     const permissionDirs = exists("src-tauri/permissions")
       ? fs
-          .readdirSync(permissionsRoot)
-          .filter((entry) =>
-            fs.statSync(path.join(permissionsRoot, entry)).isDirectory(),
-          )
-          .sort()
+        .readdirSync(permissionsRoot)
+        .filter((entry) =>
+          fs.statSync(path.join(permissionsRoot, entry)).isDirectory(),
+        )
+        .sort()
       : [];
     for (const dir of permissionDirs) {
       if (!names.includes(dir)) {

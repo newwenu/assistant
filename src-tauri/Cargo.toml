@@ -24,6 +24,7 @@ members = [
     "crates/assistant-clock",
     "crates/assistant-crash",
     "crates/assistant-resource-probe",
+    "crates/assistant-serial",
 ]
 
 [workspace.package]
@@ -95,6 +96,8 @@ xcap = "0.9"
 proptest = "1"
 crash-handler = "0.6"
 minidump-writer = "0.10"
+# 串口调试（I78）：只开平台枚举与读写，不需要 serialport 的默认 libudev/serde 特性
+serialport = { version = "4.7", default-features = false }
 
 assistant-protocol = { path = "crates/assistant-protocol" }
 assistant-config = { path = "crates/assistant-config" }
@@ -111,6 +114,7 @@ assistant-vault = { path = "crates/assistant-vault" }
 assistant-clock = { path = "crates/assistant-clock" }
 assistant-crash = { path = "crates/assistant-crash" }
 assistant-resource-probe = { path = "crates/assistant-resource-probe" }
+assistant-serial = { path = "crates/assistant-serial" }
 arboard = "3"
 csv = "1"
 hmac = "0.12"
@@ -155,13 +159,14 @@ ssh-key = { version = "0.6", features = ["encryption", "rsa", "ed25519"] }
 rsa = { version = "0.9", features = ["pem"] }
 
 [features]
-default = ["vault", "timekeeper"]
+default = ["vault", "timekeeper", "serial_debug"]
 vault = [
     "dep:assistant-vault",
     "dep:assistant-sync",
     "dep:assistant-security",
 ]
 timekeeper = ["dep:assistant-clock"]
+serial_debug = ["dep:assistant-serial"]
 
 # P7-C5 端到端夹具：仅测试用，不进 Tauri bundle
 [[bin]]
@@ -209,6 +214,7 @@ assistant-security = { workspace = true, optional = true }
 assistant-sync = { workspace = true, optional = true }
 assistant-vault = { workspace = true, optional = true }
 assistant-clock = { workspace = true, optional = true }
+assistant-serial = { workspace = true, optional = true }
 assistant-crash = { workspace = true }
 assistant-resource-probe = { workspace = true }
 rustc_version_runtime.workspace = true

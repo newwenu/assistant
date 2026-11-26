@@ -486,6 +486,31 @@ export type SendChatMessageArgsDto = { content: string, modeId?: string | null, 
  * 缺省即 deny-by-default：模型看不到任何工具。
  */
 toolConfig?: ConversationToolConfigDto | null, };
+export type SerialConfigDto = { portName: string, baudRate: number, dataBits: SerialDataBitsDto, parity: SerialParityDto, stopBits: SerialStopBitsDto, flowControl: SerialFlowControlDto, };
+export type SerialDataBitsDto = "five" | "six" | "seven" | "eight";
+export type SerialDebugErrorCodeDto = "notOpen" | "alreadyOpen" | "portNotFound" | "permissionDenied" | "busy" | "io" | "unsupported" | "invalidInput";
+export type SerialDebugErrorDto = { code: SerialDebugErrorCodeDto, message: string, };
+export type SerialFlowControlDto = "none" | "software" | "hardware";
+export type SerialOpenInputDto = { portName: string, baudRate: number, dataBits: SerialDataBitsDto, parity: SerialParityDto, stopBits: SerialStopBitsDto, flowControl: SerialFlowControlDto, };
+export type SerialParityDto = "none" | "odd" | "even" | "mark" | "space";
+export type SerialPortInfoDto = { 
+/**
+ * 对外裸名（Windows 为 `COM10`，不含 `\\.\` 前缀）
+ */
+portName: string, kind: SerialPortKindDto, vid: number | null, pid: number | null, serialNumber: string | null, manufacturer: string | null, product: string | null, };
+export type SerialPortKindDto = "usb" | "bluetooth" | "pci" | "unknown";
+export type SerialRxBatchDto = { sessionId: number, 
+/**
+ * 会话内从 1 单调递增；跨会话不保证单调
+ */
+seq: number, receivedAtMs: number, dataBase64: string, };
+export type SerialSessionDto = { 
+/**
+ * 会话代际号；关闭态保留最后一次成功 `open` 的值（从未打开为 0）
+ */
+sessionId: number, open: boolean, portName: string | null, config: SerialConfigDto | null, rxBytes: number, txBytes: number, error: SerialDebugErrorDto | null, };
+export type SerialSetSignalsInputDto = { dtr?: boolean | null, rts?: boolean | null, };
+export type SerialStopBitsDto = "one" | "two";
 export type SessionStateChangedPayloadDto = { conversationId: string, turnId: string, state: SessionStateDto, };
 export type SessionStateDto = "idle" | { "processing": { turnId: string, phase: TurnPhaseDto, } } | { "error": { message: string, recoverable: boolean, } };
 export type SetGrantScopeArgsDto = { grantKey: string, scope: GrantScopeDto, conversationId?: string | null, };

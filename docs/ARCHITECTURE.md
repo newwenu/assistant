@@ -173,11 +173,11 @@ interface ToolDefinition {
 }
 ```
 
-#### 工具清单（23 个）
+#### 工具清单（24 个）
 
 | 分类 | 工具 |
 |------|------|
-| `dev` | UUID 生成、JSON 格式化、正则测试器、SQL 格式化、Cron 解析、文本 Diff、字数统计、计算器、IP 查询、文件系统链接 |
+| `dev` | UUID 生成、JSON 格式化、正则测试器、SQL 格式化、Cron 解析、文本 Diff、字数统计、计算器、IP 查询、文件系统链接、串口调试 |
 | `converter` | Base64 编解码、颜色转换、时间戳转换、进制转换、URL 编解码、单位换算 |
 | `security` | Hash 计算、JWT 解码、密码生成器 |
 | `media` | 二维码生成、图片压缩、SVG 预览 |

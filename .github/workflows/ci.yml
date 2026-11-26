@@ -69,16 +69,19 @@ jobs:
       - name: 前端构建（full）
         run: npm run build
 
-      # slim 态：两个特性都关，特性模块不得进入产物图，产物图断言在此硬失败。
-      - name: 前端构建（slim / VAULT_ENABLED=0 TIMEKEEPER_ENABLED=0）
-        run: VAULT_ENABLED=0 TIMEKEEPER_ENABLED=0 npm run build
+      # slim 态：三个特性都关，特性模块不得进入产物图，产物图断言在此硬失败。
+      - name: 前端构建（slim / VAULT_ENABLED=0 TIMEKEEPER_ENABLED=0 SERIAL_DEBUG_ENABLED=0）
+        run: VAULT_ENABLED=0 TIMEKEEPER_ENABLED=0 SERIAL_DEBUG_ENABLED=0 npm run build
 
-      # 字符串探针作为 slim 态的补充证据：产物中不得出现 settings.vault.* / tools.timekeeper.* 文案。
+      # 字符串探针作为 slim 态的补充证据：产物中不得出现 settings.vault.* / tools.timekeeper.* / tools.serial_debug.* 文案。
       - name: 关闭态产物字符串探针（vault）
         run: node scripts/assert-feature-absent.mjs --feature vault --dist dist
 
       - name: 关闭态产物字符串探针（timekeeper）
         run: node scripts/assert-feature-absent.mjs --feature timekeeper --prefix tools --dist dist
+
+      - name: 关闭态产物字符串探针（serial_debug）
+        run: node scripts/assert-feature-absent.mjs --feature serial_debug --prefix tools --dist dist
 
   rust:
     name: Rust 实机测试（${{ matrix.os }}）
@@ -193,3 +196,20 @@ jobs:
         if: runner.os == 'Linux'
         working-directory: src-tauri
         run: node ../scripts/assert-feature-shed.mjs --features timekeeper
+
+      # 单特性独立性：--features serial_debug 时 vault / timekeeper 必须整块消失
+      # （assistant-vault / assistant-clock / assistant-serial 之外的三方串口依赖也不得残留）。
+      - name: 单特性编译（--features serial_debug）
+        if: runner.os == 'Linux'
+        working-directory: src-tauri
+        run: cargo check -p assistant-app --no-default-features --features serial_debug
+
+      - name: 单特性装配契约（--features serial_debug）
+        if: runner.os == 'Linux'
+        working-directory: src-tauri
+        run: cargo test -p assistant-app --no-default-features --features serial_debug --test assembly_contract
+
+      - name: 单特性依赖断开断言（--features serial_debug）
+        if: runner.os == 'Linux'
+        working-directory: src-tauri
+        run: node ../scripts/assert-feature-shed.mjs --features serial_debug

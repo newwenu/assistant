@@ -26,6 +26,7 @@ const EXPECTED_CATEGORIES: Record<string, string> = {
   "svg-preview": "media",
   "fs-link": "dev",
   timekeeper: "productivity",
+  "serial-debug": "dev",
 };
 
 describe("工具分类回归", () => {

@@ -14,6 +14,12 @@ pub(crate) struct FeatureMount {
 
 const MOUNTS: &[FeatureMount] = &[
     FeatureMount {
+        id: "serial_debug",
+        plugin: crate::feature_plugins::serial_debug_plugin::init,
+        on_setup: crate::feature_plugins::serial_debug_plugin::on_setup,
+        on_exit: crate::feature_plugins::serial_debug_plugin::on_exit,
+    },
+    FeatureMount {
         id: "vault",
         plugin: crate::feature_plugins::vault_plugin::init,
         on_setup: crate::feature_plugins::vault_plugin::on_setup,

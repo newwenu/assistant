@@ -23,6 +23,7 @@ import {
   PictureOutlined,
   EditOutlined,
   FolderOutlined,
+  ApiOutlined,
 } from "@ant-design/icons";
 import type { ToolDefinition, ToolCategoryGroup } from "./types";
 import { TOOL_CATEGORIES, classifyKeywords } from "./categories";
@@ -319,6 +320,20 @@ const fsLink = defineTool({
   widthMode: "default",
 });
 
+const serialDebugTools: ToolDefinition[] = __SERIAL_DEBUG_ENABLED__
+  ? [
+      defineTool({
+        id: "serial-debug",
+        name: "tools.serial_debug.name",
+        description: "tools.serial_debug.description",
+        icon: ApiOutlined,
+        keywords: ["serial", "uart", "baud", "com-port", "串口"],
+        component: lazyWithRecovery(() => import("../serial_debug")),
+        widthMode: "full",
+      }),
+    ]
+  : [];
+
 export const tools: ToolDefinition[] = [
   hashText,
   uuidGenerator,
@@ -343,6 +358,7 @@ export const tools: ToolDefinition[] = [
   imageCompressor,
   svgPreview,
   fsLink,
+  ...serialDebugTools,
 ];
 
 export const toolsMap = Object.fromEntries(

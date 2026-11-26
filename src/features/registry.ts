@@ -23,6 +23,10 @@ export async function loadFeatures(): Promise<void> {
     const { timekeeperModule } = await import("./timekeeper/module");
     modules.push(timekeeperModule);
   }
+  if (__SERIAL_DEBUG_ENABLED__) {
+    const { serialDebugModule } = await import("./serial_debug/module");
+    modules.push(serialDebugModule);
+  }
   const { observationModule } = await import("./observation/module");
   modules.push(observationModule);
   const { orchestrationModule } = await import("./orchestration/module");

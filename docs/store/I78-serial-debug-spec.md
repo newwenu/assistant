@@ -37,6 +37,7 @@
 | 0.14 | 页面形态 | `widthMode: "full"`，上下分栏（上接收、下发送） | 收发需同时可见 |
 | 0.15 | 打开后初始信号线 | 打开成功默认置 `dtr = true`、`rts` 不动 | 部分 USB 转串口设备不拉 DTR 不出数据，避免"打开了没反应"的首因误解（OQ6） |
 | 0.16 | 持久化 | v1 无后端配置组；端口/波特率/编码/行尾/时间戳开关由前端 `localStorage` 记住上次值 | 后端零 conf 组即零 DTO 同步成本；前端本地记忆不产生 wire 契约，也不违反「无后端配置组」。跨设备/跨安装同步见 §10 |
+| 0.17 | 插件 ACL 名 | 插件名与 capability 权限前缀用 `serial-debug`；特性 id、模块路径、文件名仍用 `serial_debug` | `tauri-utils` 的 ACL `Identifier` 只允许小写 ASCII 与连字符，含下划线直接报 `invalid plugin or permission identifier 'serial_debug:default'`。`build.rs` 把插件文件名里的 `_` 统一转 `-` 后交给 `tauri_build::Attributes::plugin()`，运行时 `plugin::Builder::new()` 与 `capabilities/*.json` 必须用同一个连字符名，三者错一个就启动即失败 |
 
 ---
 
@@ -80,7 +81,7 @@
 | C5 | 硬约束·字节不解码 | 后端只做 `read → base64`、`write(base64 → bytes)`；任何字符集判断都在前端 |
 | C6 | 硬约束·单会话 | 已有会话时 `open` 返回 `alreadyOpen`，不隐式关闭旧会话 |
 | C7 | 硬约束·cfg 预算 | `serial_debug` 在全后端**恰好 3 行** `#[cfg]`：插件启用块 1 + 插件关闭块 1 + `cmd/mod.rs` 1；不得再增（`assembly_contract` B4/B6 会红） |
-| C8 | 硬约束·core 足迹 | 扫描根 `src-tauri/src`、`src/features`、`src/settings` 内，足迹扫描会跳过 `ASSEMBLY_POINTS`（`config/features.json`、`src/vite-env.d.ts`、`src/features/registry.ts`、`src-tauri/Cargo.toml`、`src-tauri/src/feature_mounts.rs`、`src-tauri/src/lib.rs`）与特性本体目录；因此只有 `src-tauri/src/cmd/mod.rs` 需要新增 1 条测试豁免。`src/tools/**` 不在扫描根内 |
+| C8 | 硬约束·core 足迹 | 扫描根 `src-tauri/src`、`src/features`、`src/settings` 内，足迹扫描会跳过 `ASSEMBLY_POINTS`（`config/features.json`、`src/vite-env.d.ts`、`src/features/registry.ts`、`src-tauri/Cargo.toml`、`src-tauri/src/feature_mounts.rs`、`src-tauri/src/lib.rs`、`src-tauri/src/feature_plugins/mod.rs`）与特性本体目录；因此只有 `src-tauri/src/cmd/mod.rs` 需要新增 1 条测试豁免。`src/tools/**` 不在扫描根内 |
 | C9 | 硬约束·读线程不阻塞退出 | 读循环用 8 ms 读超时 + 停止标志，退出最多延迟 8 ms；不依赖"关句柄打断读"的平台语义 |
 | C10 | 硬约束·事件只从特性目录发 | 事件名常量、事件发射点（`emit_to` / `emit_broadcast`）都在 `src-tauri/src/cmd/serial_debug/`，core 的事件表零改动 |
 
@@ -298,9 +299,9 @@ rAF(16 ms) → 合并队列 → 生成行对象 → setState 一次
 |---|---|
 | `src-tauri/crates/assistant-serial/**` | §4 领域 crate |
 | `src-tauri/crates/assistant-protocol/src/serial_debug.rs` + `lib.rs` 增 `pub mod serial_debug;` | DTO 契约 |
-| `src-tauri/src/serial_debug_plugin.rs` | 一对互斥块 + `init/on_setup/on_exit`（照 `timekeeper_plugin.rs` 逐行对齐） |
+| `src-tauri/src/feature_plugins/serial_debug_plugin.rs` | 一对互斥块 + `init/on_setup/on_exit`（照 `timekeeper_plugin.rs` 逐行对齐） |
 | `src-tauri/src/cmd/serial_debug/{mod.rs,ports.rs,session.rs,reader.rs}` | 6 命令 + 事件常量 + 读线程 sink |
-| `src-tauri/capabilities/serial_debug.json` | 仅授 `serial_debug:default`，`windows: ["main"]`（工具页只在主窗口，`rx` 事件也定向主窗口，见 0.10） |
+| `src-tauri/capabilities/serial_debug.json` | 仅授 `serial-debug:default`，`windows: ["main"]`（工具页只在主窗口，`rx` 事件也定向主窗口，见 0.10 / 0.17） |
 | `src/features/serial_debug/module.ts` | `FeatureModule`：仅 `id` + `ipc` 命名空间；无 conf 槽、无设置页 |
 | `src/tools/serial_debug/**` | §5 |
 | `src/i18n/locales/zh-CN.json` + `en-US.json` 的 `tools.serial_debug` 段 | 文案（两份同批） |
@@ -311,25 +312,26 @@ rAF(16 ms) → 合并队列 → 生成行对象 → setState 一次
 |---|---|---|
 | `config/features.json` | 增 `"serial_debug": { "default": true }` | 只加条目，不动他项 |
 | `src-tauri/Cargo.toml` | `[workspace.members]` 增 `"crates/assistant-serial"`；`[workspace.dependencies]` 增 `assistant-serial = { path = "crates/assistant-serial" }` 与 `serialport = { version = "4.7", default-features = false }`；`[dependencies]` 增 `assistant-serial = { workspace = true, optional = true }`；`[features]` 增 `serial_debug = ["dep:assistant-serial"]`，`default` 改为 `["vault", "timekeeper", "serial_debug"]` | 不改无关依赖 |
-| `src-tauri/src/lib.rs` | 增 `mod serial_debug_plugin;`（**不带 cfg**，与 `timekeeper_plugin` 同形） | 40 行上限：当前 39 → 40，**顶格**；第 4 个特性前必须先收敛插件声明（见 §8 R2） |
-| `src-tauri/src/feature_mounts.rs` | `MOUNTS` 增 1 项：`id: "serial_debug"`、`plugin: crate::serial_debug_plugin::init`、`on_setup`、`on_exit` | 表项本身零 cfg；不新建表 |
+| `src-tauri/src/feature_plugins/mod.rs` | 增 `pub(crate) mod serial_debug_plugin;`（**不带 cfg**，与既有两个插件同形） | `lib.rs` 不新增行（保持 38 行，上限 40）；插件声明已收敛到本文件（§8 R2 已消解） |
+| `src-tauri/src/feature_mounts.rs` | `MOUNTS` 增 1 项：`id: "serial_debug"`、`plugin: crate::feature_plugins::serial_debug_plugin::init`、`on_setup`、`on_exit` | 表项本身零 cfg；不新建表 |
 | `src-tauri/src/cmd/mod.rs` | 增 `#[cfg(feature = "serial_debug")] pub(crate) mod serial_debug;` | 恰 1 条 cfg |
 | `src/vite-env.d.ts` | 增 `declare const __SERIAL_DEBUG_ENABLED__: boolean;` | — |
 | `src/features/registry.ts` | `if (__SERIAL_DEBUG_ENABLED__) { const { serialDebugModule } = await import("./serial_debug/module"); modules.push(serialDebugModule); }` | 只允许编译期守卫 + 动态 import |
 | `src/tools/framework/registry.ts` | 增 `serialDebugTools`（`__SERIAL_DEBUG_ENABLED__ ? [...] : []`）并在 `tools` 数组里展开 | 关闭态该数组为空；`defineTool` 自动分类；`keywords` 只允许 §0.13 白名单（含 `hex` 会被分到 converter 并使 `categories.test.ts` 红） |
 | `src/tools/__tests__/categories.test.ts` | `EXPECTED_CATEGORIES` 增 `"serial-debug": "dev"` | 该用例遍历 `tools`，漏加即 `undefined` 断言失败 |
 | `src/features/__tests__/coreBoundary.test.ts` | `FEATURE_FOOTPRINT_ALLOWLIST` 增 `serial_debug` 1 条（`src-tauri/src/cmd/mod.rs`，`markers: ['#[cfg(feature = "serial_debug")]', "mod serial_debug;"]`，reason 同 timekeeper）；`FEATURE_PROBE_PREFIX` 增 `serial_debug: "tools"`；`FEATURE_ALIASES` 增 `serial_debug: ["串口"]` | 豁免必须带 reason，粒度是行 |
+| `src-tauri/build.rs` | `acl_plugin_name()`：把插件文件名里的 `_` 转 `-` 后再交给 `tauri_build::Attributes::plugin()` | ACL 标识符禁止下划线（0.17）；只影响派生出的插件名，命令前缀仍用下划线模块路径 |
 | `.github/workflows/ci.yml` | §6.4 | — |
 | `docs/ARCHITECTURE.md` | §4.2 工具清单 23 → 24（dev 类 + 串口调试） | 只改计数与条目 |
 
-**零改动**：`src-tauri/src/plugins.rs`（`mounts()` 循环已通用）、`src-tauri/src/lifecycle.rs`、`src-tauri/src/boot/**`、`src-tauri/src/ipc.rs`、`src-tauri/src/protocol/events.rs`、`src-tauri/src/tray.rs`、`src-tauri/src/window/**`、`src-tauri/src/cmd/config.rs`、`src-tauri/tauri.conf.json`、`src-tauri/capabilities/default.json`、`src-tauri/build.rs`、`src/App.tsx`、`src/layouts/AppShell.tsx`。
+**零改动**：`src-tauri/src/plugins.rs`（`mounts()` 循环已通用）、`src-tauri/src/lifecycle.rs`、`src-tauri/src/boot/**`、`src-tauri/src/ipc.rs`、`src-tauri/src/protocol/events.rs`、`src-tauri/src/tray.rs`、`src-tauri/src/window/**`、`src-tauri/src/cmd/config.rs`、`src-tauri/tauri.conf.json`、`src-tauri/capabilities/default.json`、`src/App.tsx`、`src/layouts/AppShell.tsx`。
 
 ### 6.3 门禁对应
 
 | 门禁 | 覆盖点 | 本特性如何满足 |
 |---|---|---|
-| `assembly_contract` A1–A3 | `ipc.rs` 无 cfg、`lib.rs` 仅装配、cfg 位置合法 | cfg 只出现在 `cmd/mod.rs` 与 `serial_debug_plugin.rs` |
-| A4 / B8 | ACL ↔ capabilities 双向一致 | `capabilities/serial_debug.json` 仅授 `serial_debug:default`；`default.json` 不含该权限 |
+| `assembly_contract` A1–A3 | `ipc.rs` 无 cfg、`lib.rs` 仅装配、cfg 位置合法 | cfg 只出现在 `cmd/mod.rs` 与 `feature_plugins/serial_debug_plugin.rs` |
+| A4 / B8 | ACL ↔ capabilities 双向一致 | `capabilities/serial_debug.json` 仅授 `serial-debug:default`（连字符名，见 0.17）；`default.json` 不含该权限 |
 | B4 | 单特性 cfg ≤ 3 且插件为一对互斥块 | 恰好 3；插件文件含启用/关闭两块 |
 | B5 | 关闭块与启用块三函数同签名 | `init/on_setup/on_exit` 两侧逐字一致 |
 | B6 | `cmd/mod.rs` 每特性恰 1 条 cfg | 1 条 |
@@ -409,7 +411,7 @@ node ../scripts/assert-feature-shed.mjs --features serial_debug
 | # | 风险 | 处置 |
 |---|---|---|
 | R1 | cfg 预算顶格（3/3） | 禁止在 `cmd/serial_debug/*.rs` 内写 `#[cfg]`；领域能力靠 `dep:` 自然消失 |
-| R2 | `lib.rs` 行数顶格（39 → 40） | 本特性落地后立即提出"插件声明收敛"议题（宏或数组化），否则第 4 个特性装不进来；本轮不加 |
+| R2 | ~~`lib.rs` 行数顶格（39 → 40）~~ 已消解（2026-11-26） | 插件声明已收敛：插件文件统一放 `src/feature_plugins/`，`lib.rs` 只留 `mod feature_plugins;`（现 38 行），新增特性只在 `feature_plugins/mod.rs` 加 1 行；`lib.rs` 不再随特性数增长 |
 | R3 | Linux 无 libudev → 端口元数据为 `null` | 前端对 `null` 字段降级（只显示端口名）；是否启用见 OQ2 |
 | R4 | USB 拔线错误码平台差异 | 统一收敛为 `io`，前端文案写"设备可能已断开" |
 | R5 | IPC 洪泛 | 读超时 8 ms + 16 ms/4 KB 聚合 + 前端 rAF 合并；`rx` 事件 `emit_to("main")` 定向主窗口，避免 orb 小窗重复序列化 |
