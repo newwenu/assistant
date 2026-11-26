@@ -15,6 +15,10 @@ name: CI
 #
 # 某平台因 runner 环境（缺系统库、内核不支持 Landlock）失败时，先修环境或把该步拆成独立 job，
 # 不要用 continue-on-error 掩盖失败。
+#
+# 每步（首个 checkout 除外）都带 `if: ${{ !cancelled() }}`：一次运行就把所有失败项都跑出来，
+# 而不是第一处失败就跳过后续检查、每次 push 只照亮下一层。job 结论仍是 failure，
+# 不掩盖失败；注意它与 continue-on-error 的区别是「后续步骤照跑」而非「失败算通过」。
 
 on:
   push:
@@ -45,42 +49,53 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
+        if: ${{ !cancelled() }}
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
 
       - name: 安装依赖
+        if: ${{ !cancelled() }}
         run: npm ci
 
       - name: 类型检查
+        if: ${{ !cancelled() }}
         run: npm run typecheck
 
       - name: 格式检查
+        if: ${{ !cancelled() }}
         run: npm run format:check
 
       # CI 里不跑 `npm run lint`（它会先 prettier --write），避免把改写后的文件带入后续比对。
       - name: ESLint
+        if: ${{ !cancelled() }}
         run: npx eslint . --max-warnings 0
 
       - name: 单元测试
+        if: ${{ !cancelled() }}
         run: npm test
 
       # full 态：确认默认（含 vault）构建不误报，产物图断言同样生效。
       - name: 前端构建（full）
+        if: ${{ !cancelled() }}
         run: npm run build
 
       # slim 态：三个特性都关，特性模块不得进入产物图，产物图断言在此硬失败。
       - name: 前端构建（slim / VAULT_ENABLED=0 TIMEKEEPER_ENABLED=0 SERIAL_DEBUG_ENABLED=0）
+        if: ${{ !cancelled() }}
         run: VAULT_ENABLED=0 TIMEKEEPER_ENABLED=0 SERIAL_DEBUG_ENABLED=0 npm run build
 
       # 字符串探针作为 slim 态的补充证据：产物中不得出现 settings.vault.* / tools.timekeeper.* / tools.serial_debug.* 文案。
       - name: 关闭态产物字符串探针（vault）
+        if: ${{ !cancelled() }}
         run: node scripts/assert-feature-absent.mjs --feature vault --dist dist
 
       - name: 关闭态产物字符串探针（timekeeper）
+        if: ${{ !cancelled() }}
         run: node scripts/assert-feature-absent.mjs --feature timekeeper --prefix tools --dist dist
 
       - name: 关闭态产物字符串探针（serial_debug）
+        if: ${{ !cancelled() }}
         run: node scripts/assert-feature-absent.mjs --feature serial_debug --prefix tools --dist dist
 
   rust:
@@ -95,10 +110,15 @@ jobs:
       - uses: actions/checkout@v4
 
       # 主 app 依赖 Tauri（Linux 需要 WebKitGTK 系列），vault 的 Linux 后端链接 libsecret。
+      # 更新索引与安装拆成两步：一条 run 块内是 bash -e，前一条失败会中断后一条，
+      # 拆开后两个动作各自受 !cancelled() 保护、各自出结论。
+      - name: 更新 APT 索引
+        if: ${{ !cancelled() && runner.os == 'Linux' }}
+        run: sudo apt-get update
+
       - name: 安装 Linux 原生依赖
-        if: runner.os == 'Linux'
+        if: ${{ !cancelled() && runner.os == 'Linux' }}
         run: |
-          sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             libwebkit2gtk-4.1-dev \
             libayatana-appindicator3-dev \
@@ -110,106 +130,114 @@ jobs:
             patchelf
 
       - uses: dtolnay/rust-toolchain@master
+        if: ${{ !cancelled() }}
         with:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
           components: rustfmt
 
       - uses: Swatinem/rust-cache@v2
+        if: ${{ !cancelled() }}
         with:
           workspaces: src-tauri -> target
 
       - name: 格式检查
+        if: ${{ !cancelled() }}
         working-directory: src-tauri
         run: cargo fmt --all -- --check
 
       # 沙箱用例单独一步：失败时从步骤名即可判断是边界用例而非编译/其他测试的问题。
       # Windows 独有的几条用例不在本矩阵覆盖范围，由开发机负责。
       - name: 沙箱实机用例
+        if: ${{ !cancelled() }}
         working-directory: src-tauri
         run: cargo test -p assistant-tools --all-targets --no-fail-fast
 
       # --no-fail-fast：一个 target 失败不吞掉其余 target 的结果，便于一次看清各平台差异。
       - name: 工作区测试
+        if: ${{ !cancelled() }}
         working-directory: src-tauri
         run: cargo test --workspace --all-targets --no-fail-fast
 
       # 关闭态只在 Linux 跑一次：--no-default-features 必须落在 assistant-app 这个 package 上，
       # workspace 全量的测试目标仍会编译 assistant-vault 自身，不能当关闭态证据。
       - name: 关闭态编译（slim）
-        if: runner.os == 'Linux'
+        if: ${{ !cancelled() && runner.os == 'Linux' }}
         working-directory: src-tauri
         run: cargo check -p assistant-app --no-default-features
 
       - name: 关闭态装配契约（slim）
-        if: runner.os == 'Linux'
+        if: ${{ !cancelled() && runner.os == 'Linux' }}
         working-directory: src-tauri
         run: cargo test -p assistant-app --no-default-features --test assembly_contract
 
       # 契约生成需要 Node + 上面装的 Tauri 依赖，只在 Linux 跑一次，避免两个平台重复编译。
       - uses: actions/setup-node@v4
-        if: runner.os == 'Linux'
+        if: ${{ !cancelled() && runner.os == 'Linux' }}
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
 
+      # 安装与校验拆成两步：同一条 run 块里 `npm ci` 失败会中断 `contract:check`。
+      - name: 安装前端依赖（Linux）
+        if: ${{ !cancelled() && runner.os == 'Linux' }}
+        run: npm ci
+
       - name: 契约生成物同步校验（Linux）
-        if: runner.os == 'Linux'
-        run: |
-          npm ci
-          npm run contract:check
+        if: ${{ !cancelled() && runner.os == 'Linux' }}
+        run: npm run contract:check
 
       # 关闭态依赖图断言：被关掉的特性所独占的依赖 crate 不得留在 normal-edge 图，
       # 否则「关闭」只是不注册，依赖仍被编进二进制。脚本内部 cwd = src-tauri。
       - name: 关闭态依赖断开断言（slim）
-        if: runner.os == 'Linux'
+        if: ${{ !cancelled() && runner.os == 'Linux' }}
         working-directory: src-tauri
         run: node ../scripts/assert-feature-shed.mjs
 
       # 单特性独立性：--features vault 时 timekeeper 必须整块消失（assistant-clock 不在 normal-edge 图）。
       - name: 单特性编译（--features vault）
-        if: runner.os == 'Linux'
+        if: ${{ !cancelled() && runner.os == 'Linux' }}
         working-directory: src-tauri
         run: cargo check -p assistant-app --no-default-features --features vault
 
       - name: 单特性装配契约（--features vault）
-        if: runner.os == 'Linux'
+        if: ${{ !cancelled() && runner.os == 'Linux' }}
         working-directory: src-tauri
         run: cargo test -p assistant-app --no-default-features --features vault --test assembly_contract
 
       - name: 单特性依赖断开断言（--features vault）
-        if: runner.os == 'Linux'
+        if: ${{ !cancelled() && runner.os == 'Linux' }}
         working-directory: src-tauri
         run: node ../scripts/assert-feature-shed.mjs --features vault
 
       # 单特性独立性：--features timekeeper 时 vault 必须整块消失（三个 vault crate 不在 normal-edge 图）。
       - name: 单特性编译（--features timekeeper）
-        if: runner.os == 'Linux'
+        if: ${{ !cancelled() && runner.os == 'Linux' }}
         working-directory: src-tauri
         run: cargo check -p assistant-app --no-default-features --features timekeeper
 
       - name: 单特性装配契约（--features timekeeper）
-        if: runner.os == 'Linux'
+        if: ${{ !cancelled() && runner.os == 'Linux' }}
         working-directory: src-tauri
         run: cargo test -p assistant-app --no-default-features --features timekeeper --test assembly_contract
 
       - name: 单特性依赖断开断言（--features timekeeper）
-        if: runner.os == 'Linux'
+        if: ${{ !cancelled() && runner.os == 'Linux' }}
         working-directory: src-tauri
         run: node ../scripts/assert-feature-shed.mjs --features timekeeper
 
       # 单特性独立性：--features serial_debug 时 vault / timekeeper 必须整块消失
       # （assistant-vault / assistant-clock / assistant-serial 之外的三方串口依赖也不得残留）。
       - name: 单特性编译（--features serial_debug）
-        if: runner.os == 'Linux'
+        if: ${{ !cancelled() && runner.os == 'Linux' }}
         working-directory: src-tauri
         run: cargo check -p assistant-app --no-default-features --features serial_debug
 
       - name: 单特性装配契约（--features serial_debug）
-        if: runner.os == 'Linux'
+        if: ${{ !cancelled() && runner.os == 'Linux' }}
         working-directory: src-tauri
         run: cargo test -p assistant-app --no-default-features --features serial_debug --test assembly_contract
 
       - name: 单特性依赖断开断言（--features serial_debug）
-        if: runner.os == 'Linux'
+        if: ${{ !cancelled() && runner.os == 'Linux' }}
         working-directory: src-tauri
         run: node ../scripts/assert-feature-shed.mjs --features serial_debug
