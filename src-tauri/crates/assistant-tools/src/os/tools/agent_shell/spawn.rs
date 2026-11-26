@@ -93,9 +93,16 @@ pub fn build_plan(
 ) -> Result<ShellSpawnPlan, SpawnPlanError> {
     let program = resolve_program().map_err(SpawnPlanError::ProgramUnavailable)?;
 
-    let scratch_root = scratch.prepare(session_id).map_err(|error| {
+    // 目录必须经所有者创建（I77 INV3）：本模块不 `create_dir_all`、不拼会话段。
+    // 但子进程的 `TEMP` / `TMP` / `TMPDIR` 与沙箱写根要用**注入点归一过**的根
+    // （`ToolUseContext.tool_scratch_root`，见 `adapters::tool_exec` 的 canonicalize），
+    // 不能用所有者返回的原始基根形态：macOS 上基根常经 `/var` 符号链接给出，
+    // 归一前 `/var/...`、归一后 `/private/var/...`，同指一个目录但字符串不同，
+    // 会让子进程的 `TMPDIR` 与 `scratch://` 引用解析出的根对不上。
+    scratch.prepare(session_id).map_err(|error| {
         SpawnPlanError::ScratchDirFailed(format!("create scratch dir failed: {}", error))
     })?;
+    let scratch_root = input.scratch_root.clone();
 
     let args = program.args_for(&input.command);
 
