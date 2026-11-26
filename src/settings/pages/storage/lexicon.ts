@@ -86,6 +86,7 @@ const ENTRY_NAME_KEYS: Readonly<Record<string, I18nPath>> = {
   "attachments/derived": "settings.storage.entries.names.attachments_derived",
   "tool-results": "settings.storage.entries.names.tool_results",
   "tool-index": "settings.storage.entries.names.tool_index",
+  "tool-scratch": "settings.storage.entries.names.tool_scratch",
   "mascot-assets": "settings.storage.entries.names.mascot_assets",
   "assistant.db": "settings.storage.entries.names.assistant_db",
   "security/security.db": "settings.storage.entries.names.security_security_db",

@@ -443,6 +443,7 @@
           "attachments_derived": "Attachment preview cache",
           "tool_results": "Tool result files",
           "tool_index": "Tool index cache",
+          "tool_scratch": "Shell scratch files",
           "mascot_assets": "Mascot assets",
           "assistant_db": "Main database",
           "security_security_db": "Security database",

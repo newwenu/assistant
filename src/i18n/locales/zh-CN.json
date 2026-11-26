@@ -422,6 +422,7 @@
           "attachments_derived": "附件预览缓存",
           "tool_results": "工具结果文件",
           "tool_index": "工具索引缓存",
+          "tool_scratch": "Shell 临时文件",
           "mascot_assets": "形象素材",
           "assistant_db": "主数据库",
           "security_security_db": "安全数据库",
