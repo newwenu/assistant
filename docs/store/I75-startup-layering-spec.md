@@ -262,6 +262,7 @@ pub enum CapErr {
 | C4 | 状态变更广播 `startup:capability-changed`（遵循既有 `domain:event` 事件名形式），payload 的 id 使用生成的前端联合类型 |
 | C5 | 前端在 `Pending` 期间把「发送 / 工具面板」置为「正在准备」，在 `Failed` 时显示可读原因 + 重试入口 |
 | C6 | `access::*` 在未就绪时返回 `NotReady`，**不 panic、不隐式装配**；需要装配的调用点显式 `ensure` |
+| C7 | 消费侧顺序纪律（C4 的送达前提）：①**先订阅、注册成功后再拉快照**——事件不重放，注册前发出的迁移永久丢失；②快照**只补缺口不覆盖**已落地的条目——晚到的快照生成时刻早于已收到的迁移，整表替换会把新状态打回 `pending`；③`pending` 必须有终态兜底——`Registry` 一旦 `Ready` 不再 `emit`（single-flight 的必然结果），漏一次即本进程内无第二次。快照与事件不是冗余：事件覆盖活着的订阅者，快照覆盖后建的窗口（如排在 `tool_runtime` 之后的 `window_main`） |
 
 资源的 `manage` 时机：`build` 成功后由 registry 统一 `manage` 一次（single-flight 保证仅一次，重复 `manage` 会 panic）。这保留了对尚未迁移的 `state::<>()` 调用的兼容，但 G5 禁止新增直取。
 

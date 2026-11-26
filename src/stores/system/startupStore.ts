@@ -34,10 +34,15 @@ export const useStartupStore = create<StartupState>((set) => ({
       const states = await tauriInvoke<CapabilityStateDto[]>(
         "get_capability_states",
       );
-      set({
-        states: Object.fromEntries(states.map((item) => [item.id, item])),
+      const snapshot = Object.fromEntries(
+        states.map((item) => [item.id, item]),
+      );
+      set((state) => ({
+        // 快照只填缺口：订阅先于快照注册（见 `subscribeStartupCapabilities`），
+        // 因此已落地的条目一定晚于快照生成时刻，不能被快照覆盖回 `pending`。
+        states: { ...snapshot, ...state.states },
         hydrated: true,
-      });
+      }));
     } catch (e) {
       log.debug("capability states unavailable", e);
     }
@@ -46,6 +51,8 @@ export const useStartupStore = create<StartupState>((set) => ({
   applyState: (payload) => {
     set((state) => ({
       states: { ...state.states, [payload.id]: payload },
+      // 收到真实迁移即已水合：快照那次 IPC 失败时也不能让提示永不出现（C7 ③）。
+      hydrated: true,
     }));
   },
 
@@ -63,18 +70,25 @@ export function subscribeStartupCapabilities(): () => void {
   let disposed = false;
   const unlisteners: UnlistenFn[] = [];
 
-  void useStartupStore.getState().hydrate();
-
+  // 顺序即正确性：事件不重放，注册前发出的迁移永久丢失。Orb 窗口在 Boot 阶段
+  // 就完成水合，而 `tool_runtime` 在首帧后数毫秒即 `pending → ready`——先拉快照
+  // 只会拿到 `pending` 且再也等不到事件，表现为「正在准备」常驻。
   listen<CapabilityStateDto>(CAPABILITY_CHANGED_EVENT, ({ payload }) => {
     if (disposed) return;
     useStartupStore.getState().applyState(payload);
   })
     .then((unlisten) => {
-      if (disposed) unlisten();
-      else unlisteners.push(unlisten);
+      if (disposed) {
+        unlisten();
+        return;
+      }
+      unlisteners.push(unlisten);
+      void useStartupStore.getState().hydrate();
     })
     .catch((error) => {
       log.debug("capability listener unavailable", error);
+      // 监听不可用时仍要水合：否则 `hydrated` 恒为 false，连失败提示都不出。
+      if (!disposed) void useStartupStore.getState().hydrate();
     });
 
   return () => {
