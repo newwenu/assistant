@@ -388,11 +388,11 @@ describe("特性扩展边界（新增特性改动 core 文件数 = 0）", () => 
     const permissionsRoot = path.join(TAURI_ROOT, "permissions");
     const permissionDirs = exists("src-tauri/permissions")
       ? fs
-        .readdirSync(permissionsRoot)
-        .filter((entry) =>
-          fs.statSync(path.join(permissionsRoot, entry)).isDirectory(),
-        )
-        .sort()
+          .readdirSync(permissionsRoot)
+          .filter((entry) =>
+            fs.statSync(path.join(permissionsRoot, entry)).isDirectory(),
+          )
+          .sort()
       : [];
     for (const dir of permissionDirs) {
       if (!names.includes(dir)) {

@@ -56,7 +56,7 @@ impl CapErr {
 
     pub fn id(&self) -> &'static str {
         match self {
-            Self::NotReady { id } | Self::Build { id, .. } => *id,
+            Self::NotReady { id } | Self::Build { id, .. } => id,
         }
     }
 

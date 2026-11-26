@@ -84,7 +84,7 @@ pub(crate) fn create_window(app: &AppHandle, label: &str, dirs: &AppDirs) -> Res
             .startup_id()
             .to_string()
     };
-    builder = builder.initialization_script(&format!("window.__STARTUP_ID__ = \"{startup_id}\";"));
+    builder = builder.initialization_script(format!("window.__STARTUP_ID__ = \"{startup_id}\";"));
 
     if let (Some(mw), Some(mh)) = (window_spec.min_width, window_spec.min_height) {
         builder = builder.min_inner_size(mw, mh);

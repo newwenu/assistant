@@ -366,7 +366,7 @@ fn acl_command_names(feature: &str) -> Result<BTreeSet<String>, String> {
     let value: serde_json::Value =
         serde_json::from_str(&text).expect("acl-manifests.json 是合法 JSON");
     let permissions = value
-        .get(&acl_plugin_name(feature))
+        .get(acl_plugin_name(feature))
         .and_then(|v| v.get("permissions"))
         .and_then(|v| v.as_object())
         .ok_or_else(|| format!("acl-manifests.json 缺少 {} 的 permissions 对象", feature))?;

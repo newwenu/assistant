@@ -5,19 +5,10 @@ use std::path::Path;
 use assistant_config::{app_conf::AppConf, orb_conf::OrbConf, ConfGroup};
 
 /// 启动期配置快照。一次定位目录、逐组 `load_from(显式路径)`，不再各模块自行 `load()`。
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct BootConf {
     pub app: AppConf,
     pub orb: OrbConf,
-}
-
-impl Default for BootConf {
-    fn default() -> Self {
-        Self {
-            app: AppConf::default(),
-            orb: OrbConf::default(),
-        }
-    }
 }
 
 impl BootConf {
