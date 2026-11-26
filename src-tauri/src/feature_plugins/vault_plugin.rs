@@ -24,7 +24,8 @@ mod mounted {
     use assistant_vault::security_db::SecurityDbState;
     use assistant_vault::storage_section::{
         VaultAction, VaultCoverage, VaultEligibility, VaultPolicy, VaultReason, VaultRisk,
-        VaultScope, VaultSectionError, VaultStats, VaultStorageEntry, VaultStorageSection,
+        VaultScope, VaultSectionError, VaultStats, VaultStatsMode, VaultStorageEntry,
+        VaultStorageSection,
     };
 
     /// 安全域分区的 core 侧适配器：只做**类型映射与转发**，不认识任何条目 `key`
@@ -50,6 +51,15 @@ mod mounted {
             VaultCoverage::SingleFile => RootCoverage::SingleFile,
             VaultCoverage::SelfFilesOnly => RootCoverage::SelfFilesOnly,
             VaultCoverage::RecursiveTree => RootCoverage::RecursiveTree,
+        }
+    }
+
+    /// 采样档原样转发分区自述值（I79 §3.3）：core 不按 `key` 或 `coverage` 反推档位，
+    /// 因为「递归但结构性有界」与「递归且无上界」在 `coverage` 上同形。
+    fn map_stats_mode(mode: VaultStatsMode) -> StatsMode {
+        match mode {
+            VaultStatsMode::Inline => StatsMode::Inline,
+            VaultStatsMode::Deferred => StatsMode::Deferred,
         }
     }
 
@@ -165,8 +175,9 @@ mod mounted {
             coverage: map_coverage(entry.coverage),
             owner: entry.owner,
             inventory: entry.inventory,
-            // 分区条目恒 `Deferred`（I79 §3.3）：规模由功能侧数据决定，且带锁语义。
-            stats_mode: StatsMode::Deferred,
+            // 档位由分区自述（I79 §3.3）：锁态只影响资格文案，不影响观测，因此不构成
+            // 「整条必须延后算」的理由；core 不按 key 反推档位。
+            stats_mode: map_stats_mode(entry.stats_mode),
             decl: EntryDecl {
                 action: map_action(entry.decl.action),
                 eligibility: map_eligibility(entry.decl.eligibility),

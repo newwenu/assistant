@@ -172,14 +172,25 @@ impl InventoryCache {
                 status,
                 StorageInventoryStatusDto::NeverRun | StorageInventoryStatusDto::Stale
             );
+        let mut declared_stale = false;
         let nodes: Vec<StorageInventoryNodeDto> = state
             .nodes
             .iter()
-            .map(|node| node_dto(node, views, samples))
+            .map(|node| {
+                let (dto, stale) = node_dto(node, views, samples, now);
+                declared_stale |= stale;
+                dto
+            })
             .collect();
         let over_registered = nodes.iter().any(|node| node.over_registered);
         let totals = if state.scanned_at.is_some() {
-            totals_dto(&nodes, &state.totals, views, state.totals_partial)
+            // 登记值过期 ⇒ 余量降为下界，`totals.partial` 一并置位（§8.4）。
+            totals_dto(
+                &nodes,
+                &state.totals,
+                views,
+                state.totals_partial || declared_stale,
+            )
         } else {
             StorageInventoryTotalsDto::default()
         };
@@ -189,7 +200,7 @@ impl InventoryCache {
             failed_at: state.failed_at,
             unregistered_bytes: sum_unregistered(&state.nodes, |node| node.scan_bytes),
             unregistered_count: sum_unregistered(&state.nodes, |node| node.scan_count),
-            partial: state.partial || over_registered,
+            partial: state.partial || over_registered || declared_stale,
             truncated_nodes: state.truncated.clone(),
             nodes,
             totals,

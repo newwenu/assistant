@@ -4,7 +4,15 @@ use crate::cmd::storage::entries::{EntrySample, EntryView};
 use crate::protocol::dto::{StorageInventoryClassDto, StorageInventoryNodeDto};
 
 use super::classify::layer_of;
-use super::RawNode;
+use super::{RawNode, SCAN_TTL_SECONDS};
+
+/// 减法下界（I79 §8.4）：`observed_at == None` 是本次响应实测，视为新鲜；
+/// 有年龄且 `now - at >= SCAN_TTL_SECONDS` 的样本按 `null` 参与，登记值整体降为未知。
+fn is_stale(sample: &EntrySample, now: i64) -> bool {
+    sample
+        .observed_at
+        .is_some_and(|at| now.saturating_sub(at) >= SCAN_TTL_SECONDS)
+}
 
 /// 减法（§3.11.3，纯函数、无 IO）：登记值只来自清单里首段命中的条目，其余类恒 `0`。
 ///
@@ -14,12 +22,25 @@ pub fn subtract_declared(
     node: &RawNode,
     views: &[EntryView],
     samples: &[EntrySample],
+    now: i64,
 ) -> (Option<u64>, Option<u64>) {
+    let (bytes, count, _) = subtract_detail(node, views, samples, now);
+    (bytes, count)
+}
+
+/// 减法本体：第三个返回值表示「有参与减法的样本过期」，供 `partial`（下界）标记使用。
+fn subtract_detail(
+    node: &RawNode,
+    views: &[EntryView],
+    samples: &[EntrySample],
+    now: i64,
+) -> (Option<u64>, Option<u64>, bool) {
     if node.class != StorageInventoryClassDto::Declared {
-        return (Some(0), Some(0));
+        return (Some(0), Some(0), false);
     }
     let mut bytes: Option<u64> = Some(0);
     let mut count: Option<u64> = Some(0);
+    let mut stale = false;
     for (view, sample) in views.iter().zip(samples.iter()) {
         if !view
             .segments
@@ -32,7 +53,13 @@ pub fn subtract_declared(
         // 不主张登记值，`declaredBytes` / `declaredCount` 恒 `null`，从而 `residual` 也恒 `null`，
         // 避免持续写入造成的必然假 `overRegistered`。
         if !view.inventory {
-            return (None, None);
+            return (None, None, false);
+        }
+        if is_stale(sample, now) {
+            stale = true;
+            bytes = None;
+            count = None;
+            continue;
         }
         bytes = match (bytes, sample.bytes) {
             (Some(acc), Some(value)) => Some(acc.saturating_add(value)),
@@ -43,7 +70,7 @@ pub fn subtract_declared(
             _ => None,
         };
     }
-    (bytes, count)
+    (bytes, count, stale)
 }
 
 fn residual(scan: Option<u64>, declared: Option<u64>) -> Option<u64> {
@@ -53,17 +80,19 @@ fn residual(scan: Option<u64>, declared: Option<u64>) -> Option<u64> {
     }
 }
 
+/// 节点 DTO + 「登记值因过期降为下界」标记（后者参与 `partial`，§8.4）。
 pub(super) fn node_dto(
     node: &RawNode,
     views: &[EntryView],
     samples: &[EntrySample],
-) -> StorageInventoryNodeDto {
-    let (declared_bytes, declared_count) = subtract_declared(node, views, samples);
+    now: i64,
+) -> (StorageInventoryNodeDto, bool) {
+    let (declared_bytes, declared_count, stale) = subtract_detail(node, views, samples, now);
     let over_registered = matches!(
         (declared_bytes, node.scan_bytes),
         (Some(declared), Some(scan)) if declared > scan
     );
-    StorageInventoryNodeDto {
+    let dto = StorageInventoryNodeDto {
         name: node.name.clone(),
         class: node.class,
         scope: layer_of(node.scope),
@@ -76,7 +105,8 @@ pub(super) fn node_dto(
         residual_count: residual(node.scan_count, declared_count),
         over_registered,
         children: node.children.clone(),
-    }
+    };
+    (dto, stale)
 }
 
 pub(super) fn sum_unregistered(
@@ -102,6 +132,9 @@ mod tests {
     use crate::app_dirs::registry::RootScope;
     use crate::cmd::storage::entries::{set_sample, views};
     use crate::protocol::dto::StorageAvailabilityDto;
+
+    /// 响应时刻：夹具样本 `observed_at` 均为 `None`（本次实测），年龄上限不参与。
+    const NOW: i64 = 1_000;
 
     /// 清单 + 全 `available` 样本：core 条目每条 `1024` 字节 / 1 个。
     fn fixtures() -> (Vec<EntryView>, Vec<EntrySample>) {
@@ -134,13 +167,13 @@ mod tests {
             StorageInventoryClassDto::Declared,
             Some(4_000),
         );
-        let (declared_bytes, declared_count) = subtract_declared(&declared, &views, &samples);
+        let (declared_bytes, declared_count) = subtract_declared(&declared, &views, &samples, NOW);
         // attachments 首段下有 E1 与 E2 两条登记。
         assert_eq!(declared_bytes, Some(2048));
         assert_eq!(declared_count, Some(2));
 
         let unregistered = raw("stray", StorageInventoryClassDto::Unregistered, Some(900));
-        let (bytes, count) = subtract_declared(&unregistered, &views, &samples);
+        let (bytes, count) = subtract_declared(&unregistered, &views, &samples, NOW);
         assert_eq!(bytes, Some(0), "未登记节点没有减数");
         assert_eq!(count, Some(0));
     }
@@ -159,11 +192,12 @@ mod tests {
             StorageInventoryClassDto::Declared,
             Some(4_000),
         );
-        let (declared, _) = subtract_declared(&node, &views, &samples);
+        let (declared, _) = subtract_declared(&node, &views, &samples, NOW);
         assert_eq!(declared, None, "任一登记值为 null 时登记值整体为 null");
-        let dto = node_dto(&node, &views, &samples);
+        let (dto, stale) = node_dto(&node, &views, &samples, NOW);
         assert_eq!(dto.residual_bytes, None);
         assert!(!dto.over_registered);
+        assert!(!stale, "数字缺失不是过期");
     }
 
     #[test]
@@ -180,9 +214,51 @@ mod tests {
             StorageInventoryClassDto::Declared,
             Some(1_000),
         );
-        let dto = node_dto(&node, &views, &samples);
+        let (dto, stale) = node_dto(&node, &views, &samples, NOW);
         assert!(dto.over_registered, "登记值大于扫描值时报警");
         assert_eq!(dto.residual_bytes, Some(0), "余量不得为负");
+        assert!(!stale);
+    }
+
+    #[test]
+    fn stale_declared_degrades_to_lower_bound() {
+        let (views, mut samples) = fixtures();
+        let at = NOW - SCAN_TTL_SECONDS;
+        set_sample(
+            &views,
+            &mut samples,
+            "E1",
+            EntrySample {
+                observed_at: Some(at),
+                ..EntrySample::observed(1024, 1, Some(100), Some(200))
+            },
+        );
+        let node = raw(
+            "attachments",
+            StorageInventoryClassDto::Declared,
+            Some(4_000),
+        );
+        let (declared, count) = subtract_declared(&node, &views, &samples, NOW);
+        assert_eq!(declared, None, "年龄达到上限的登记值按未知参与");
+        assert_eq!(count, None);
+        let (dto, stale) = node_dto(&node, &views, &samples, NOW);
+        assert_eq!(dto.residual_bytes, None, "余量随之降为下界");
+        assert!(stale, "过期参与减法要置位 partial");
+
+        // 年龄未到上限：照旧参与减法。
+        let fresh_at = NOW - SCAN_TTL_SECONDS + 1;
+        set_sample(
+            &views,
+            &mut samples,
+            "E1",
+            EntrySample {
+                observed_at: Some(fresh_at),
+                ..EntrySample::observed(1024, 1, Some(100), Some(200))
+            },
+        );
+        let (dto, stale) = node_dto(&node, &views, &samples, NOW);
+        assert_eq!(dto.declared_bytes, Some(2048));
+        assert!(!stale);
     }
 
     #[test]

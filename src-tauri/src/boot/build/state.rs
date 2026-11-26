@@ -42,6 +42,7 @@ pub fn build_runtime_state(ctx: &StartupCtx<'_>) -> Result<CapValue, CapErr> {
     ctx.app.manage(crate::screenshot::ScreenshotState::new());
     ctx.app
         .manage(crate::cmd::storage::inventory::InventoryCache::new());
+    ctx.app.manage(crate::cmd::storage::EntryStatsCache::new());
     ctx.app.manage(Arc::new(
         crate::cmd::storage::reclaim::ReclaimPlanStore::new(),
     ));

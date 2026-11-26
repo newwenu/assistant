@@ -8,7 +8,7 @@ use crate::protocol::dto::{
 
 use super::super::entries::{self, EntrySample, EntryView};
 use super::super::ledger;
-use super::super::sample::{collect_with, SampleInputs, Sampled};
+use super::super::sample::{collect_with, SampleInputs, SampleMode, Sampled};
 use super::store::{CachedPlan, CachedPlanEntry};
 use super::ReclaimPorts;
 
@@ -35,16 +35,38 @@ pub async fn plan_storage_reclaim(
             .map(|refs| refs.referenced),
         None => None,
     };
-    let mut sampled: Sampled = collect_with(SampleInputs {
-        dirs: ports.dirs,
-        store: ports.attachments,
-        entries: &all_entries,
-        referenced: referenced.as_ref(),
-        sections: ports.sections.clone(),
-        tool_results: ports.tool_results.clone(),
-        scratch: ports.scratch.clone(),
-        db: ports.db.clone(),
-    })
+    // 计划模式只强制采样请求里的 key（`None` = 清单全部）：`force` 用登记表里的静态 key，
+    // 未知 key 留给后面的 `requested_views` 统一拒绝（不在这里静默丢弃）。
+    let force_keys: Option<Vec<&'static str>> = if args.entry_keys.is_empty() {
+        None
+    } else {
+        let views = entries::views(&ports.sections);
+        Some(
+            args.entry_keys
+                .iter()
+                .filter_map(|key| entries::find_by_key(&views, key).map(|view| view.key))
+                .collect(),
+        )
+    };
+    let mut sampled: Sampled = collect_with(
+        SampleInputs {
+            dirs: ports.dirs,
+            store: ports.attachments,
+            entries: &all_entries,
+            referenced: referenced.as_ref(),
+            sections: ports.sections.clone(),
+            tool_results: ports.tool_results.clone(),
+            scratch: ports.scratch.clone(),
+            db: ports.db.clone(),
+            // 计划不读也不写统计缓存：`Deferred` 全部现场采样，保住计划新鲜度（INV3）。
+            stats: None,
+            now: ports.now,
+        },
+        // `force = None`（请求为空 = 清单全部）或请求的 key 集合（§8.2）。
+        SampleMode::Plan {
+            force: force_keys.as_deref(),
+        },
+    )
     .await;
     if e1_failed {
         if let Some(slot) = entries::index_of_core(&sampled.views, CoreEntry::Attachments) {

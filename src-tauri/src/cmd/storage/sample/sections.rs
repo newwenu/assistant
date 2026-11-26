@@ -5,7 +5,9 @@
 //! `StorageSection::policy` / `StorageSection::eligibility`（G17(b) / X15）。
 
 use crate::cmd::storage::entries::EntrySample;
-use crate::cmd::storage::section::{SectionError, SectionSample, StorageSectionHandle};
+use crate::cmd::storage::section::{
+    SectionError, SectionSample, SectionStats, StorageSectionHandle,
+};
 
 /// 单条分区条目的观测：取数失败按分区自述的类别降级，不填 `0` 冒充（G6）。
 pub(super) fn section_sample(section: &StorageSectionHandle, key: &'static str) -> EntrySample {
@@ -35,4 +37,33 @@ pub(super) fn section_sample(section: &StorageSectionHandle, key: &'static str) 
         sample = sample.with_policy(policy);
     }
     sample
+}
+
+/// 缓存样本的判据刷新（I79 §5.2 / INV9）：**观测**来自缓存，**判据**每次读现算。
+///
+/// 锁态、保留天数、上限等判据输入都不在缓存里，因此缓存不需要任何「功能侧通知失效」的
+/// 钩子：解锁 / 改配置当次读就生效，core 也不认识任何分区 `key`（G17(b) / X15）。
+/// 数字取不到时按「不可算」折算，与 [`section_sample`] 的降级路径同款，不虚构 `0`。
+pub(super) fn refresh_judgement(
+    section: &StorageSectionHandle,
+    key: &'static str,
+    sample: &mut EntrySample,
+) {
+    // 成功时 `bytes` / `count` 同有、失败 / 占位时同无，故成对判断即可。
+    let observed = match (sample.bytes, sample.count) {
+        (Some(bytes), Some(count)) => Ok(SectionStats {
+            bytes,
+            count,
+            oldest_at: sample.oldest_at,
+            newest_at: sample.newest_at,
+        }),
+        _ => Err(SectionError::Unavailable),
+    };
+    let policy = section.policy(key);
+    let judged = SectionSample {
+        observed,
+        policy: policy.clone(),
+    };
+    sample.eligibility = section.eligibility(key, &judged);
+    sample.policy = policy;
 }

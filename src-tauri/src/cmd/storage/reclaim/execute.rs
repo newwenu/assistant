@@ -112,6 +112,12 @@ pub async fn execute_storage_reclaim(
             result.failed_count,
             result.skipped_count
         );
+        // 回收成功后按条失效（INV5 / §8.5）：`E14` 只登记待执行、`removed_bytes == 0`，自然不失效。
+        if result.removed_bytes > 0 {
+            if let Some(stats) = ports.stats {
+                stats.invalidate(&[result.key.as_str()]);
+            }
+        }
         results.push(result);
     }
 

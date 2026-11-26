@@ -102,7 +102,19 @@
 
 ### 3.3 分区条目
 
-全部分区条目（`E7`–`E11` / `E16`）为 `Deferred`：规模由功能侧数据决定，且带**锁语义**（vault 锁定时 `stats()` 返回 `Locked`）。分区条目在 `SectionEntry` 上自述档位，core 不识别任何分区 `key`（沿用 I61 的 G17(b)）。
+分区条目的档位**由分区自述**（`SectionEntry.stats_mode`），core 不识别任何分区 `key`，也不按 `coverage` 反推（沿用 I61 的 G17(b)）。
+
+判据只看**计算形状**，与 `coverage` 不等价：`coverage` 描述观测范围，档位描述成本形状。
+
+| 形状 | 档 | 例 |
+|---|---|---|
+| 单文件 / 自身文件、无递归 | `Inline` | `E7` `security.db`、`E16` vault 配置 |
+| 递归子树但**有结构性上界**（份数上限 / 保留天数），且无第三方写入 | `Inline` | `E8` `backups`（`MAX_BACKUPS`）、`E11` `audit`（`audit_retention_days`） |
+| 递归整树且**无结构性上界**（含 `.git`、由用户数据决定规模） | `Deferred` | `E9` `vault`、`E10` `recovery` |
+
+**锁态不构成 `Deferred` 的理由**：分区 `stats()` 只读 metadata，锁定态照常上报大小；锁只影响 `eligibility()` 的资格文案。因此 vault 的锁 / 解锁不需要任何「通知 core 失效」的钩子（见 §5.2「判据不进缓存」）。
+
+`coverage == RecursiveTree` 的条目在两种档位都可能出现，故「递归 ⇒ `Deferred`」的粗粒度映射不可用。
 
 ---
 
@@ -177,13 +189,14 @@ pub enum SampleMode<'a> {
 2. `Inline` 条目按现状并行采样，保留 `timed` / `timed_blocking`；
 3. `Deferred` 条目：`EntryStatsCache::read(now, views)` → 返回 `(samples, triggers)`；
 4. 对 `triggers` 调用 `trigger_stats(app, &triggers)`（幂等，§6.1）；
-5. 返回 `Sampled`（`views` 与 `samples` 仍严格一一对齐）。
+5. **判据现场折算**（§5.2「判据不进缓存」）：对每个 `Deferred` 条目，用缓存样本的观测值重建 `SectionSample` / owner 策略，调分区的 `eligibility()` / `policy()`（core 的 `E3` 调 owner 的 `result_retention()`）覆盖样本里的判据字段；
+6. 返回 `Sampled`（`views` 与 `samples` 仍严格一一对齐）。
 
 句柄缺失的条目（`E3` / `E19` 在特性关闭构建下）**不进缓存**：仍按现状返回 `NotImplemented` 降级，也不触发补算。
 
 ### 5.2 缓存状态机
 
-单条缓存记录：
+单条缓存记录（**只存观测**）：
 
 ```rust
 struct EntryStat {
@@ -194,12 +207,19 @@ struct EntryStat {
     oldest_at: Option<i64>,
     newest_at: Option<i64>,
     reclaimable: Option<(u64, u64)>,
-    policy: Option<ReclaimPolicyDto>,
-    eligibility: Option<(StorageEligibilityDto, StorageReclaimReasonDto)>,
     /// 单飞 + 租约：`(token, started_at)`；`None` 表示无任务在跑（§6.1 约束 5）。
     running: Option<(u64, i64)>,
 }
 ```
+
+**判据不进缓存**：`policy` / `eligibility` 的输入（锁态、保留天数、份数上限）随时会变，若随观测一起冻住，任何一处变化都得主动通知缓存失效——这正是反向依赖的来源：core 被迫知道「某个分区有锁生命周期」。
+
+改为：缓存只存观测，判据在**每次读**时由读路径现算——
+
+- 分区条目：`sample/sections.rs` 的 `refresh_judgement`，用缓存样本重建 `SectionSample` 后调分区的 `eligibility()` / `policy()`；
+- core 的 `E3`：`sample/rows.rs` 的 `refresh_tool_results_policy`，调 owner 的 `result_retention()`（读内存值，不遍历）。
+
+因此 core 不识别任何分区语义，也不需要「锁 / 解锁 / 改配置 → 失效缓存」的钩子：变化当次读即生效。代价仅是每次读多几次内存级调用。
 
 读映射（`now` 取响应时刻；`age = now - observed_at`）：
 
@@ -208,9 +228,8 @@ struct EntryStat {
 | 无记录 | `noReportYet` | 全 `null` | 是 |
 | 成功，`age < ENTRY_STATS_TTL_SECONDS` | 原值（`available` / `missing`） | 原值 | 否 |
 | 成功，`age >= ENTRY_STATS_TTL_SECONDS` | `staleReport` | **原值**（旧数字仍可展示） | 是 |
-| 失败（`unreadable` / `unavailable`），`age >= ENTRY_STATS_RETRY_SECONDS` | 原失败类别 | 全 `null` | 是 |
+| 失败（`unreadable` / `unavailable` / `locked`），`age >= ENTRY_STATS_RETRY_SECONDS` | 原失败类别 | 全 `null` | 是 |
 | 失败，`age < ENTRY_STATS_RETRY_SECONDS` | 原失败类别 | 全 `null` | 否 |
-| `locked` | `locked` | 全 `null` | 否（等解锁失效，§8.5） |
 | `notImplemented` | `notImplemented` | 全 `null` | 否（重试无意义） |
 | 正在补算且无成功值 | `noReportYet` | 全 `null` | 否（已 in-flight） |
 | 正在补算且有成功值，`age >= TTL` | `staleReport` | 原值 | 否（已 in-flight） |
@@ -261,8 +280,6 @@ impl EntryStatsCache {
 
     /// 回收成功后按条目失效（§8.5）。
     pub fn invalidate(&self, keys: &[&str]);
-    /// vault 锁 / 解锁等整体失效（§8.5）。
-    pub fn invalidate_sections(&self);
 }
 
 /// 幂等触发：只为 `begin` 成功且仍有需要的 key 起任务。
@@ -283,7 +300,7 @@ pub fn trigger_stats(app: &tauri::AppHandle, keys: &[&'static str]);
 - 常量：`src-tauri/src/protocol/events.rs` 新增 `STORAGE_ENTRY_STATS_UPDATED = "storage:entry-stats-updated"`；
 - 载荷：`()`（不带数据），**本期定稿，非「后续优化」**：`inventory` 的 `declared` 数字由当前响应里的条目样本派生（`node_dto(node, views, samples)`），若前端按 key 局部打补丁，会出现「条目新、对账旧」的不同源；要补就得在前端重算聚合，等于把减法逻辑复制一份。整页重拉是唯一能保住同响应同源的做法（与 X3 同一理由）；
 - 时机：worker 一个 drain 周期（≤ 250ms）内完成 / 失败的条目**合并为一次事件**，禁止逐条 emit（D10）；
-- 失败也发事件（前端据此把「统计中」变成失败类别），但 `locked` / `notImplemented` 不触发补算、也不发事件。
+- 失败也发事件（前端据此把「统计中」变成失败类别），但 `notImplemented` 不触发补算、也不发事件：它是**唯一终态**（实现不存在，再算也一样）；其余失败类别（含 `locked`）一律按 `ENTRY_STATS_RETRY_SECONDS` 退避重试并照常发事件（§8.5）。
 
 ### 6.3 启动期
 
@@ -328,6 +345,8 @@ let complete = views.iter().zip(samples.iter()).all(|(view, sample)| {
 - `complete` 只表达「**同步档全部有结论**」；异步档的年龄由各条 `availability` / `observed_at` 表达；
 - 前端当前未消费 `complete`，本次不改前端行为。
 
+§3.3 的分档修正让 vault 的 `E7` / `E8` / `E11` / `E16` 从 `Deferred` 变 `Inline`，它们自此参与 `complete`。这是预期结果：这几条都是单文件 / 有上界子树的 `metadata` 读，正常必给 `available` / `missing`；若真读不到，`complete = false` 正是「同步档没结论」的应有表达。
+
 ### 7.3 `availability` 取值
 
 不新增取值，启用既有两个：
@@ -336,8 +355,10 @@ let complete = views.iter().zip(samples.iter()).all(|(view, sample)| {
 |---|---|---|
 | `noReportYet` | 尚未算过（首次 / 失效后） | `null` |
 | `staleReport` | 算过但已过期，**数字仍可展示** | 旧值 |
-| `locked` | 分区自述受保护 | `null` |
+| `locked` | 分区**自述**受保护 | `null` |
 | `unreadable` / `unavailable` | 算了但失败 | `null` |
+
+`locked` 只是 wire 上的**通用转述词汇**：分区说「我受保护」，core 原样透传，不判断是谁、也不因此产生任何专属分支。缓存对它的处理与 `unreadable` / `unavailable` **完全同一条失败路径**（§5.2）；「锁是不是会解除」属于分区自己的事，core 只按退避重试。
 
 同时修正 `StorageAvailabilityDto` 的注释「存储条目只用前六个值」——本次起八个值全部在用。
 
@@ -355,7 +376,7 @@ let complete = views.iter().zip(samples.iter()).all(|(view, sample)| {
 | INV6 | 缓存单写者 | 只有 `finish` / `fail` / `invalidate` 改状态；`read` 纯只读 |
 | INV7 | 事件按批合并 | worker drain 周期合并，≤ 250ms 一次 |
 | INV8 | `Deferred` 不参与 `complete` | §7.2 |
-| INV9 | 锁定状态不缓存数字 | 分区返回 `Locked` 时落 `availability = locked` + 全 `null` |
+| INV9 | 判据不进缓存 | `EntryStat` 不含 `policy` / `eligibility`；`Deferred` 条目每次读现场折算判据（`refresh_judgement` / `refresh_tool_results_policy`），锁态与配置变更当次读即生效，无需任何失效钩子 |
 | INV10 | 声明说谎可观测 | `Inline` 超时 `log::warn!`（§4.4） |
 | INV11 | 结算权唯一（token） | `begin` 分配 token；`finish` / `fail` 仅在 token 仍匹配时生效，被 `invalidate` 或新任务接管的旧结果直接丢弃（§5.2 约束 5、§6.1 约束 5） |
 | INV12 | 结果不丢弃 | `finish` / `fail` / 清 `running` / 释放 permit 全在 `spawn_blocking` 闭包内部完成；超时只做 UI 占位（§6.1 约束 4） |
@@ -406,11 +427,10 @@ pub fn subtract_declared(
 |---|---|---|
 | 回收执行成功且 `removed_bytes > 0` | `invalidate(&[key])` | `reclaim/execute.rs` |
 | **附件删除成功**（`E2` 的孤儿判据依赖附件集合） | `invalidate(&["attachments/derived"])` | `cmd/storage/mod.rs` 的 `delete_attachments`（`removed_count > 0` 时） |
-| vault 锁定 / 解锁 | `invalidate_sections()` | `feature_plugins/vault_plugin.rs`（事件发出处） |
 | TTL 到期 | 读路径自动触发补算 | `sample/cache.rs` |
 | 特性卸载 / 分区不再注册 | 读路径按当前 `views` 过滤，不主动清理 | `sample/cache.rs` |
 
-`locked` 条目不靠 TTL 重试：锁定时重试无意义，解锁事件才失效（INV9）。
+**没有「vault 锁 / 解锁」失效点**：锁态与保留天数都属判据，读路径每次现算（§5.2），因此不需要任何功能侧主动通知。`locked` 与 `unreadable` / `unavailable` 一样按 `ENTRY_STATS_RETRY_SECONDS` 退避重试——锁一解除，下一次读就能拿到数字。
 
 `E2` 必须显式失效的理由：`list_derived` 的 `orphan` 判据是「派生文件找不到对应基附件」，删附件会让原本非孤儿的侧车立刻变孤儿；不失效则 `E2` 的可回收量最多滞后一个 `ENTRY_STATS_TTL_SECONDS`，与「删完立刻能清」的用户预期冲突。`E2` 归 `Deferred` 后，这是唯一新增的显式失效点。
 
@@ -451,7 +471,9 @@ pub fn subtract_declared(
 | `src-tauri/src/cmd/storage/entries/mod.rs` | `EntrySample.observed_at` + 构造器保持 `None` |
 | `src-tauri/src/cmd/storage/entries/assemble.rs` | `build_entry` 填 `observed_at`；`complete` 只看 `Inline` |
 | `src-tauri/src/cmd/storage/sample/mod.rs` | `SampleMode`；常量；`mod cache` |
-| `src-tauri/src/cmd/storage/sample/collect.rs` | 拆 `Inline` 现场采样 / `Deferred` 读缓存 + 触发；`Plan` 模式 |
+| `src-tauri/src/cmd/storage/sample/collect.rs` | 拆 `Inline` 现场采样 / `Deferred` 读缓存 + 触发；`Plan` 模式；`Deferred` 条目判据现场折算 |
+| `src-tauri/src/cmd/storage/sample/sections.rs` | `refresh_judgement`：用缓存观测重建 `SectionSample` 后现算分区判据 |
+| `src-tauri/src/cmd/storage/sample/rows.rs` | `refresh_tool_results_policy`：`E3` 策略现算（读 owner 内存值） |
 | `src-tauri/src/cmd/storage/sample/timeout.rs` | `Inline` 超时 `log::warn!`（声明说谎探针） |
 | `src-tauri/src/cmd/storage/sample/cache.rs`（新增） | `EntryStatsCache` 状态机、single-flight + 租约、有界并发、闭包自结算、事件合并、`trigger_stats` |
 | `src-tauri/src/cmd/storage/inventory/subtract.rs` | `subtract_declared` 加 `now` 与年龄上限；`node_dto` 透传 `now` |
@@ -461,7 +483,7 @@ pub fn subtract_declared(
 | `src-tauri/src/cmd/storage/mod.rs` | `collect` 返回触发列表 → `trigger_stats`；`delete_attachments` 成功后 `invalidate(&["attachments/derived"])` |
 | `src-tauri/src/boot/build/state.rs` | `manage(EntryStatsCache::new())` |
 | `src-tauri/src/protocol/events.rs` | `STORAGE_ENTRY_STATS_UPDATED` |
-| `src-tauri/src/feature_plugins/vault_plugin.rs` | 锁 / 解锁处 `invalidate_sections()` |
+| `src-tauri/src/feature_plugins/vault_plugin.rs` | 分区 `stats_mode` 原样映射；无失效钩子 |
 | `src-tauri/crates/assistant-protocol/src/storage.rs` | `StorageEntryDto.observed_at`；修正 `availability` 注释 |
 | `src/settings/pages/storage/useStorageSnapshot.ts` | 订阅新事件 + 尾随刷新 |
 | `src/settings/pages/storage/entryView.ts` | 详情展示 `observedAt` |
@@ -477,7 +499,7 @@ pub fn subtract_declared(
 |---|---|---|
 | R0 | 契约与声明：`StatsMode` + 登记表 / `SectionEntry` / `EntryView`；`observed_at` DTO + `contract:gen`；`E1` 恒 `Inline` 单测 | 是（行为不变，全部仍 `Inline`） |
 | R1 | 读路径分档 + `EntryStatsCache`（含闭包自结算与租约）+ worker + 事件 + `complete` 收窄 + 计划 `Plan` 模式（强制现场采样，保持计划新鲜）+ 登记表把 `E2` / `E4` 改 `Deferred` | 是（`Deferred` 上线即零等待；计划仍新鲜） |
-| R2 | 减法年龄上限 + 回收后失效 + **删除附件后失效 `E2`** + vault 锁 / 解锁失效 + 计划「先校验后采样」优化 | 是（纯护栏，不改页面语义） |
+| R2 | 减法年龄上限 + 回收后失效 + **删除附件后失效 `E2`** + 计划「先校验后采样」优化 | 是（纯护栏，不改页面语义） |
 | R3 | 前端订阅 / 尾随刷新 / `observedAt` 展示 / 「统计中」与工具栏「快照于」文案 | 是（后端事件已就绪，缺前端只是不自动刷新） |
 
 批次顺序不可颠倒：R1 必须同时交付 `Plan` 模式，否则计划会读到缓存、破坏 C2；R1 把 `E2` / `E4` 改档与 R2 的 `E2` 失效点必须同版上线，否则「删附件后 `E2` 可回收量滞后」会先暴露一个 TTL。
@@ -538,7 +560,7 @@ pub fn subtract_declared(
 | V13 | 计划不写缓存 | 计划调用前后缓存状态不变（单测） |
 | V14 | 登记值年龄 `>= SCAN_TTL_SECONDS` 时 `residual` 为 `null` | `subtract` 单测 |
 | V15 | 回收成功（`removed_bytes > 0`）后该条缓存失效 | `execute` 单测 / 集成 |
-| V16 | `locked` 不缓存数字，解锁失效后重新补算 | 状态机单测 |
+| V16 | `locked` 不缓存数字，且按退避重试（无解锁失效钩子） | 状态机单测：`locked` 后 `age >= RETRY` 触发补算 |
 | V17 | `StorageEntryDto` 恒含 `observedAt` 键；`Inline` 等于 `sampledAt`，首次 `Deferred` 为 `null` | `protocol` 序列化测试 + 前端类型检查 |
 | V18 | 前端事件到达时若在飞，结束后补一次刷新 | hook 单测（mock service 计数） |
 | V19 | `noReportYet` 显示「统计中」，`staleReport` 显示「数据已过期」 | 组件 / 文案测试 |

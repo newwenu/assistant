@@ -70,6 +70,7 @@ impl Fixture {
             tool_results,
             scratch: None,
             db: None,
+            stats: None,
             now,
         }
     }
@@ -88,6 +89,7 @@ impl Fixture {
             tool_results: None,
             scratch: None,
             db: None,
+            stats: None,
             now,
         }
     }
@@ -106,6 +108,7 @@ impl Fixture {
             tool_results: None,
             scratch,
             db: None,
+            stats: None,
             now,
         }
     }

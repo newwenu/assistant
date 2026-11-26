@@ -73,6 +73,20 @@ pub(super) fn sample_tool_results(storage: &Arc<dyn ToolResultStorage>) -> Entry
     sample
 }
 
+/// `E3` 判据现算（I79 §5.2）：缓存只存观测，策略每次读向 owner 重取。
+///
+/// 保留天数来自配置，属「随时可变」的判据输入；缓存若把它一起冻住，改配置后资格要
+/// 滞后一个 TTL 才生效，且需要「配置变更通知缓存」的反向依赖。这里只读 owner 的内存值，
+/// 不遍历目录，成本可忽略。
+pub(super) fn refresh_tool_results_policy(
+    storage: &Arc<dyn ToolResultStorage>,
+    sample: &mut EntrySample,
+) {
+    sample.policy = storage
+        .result_retention()
+        .map(|(days, effective_since)| config_policy(days, effective_since));
+}
+
 pub(super) fn sample_index(root: &Path) -> EntrySample {
     match index_stats(root) {
         Ok(stats) => {

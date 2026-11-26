@@ -20,6 +20,7 @@ use assistant_tools::{ToolResultStorage, ToolScratchStore};
 
 use crate::app_dirs::AppDirs;
 use crate::cmd::storage::section::StorageSectionHandle;
+use crate::cmd::storage::EntryStatsCache;
 use crate::db_state::DbState;
 
 pub use execute::execute_storage_reclaim;
@@ -43,6 +44,8 @@ pub struct ReclaimPorts<'a> {
     /// `E19` 的观测与清空句柄（与 `E3` 同款双重暴露，I77 §3.2）。
     pub scratch: Option<Arc<dyn ToolScratchStore>>,
     pub db: Option<DbState>,
+    /// 统计缓存（I79 §8.5）：执行成功后按条失效；计划**不写**它（INV3）。
+    pub stats: Option<&'a EntryStatsCache>,
     /// 本次请求的统一时间戳：计划 `sampledAt` 与执行「判据排除」都按它比较。
     pub now: i64,
 }

@@ -5,10 +5,13 @@ pub mod reclaim;
 mod sample;
 pub mod section;
 
+pub use sample::EntryStatsCache;
+
 use std::sync::Arc;
 
 use tauri::{command, AppHandle, Manager};
 
+use crate::app_dirs::registry::CoreEntry;
 use crate::db_state::DbState;
 use crate::protocol::dto::{
     AttachmentDeleteResultDto, StorageBreakdownDto, StorageInventorySnapshotStatusDto,
@@ -50,6 +53,8 @@ pub async fn get_storage_breakdown(app: AppHandle) -> Result<StorageBreakdownDto
 
     // `E1` 的孤儿判据与顶层孤儿列表同一份引用集合：两边不可能对不上（§3.10 第 1 条）。
     let sampled = sample::collect(&app, &dirs, &store, &all_entries, Some(&refs.referenced)).await;
+    // 页面档的 `Deferred` 条目只读缓存：缺数 / 过期的 key 交给后台补算（幂等，I79 §5.1 第 4 步）。
+    sample::trigger_stats(&app, &sampled.triggers);
     let base = build_base(&all_entries, refs);
 
     let cache = app.state::<InventoryCache>().inner().clone();
@@ -111,7 +116,7 @@ impl ReclaimContext {
         })
     }
 
-    fn ports(&self, now: i64) -> ReclaimPorts<'_> {
+    fn ports<'a>(&'a self, now: i64, stats: Option<&'a EntryStatsCache>) -> ReclaimPorts<'a> {
         ReclaimPorts {
             plans: &self.plans,
             dirs: &self.dirs,
@@ -120,6 +125,7 @@ impl ReclaimContext {
             tool_results: self.tool_results.clone(),
             scratch: self.scratch.clone(),
             db: self.db.clone(),
+            stats,
             now,
         }
     }
@@ -133,7 +139,8 @@ pub async fn get_storage_reclaim_plan(
 ) -> Result<StorageReclaimPlanDto, String> {
     let context = ReclaimContext::load(&app)?;
     let now = now_seconds();
-    reclaim::plan_storage_reclaim(context.ports(now), request).await
+    // 计划既不读也不写统计缓存（INV3）：一律现场采样，保证计划新鲜。
+    reclaim::plan_storage_reclaim(context.ports(now, None), request).await
 }
 
 /// 执行：必须命中未过期计划且落在白名单，任一不符整体拒绝（零副作用）。
@@ -144,7 +151,8 @@ pub async fn reclaim_storage(
 ) -> Result<StorageReclaimResultDto, String> {
     let context = ReclaimContext::load(&app)?;
     let now = now_seconds();
-    reclaim::execute_storage_reclaim(context.ports(now), request).await
+    let cache = app.try_state::<EntryStatsCache>();
+    reclaim::execute_storage_reclaim(context.ports(now, cache.as_deref()), request).await
 }
 
 #[command]
@@ -186,6 +194,18 @@ pub async fn delete_attachments(
 
     let removed_count = u32::try_from(removed_count)
         .map_err(|_| "removed attachment count exceeds u32".to_string())?;
+
+    // `E2` 的孤儿判据依赖附件集合：删掉附件会让原本非孤儿的侧车立刻变孤儿，
+    // 必须显式失效，否则可回收量最多滞后一个 TTL（INV13 / §8.5）。
+    if removed_count > 0 {
+        if let Some(cache) = app.try_state::<sample::EntryStatsCache>() {
+            if let Some(root) =
+                crate::app_dirs::registry::find_by_entry(CoreEntry::AttachmentsDerived.id())
+            {
+                cache.invalidate(&[root.key]);
+            }
+        }
+    }
 
     Ok(AttachmentDeleteResultDto {
         removed_count,

@@ -37,6 +37,16 @@ pub enum VaultCoverage {
     RecursiveTree,
 }
 
+/// 采样档（I79 §4.2）：由分区自述，core 不识别任何分区 `key`（G17(b)）。
+///
+/// 判据按**计算形状**：子树有结构性上界且无第三方写入 → `Inline`；否则 `Deferred`。
+/// 与 `coverage` 同层但不等价（`coverage` 描述观测范围，采样档描述成本形状）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VaultStatsMode {
+    Inline,
+    Deferred,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VaultAction {
     None,
@@ -152,6 +162,8 @@ pub struct VaultStorageEntry {
     pub segments: &'static [&'static str],
     pub scope: VaultScope,
     pub coverage: VaultCoverage,
+    /// 采样档：分区自述，`vault_plugin` 原样映射成 `StatsMode`（I79 §3.3）。
+    pub stats_mode: VaultStatsMode,
     /// 只做展示，不参与路由（G17 / V22）。
     pub owner: &'static str,
     pub inventory: bool,
@@ -165,6 +177,7 @@ const ENTRIES: &[VaultStorageEntry] = &[
         segments: &[SEGMENT, "security.db"],
         scope: VaultScope::Data,
         coverage: VaultCoverage::SingleFile,
+        stats_mode: VaultStatsMode::Inline,
         owner: "SecurityDb",
         inventory: true,
         decl: VaultEntryDecl {
@@ -184,6 +197,7 @@ const ENTRIES: &[VaultStorageEntry] = &[
         segments: &[SEGMENT, "backups"],
         scope: VaultScope::Data,
         coverage: VaultCoverage::RecursiveTree,
+        stats_mode: VaultStatsMode::Inline,
         owner: "SecurityDb",
         inventory: true,
         decl: VaultEntryDecl {
@@ -205,6 +219,7 @@ const ENTRIES: &[VaultStorageEntry] = &[
         segments: &[SEGMENT, "vault"],
         scope: VaultScope::Data,
         coverage: VaultCoverage::RecursiveTree,
+        stats_mode: VaultStatsMode::Deferred,
         owner: "SecurityRepo",
         inventory: true,
         decl: VaultEntryDecl {
@@ -224,6 +239,7 @@ const ENTRIES: &[VaultStorageEntry] = &[
         segments: &[SEGMENT, "recovery"],
         scope: VaultScope::Data,
         coverage: VaultCoverage::RecursiveTree,
+        stats_mode: VaultStatsMode::Deferred,
         owner: "SecurityRecovery",
         inventory: true,
         decl: VaultEntryDecl {
@@ -243,6 +259,7 @@ const ENTRIES: &[VaultStorageEntry] = &[
         segments: &[SEGMENT, "audit"],
         scope: VaultScope::Data,
         coverage: VaultCoverage::RecursiveTree,
+        stats_mode: VaultStatsMode::Inline,
         owner: "SecurityDb",
         inventory: true,
         decl: VaultEntryDecl {
@@ -265,6 +282,7 @@ const ENTRIES: &[VaultStorageEntry] = &[
         segments: &[SEGMENT, CONF_FILE],
         scope: VaultScope::Data,
         coverage: VaultCoverage::SingleFile,
+        stats_mode: VaultStatsMode::Inline,
         owner: "VaultConf",
         inventory: true,
         decl: VaultEntryDecl {
@@ -464,6 +482,18 @@ mod tests {
             assert!(entry.inventory, "{}", entry.entry);
             assert!(entry.decl.note.is_none(), "{}", entry.entry);
         }
+    }
+
+    /// 采样档按计算形状自述（I79 §3.3）：只有递归整树且无结构性上界的条目才 `Deferred`。
+    /// 改档即测试红：单文件 / 有上界的子树被误标 `Deferred` 会让数字白滞后一个 TTL。
+    #[test]
+    fn stats_mode_follows_compute_shape() {
+        let deferred: Vec<&str> = ENTRIES
+            .iter()
+            .filter(|entry| entry.stats_mode == VaultStatsMode::Deferred)
+            .map(|entry| entry.entry)
+            .collect();
+        assert_eq!(deferred, vec!["E9", "E10"]);
     }
 
     #[test]
