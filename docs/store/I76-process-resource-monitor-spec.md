@@ -200,7 +200,7 @@
 | 缓存 | 只缓存上一拍的**逐 PID CPU 累计时间**，用于算差分；超时即整体丢弃。缓存**类型**定义在 `assistant-resource-probe`（纯逻辑，可单测）；缓存**实例**是 `cmd/resource.rs` 内的 `OnceLock<Mutex<CpuDiffCache>>`，首次命令调用时才初始化——**禁止**用 `AppHandle::state` 持有、**禁止**挂到 `boot::access.rs` 的访问器、**禁止**成为 `boot::RESOURCES` 的表项，否则违反「页面未打开时不执行采样代码」 |
 | 空闲 | 超过 `CPU_CACHE_IDLE_TIMEOUT_MS` 无调用 → 缓存失效，下一次调用重新从首拍开始（CPU 为 `null`） |
 | 禁止 | **禁止**启动预热采样；**禁止**后台常驻采样线程；**禁止**把采样登记为**启动分层资源项**——该禁令覆盖两个入口：`boot::RESOURCES` 中 `Lane::Boot` 的项（由 `boot::run_boot` 在启动期按序 `ensure`），以及 `Lane::Idle` 的项（由 `boot::runner::run_idle` 在启动完成后惰性 `ensure`）；判定方式统一为「页面未打开时，采样相关代码不得执行」；**禁止**为「开始 / 停止采样」增设命令 |
-| 常量 | `SAMPLE_INTERVAL_MS = 1000`（前端拉取间隔）、`CPU_CACHE_IDLE_TIMEOUT_MS = 3000`、`MIN_CPU_DELTA_MS = 500`（同一 PID 两次读数最小间隔，不足则沿用缓存并输出 `null`）、`MAX_ENTRIES = 512`、`MAX_DEPTH = 16`。全部为命名常量，禁止魔法数字；`CPU_CACHE_IDLE_TIMEOUT_MS` 必须落在 `SAMPLE_INTERVAL_MS` 的 2–3 倍区间 |
+| 常量 | `SAMPLE_INTERVAL_MS = 1000`（前端拉取间隔）、`CPU_CACHE_IDLE_TIMEOUT_MS = 3000`、`MIN_CPU_DELTA_MS = 500`（同一 PID 两次读数最小间隔，不足则沿用上一拍百分比、不重算，见 §4.2）、`MAX_ENTRIES = 512`、`MAX_DEPTH = 16`。全部为命名常量，禁止魔法数字；`CPU_CACHE_IDLE_TIMEOUT_MS` 必须落在 `SAMPLE_INTERVAL_MS` 的 2–3 倍区间 |
 
 「停表」不是一条命令，而是**没有调用**这一事实本身：没有常驻线程、没有单例，因此不存在泄漏路径。
 
@@ -287,7 +287,7 @@
 | 项 | 规则 |
 |---|---|
 | 缓存键 | `pid` + `startTime`（只用 `pid` 会在 PID 复用后把两个进程的累计时间相减，算出负值或巨额） |
-| 算法 | `(t2 - t1) / (wall2 - wall1) / 核数 × 100`，结果按 `singleCorePercent` 输出 |
+| 算法 | `(t2 - t1) / (wall2 - wall1) × 100`，结果按 `singleCorePercent` 输出（**不除以核数**，多线程进程可超过 100，§2.5） |
 | 首拍 | 无缓存键 → `null` |
 | 间隔不足 | `wall2 - wall1 < MIN_CPU_DELTA_MS` → 沿用上一拍的百分比，不重算（避免除以极小值放大抖动） |
 | 缓存淘汰 | 快照里不再出现的 `pid + startTime` 从缓存删除；整体超时按 §2.6 丢弃 |
@@ -420,7 +420,7 @@
 |---|---|---|---|
 | `ProcessSnapshotDto` | `availability` | `ResourceAvailabilityDto` | 顶层状态；非 `available` 时 `entries` 为空、两个组数字为 `null` |
 | | `reason` | `String \| null` | 键恒在 |
-| | `sampledAt` | `i64 \| null` | 一次遍历一个时刻；非 `available` 时为 `null`（**不填 `0`**） |
+| | `sampledAt` | `i64 \| null` | 一次遍历一个时刻；非 `available` 时为 `null`（**不填 `0`**）。**单位是 epoch 毫秒**（与存储域 `sampled_at` 的秒不同，前端不得按秒换算） |
 | | `rootPid` | `u32` | 采样根 = 宿主 PID |
 | | `memoryBasis` | `MemoryBasisDto` | 口径进 DTO，前端据此决定列名 |
 | | `memoryAdditive` | `bool` | 内存指标是否可求和（§2.4） |
@@ -508,7 +508,7 @@
 
 **不新增 `[[bin]]`**：峰值推迟（§11），本期没有进程外二进制，因此不涉及「单 package 单产物」约束，也不预设 `src/bin/` 目录。
 
-### 7.2 前端侧（七处）
+### 7.2 前端侧（九处）
 
 | # | 文件 | 变更 |
 |---|---|---|
@@ -519,6 +519,8 @@
 | 5 | `src/settings/pages/resource/ProcessTreeTab.tsx`（新增） | 实时表 + 两个合计 + 宿主线程数 + 状态展示（§5） |
 | 6 | `src/services/desktop/resourceService.ts`（新增） | `getResourceCapabilities()` / `getProcessSnapshot()`，沿用 `tauriInvoke` 封装 |
 | 7 | `src/settings/__tests__/fixtures/snapshot.full.json`、`snapshot.vaultless.json` | 用 `vitest -u` 重生成；**只允许 `pages[].id` 由 `storage` → `resource` 一行变化**，`snapshot.diff.json` 不变（§10.2 V4） |
+| 8 | `src/settings/pages/resource/processTreeView.ts`（新增） | 纯视图模型（无 React 依赖）：角色 / 列名 / CPU / 内存文案、行视图、两个合计与附注，保证口径分支可在非 Windows 平台单测 |
+| 9 | `src/settings/pages/resource/__tests__/processTreeView.test.ts`（新增） | 视图模型单测：口径分支由字段驱动、CPU `null` 占位、`null` 不填 `0`、行 key 区分 PID 复用 |
 
 **`settings.resource.*` 最小键表**（本期只允许这些键，新增键须回写本节）：
 
@@ -527,6 +529,8 @@
 | `settings.resource.tab.storage` / `settings.resource.tab.processTree` | 两个 tab 标题 |
 | `settings.resource.column.process` / `role` / `cpu` / `memory` | 四列表头 |
 | `settings.resource.summary.self` / `summary.subtree` / `summary.hostThreads` | 两个合计 + 宿主线程数标签 |
+| `settings.resource.summary.relation` / `summary.cpuNote` / `summary.memoryApprox` / `summary.memoryNotDoubleCounted` / `summary.pidCount` / `summary.sampledAt` | 包含关系标注（§5.2 约束 2）、CPU 单核口径标注（§5.2 约束 4）、两种内存附注（§5.4）、组内进程数、采样时刻 |
+| `settings.resource.role.host` / `role.webviewBrowser` / `role.webviewRenderer` / `role.webviewGpu` / `role.webviewUtility` / `role.webviewUnknown` / `role.otherChild` | 角色列文案，与 `ProcessRoleDto` 七值一一对应（封闭集合，前端不得兜底成自由文本） |
 | `settings.resource.status.notImplemented` / `unreadable` / `memoryUnavailable` / `truncated` / `cpuFirstSample` / `coverageSubtreeOnly` / `coveragePlatformManaged` / `capabilitiesLoadFailed` | §5.5 的八种展示状态 |
 | `settings.resource.caliber.winPrivate` / `caliber.linuxWorkingSet` / `caliber.macFootprint` | §5.4 三种口径说明 |
 | `settings.resource.reason.*` | 仅当 `reason` 需要本地化时使用；后端给英文原文时前端直接展示，不建键 |

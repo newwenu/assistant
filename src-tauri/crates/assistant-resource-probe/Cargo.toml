@@ -1,0 +1,23 @@
+[package]
+name = "assistant-resource-probe"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+assistant-protocol = { workspace = true }
+# 一次枚举覆盖全部必需字段（I76 §2.2 约束 2）；默认特性关闭以只带 system 模块
+sysinfo = { version = "0.40", default-features = false, features = ["system"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# macOS 补取 phys_footprint：sysinfo 的 memory() 是 RSS 口径（I76 §2.4、§6.4「平台依赖」）
+libc = { workspace = true }
+
+[target.'cfg(target_os = "windows")'.dev-dependencies]
+# V27 实机断言：GetProcessMemoryInfo(PROCESS_MEMORY_COUNTERS_EX)
+windows = { workspace = true, features = [
+    "Win32_Foundation",
+    "Win32_System_ProcessStatus",
+    "Win32_System_Threading",
+] }

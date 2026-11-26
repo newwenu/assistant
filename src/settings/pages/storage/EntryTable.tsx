@@ -261,6 +261,6 @@ function badgeColor(
     case "error":
       return "var(--ant-color-error)";
     default:
-      return "var(--ant-color-text-tertiary)";
+      return "var(--color-text-tertiary)";
   }
 }

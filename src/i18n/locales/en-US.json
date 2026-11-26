@@ -407,7 +407,22 @@
       "summary": {
         "self": "Self",
         "subtree": "Whole tree",
-        "hostThreads": "Host threads"
+        "hostThreads": "Host threads",
+        "relation": "Self ⊆ whole tree; never added together",
+        "cpuNote": "Sum of single-core percentages; may exceed 100",
+        "memoryApprox": "≈ physical footprint",
+        "memoryNotDoubleCounted": "Excludes double-counted shared pages",
+        "pidCount": "{{count}} processes",
+        "sampledAt": "Measured at {{time}}"
+      },
+      "role": {
+        "host": "Host",
+        "webviewBrowser": "WebView browser",
+        "webviewRenderer": "WebView renderer",
+        "webviewGpu": "WebView GPU",
+        "webviewUtility": "WebView utility",
+        "webviewUnknown": "WebView process (type unknown)",
+        "otherChild": "Other child process"
       },
       "status": {
         "notImplemented": "Process resource monitoring is not available on this platform",

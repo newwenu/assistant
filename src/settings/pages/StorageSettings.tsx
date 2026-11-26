@@ -67,7 +67,7 @@ export const StorageSettings: React.FC = () => {
             {
               key: "processTree",
               label: t("settings.resource.tab.processTree"),
-              children: <ProcessTreeTab />,
+              children: <ProcessTreeTab active={activeKey === "processTree"} />,
             },
           ]}
         />

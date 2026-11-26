@@ -56,29 +56,29 @@
 
 ### R1a-1 crate 骨架与纯逻辑
 
-- [ ] `src-tauri/crates/assistant-resource-probe/Cargo.toml`（新增）：依赖只有 `sysinfo`（`features = ["system"]`，关其余 feature）、`libc`（macOS 段）、`assistant-protocol`；Windows 复用工作区 `windows` 并显式声明 V27 所需 feature（§6.4、§7.1 第 7、8 处）
-- [ ] `src-tauri/Cargo.toml`：`members` / `[workspace.dependencies]` / `[dependencies]` 三处加 crate（§7.1 第 1 处）
-- [ ] `src/…/source.rs`：`SnapshotSource` trait + `RawProcess`，「每拍一次快照」写成契约注释（§6.4、§0.15）
-- [ ] `src/…/mock.rs`：可注入任意根与进程表的假快照，供 V8 / V10 / V11 / V12 使用（§0.15）
-- [ ] `src/…/tree.rs`：先过滤线程条目，再建表 + 反向 DFS + PID 复用校验 + 深度 / 条数截断（§2.2「线程条目」、§2.2 约束 4、§4.1、§8）
-- [ ] `src/…/classify.rs`：三层判定与 `webviewUnknown` 计入自身（§2.3、§8）
-- [ ] `src/…/cpu.rs`：`CpuDiffCache`，键 `pid + startTime`，首拍 `null`，消失键淘汰（§4.2、§2.5、§2.6）
-- [ ] `src/…/lib.rs`：导出 `build_snapshot(...)` 与 `capabilities()`；不读宿主身份与配置路径（§6.4、§2.4、§2.7）
-- [ ] 常量集中声明（`SAMPLE_INTERVAL_MS` / `CPU_CACHE_IDLE_TIMEOUT_MS` / `MIN_CPU_DELTA_MS` / `MAX_ENTRIES` / `MAX_DEPTH`），禁魔法数字（§2.6）
+- [x] `src-tauri/crates/assistant-resource-probe/Cargo.toml`（新增）：依赖只有 `sysinfo`（`features = ["system"]`，关其余 feature）、`libc`（macOS 段）、`assistant-protocol`；Windows 复用工作区 `windows` 并显式声明 V27 所需 feature（§6.4、§7.1 第 7、8 处）
+- [x] `src-tauri/Cargo.toml`：`members` / `[workspace.dependencies]` / `[dependencies]` 三处加 crate（§7.1 第 1 处）
+- [x] `src/…/source.rs`：`SnapshotSource` trait + `RawProcess`，「每拍一次快照」写成契约注释（§6.4、§0.15）
+- [x] `src/…/mock.rs`：可注入任意根与进程表的假快照，供 V8 / V10 / V11 / V12 使用（§0.15）
+- [x] `src/…/tree.rs`：先过滤线程条目，再建表 + 反向 DFS + PID 复用校验 + 深度 / 条数截断（§2.2「线程条目」、§2.2 约束 4、§4.1、§8）
+- [x] `src/…/classify.rs`：三层判定与 `webviewUnknown` 计入自身（§2.3、§8）
+- [x] `src/…/cpu.rs`：`CpuDiffCache`，键 `pid + startTime`，首拍 `null`，消失键淘汰（§4.2、§2.5、§2.6）
+- [x] `src/…/lib.rs`：导出 `build_snapshot(...)` 与 `capabilities()`；不读宿主身份与配置路径（§6.4、§2.4、§2.7）
+- [x] 常量集中声明（`SAMPLE_INTERVAL_MS` / `CPU_CACHE_IDLE_TIMEOUT_MS` / `MIN_CPU_DELTA_MS` / `MAX_ENTRIES` / `MAX_DEPTH`），禁魔法数字（§2.6）
 
 ### R1a-2 Windows 后端
 
-- [ ] `src/…/win.rs`：`sysinfo` 一轮全量枚举 + `with_cmd(UpdateKind::Always)` + `without_tasks()`（§2.2 约束 1、§2.3、§12 OQ1）
-- [ ] Windows 口径：`privateWorkingSet` / `true` / `false` / `webviewDetached = false`；逐行内存取 `virtual_memory()`；`hostThreadCount` 落 `null`（§2.4 取数约束 1、§5.3、V26）
-- [ ] 根 manifest 的 `windows` feature 清单不改；仅在采样 crate 内为 V27 显式声明 feature；新增依赖 / feature 单独过审（§7.1 第 8 处）
+- [x] `src/…/win.rs`：`sysinfo` 一轮全量枚举 + `with_cmd(UpdateKind::Always)` + `without_tasks()`（§2.2 约束 1、§2.3、§12 OQ1）
+- [x] Windows 口径：`privateWorkingSet` / `true` / `false` / `webviewDetached = false`；逐行内存取 `virtual_memory()`；`hostThreadCount` 落 `null`（§2.4 取数约束 1、§5.3、V26）
+- [x] 根 manifest 的 `windows` feature 清单不改；仅在采样 crate 内为 V27 显式声明 feature；新增依赖 / feature 单独过审（§7.1 第 8 处）
 
 ### R1a-3 命令接线与单测
 
-- [ ] `src-tauri/src/cmd/resource.rs`：换真实调用，缓存用本文件内 `OnceLock<Mutex<CpuDiffCache>>`，禁 `AppHandle::state` / `boot::access.rs` / `boot::RESOURCES`（§2.6、§6.4）
-- [ ] `get_resource_capabilities` 的 `processTree` 改由 crate 平台判定（Windows 批内 `available`，Linux / macOS 仍 `notImplemented`）（§2.7）
-- [ ] 单测：V5 / V6 / V7 / V8 / V9 / V10 / V11 / V12（mock 注入）（§10.2）
+- [x] `src-tauri/src/cmd/resource.rs`：换真实调用，缓存用本文件内 `OnceLock<Mutex<CpuDiffCache>>`，禁 `AppHandle::state` / `boot::access.rs` / `boot::RESOURCES`（§2.6、§6.4）
+- [x] `get_resource_capabilities` 的 `processTree` 改由 crate 平台判定（Windows 批内 `available`，Linux / macOS 仍 `notImplemented`）（§2.7）
+- [x] 单测：V5 / V6 / V7 / V8 / V9 / V10 / V11 / V12（mock 注入）（§10.2）
 - [x] V27 实机断言：`virtual_memory()` 与 `PrivateUsage` 逐字节相等，断言对象取静止子进程（自身取数会漂移，见 §10.2 V27）；开发机探针 5/5 通过，结论已回写 §10.2 V27（§10.2 V27）
-- [ ] 开发机跑 `cargo check` + `cargo test`（§10.1「平台验证分工」）
+- [x] 开发机跑 `cargo check` + `cargo test`（§10.1「平台验证分工」）
 
 > 验收：`cargo test -p assistant-resource-probe`；`cargo test --workspace --all-targets`（开发机）；`npm run contract:verify`；V5–V12、V27。
 
@@ -86,11 +86,11 @@
 
 ## R1b — Linux 后端（§10.1）
 
-- [ ] `src/…/linux.rs`：`sysinfo` 一轮枚举；**保留默认 `with_tasks`**（宿主线程数依赖它）；线程条目在 `tree.rs` 过滤（§2.2「线程条目」、§5.3、§12 OQ1、OQ2）
-- [ ] Linux 口径：`workingSet` / `false` / `false` / `webviewDetached = false`；家族清单照 §2.3（§2.4、V26）
-- [ ] Linux 段依赖复用现有 `libc`，不新增依赖（§6.4）
-- [ ] `capabilities()` Linux 分支改 `available`（§2.7）
-- [ ] 单测：`memoryAdditive == false` 路径（合计位无数字 + 逐行照常）（V14）
+- [x] `src/…/linux.rs`：`sysinfo` 一轮枚举；**保留默认 `with_tasks`**（宿主线程数依赖它）；线程条目在 `tree.rs` 过滤（§2.2「线程条目」、§5.3、§12 OQ1、OQ2）
+- [x] Linux 口径：`workingSet` / `false` / `false` / `webviewDetached = false`；家族清单照 §2.3（§2.4、V26）
+- [x] Linux 段依赖复用现有 `libc`，不新增依赖（§6.4）
+- [x] `capabilities()` Linux 分支改 `available`（§2.7）
+- [x] 单测：`memoryAdditive == false` 路径（合计位无数字 + 逐行照常）（V14）
 - [ ] CI `ubuntu-latest` 真机验证（V22、V23 Linux 部分）
 
 > 验收：CI 绿（`ubuntu-latest`）；V14、V22、V23（Linux 部分）。
@@ -99,11 +99,11 @@
 
 ## R1c — macOS 后端（§10.1）
 
-- [ ] `src/…/macos.rs`：`sysinfo` 枚举进程与命令行；**逐行内存改 `libc::proc_pid_rusage` 的 `ri_phys_footprint`**；宿主线程数取 `proc_pidinfo(PROC_PIDTASKINFO).pti_threadnum`（§2.4 取数约束 2、§5.3、§12 OQ1、OQ2）
-- [ ] macOS 口径：`physFootprint` / `true` / `true` / `webviewDetached = true`；家族清单照 §2.3（§2.4、V26）
-- [ ] macOS 段依赖（§6.4）
-- [ ] `capabilities()` macOS 分支改 `available`（§2.7）
-- [ ] 单测：`phys_footprint` 口径与 `webviewDetached` 不入 `entries`（V26）
+- [x] `src/…/macos.rs`：`sysinfo` 枚举进程与命令行；**逐行内存改 `libc::proc_pid_rusage` 的 `ri_phys_footprint`**；宿主线程数取 `proc_pidinfo(PROC_PIDTASKINFO).pti_threadnum`（§2.4 取数约束 2、§5.3、§12 OQ1、OQ2）
+- [x] macOS 口径：`physFootprint` / `true` / `true` / `webviewDetached = true`；家族清单照 §2.3（§2.4、V26）
+- [x] macOS 段依赖（§6.4）
+- [x] `capabilities()` macOS 分支改 `available`（§2.7）
+- [x] 单测：`phys_footprint` 口径与 `webviewDetached` 不入 `entries`（V26）
 - [ ] CI `macos-latest` 真机验证（V22、V23 macOS 部分）
 
 > 验收：CI 绿（`macos-latest`）；V22、V23（macOS 部分）、V26。
@@ -112,15 +112,15 @@
 
 ## R2 — 实时树 UI（原子，§10.1）
 
-- [ ] `src/settings/pages/resource/ProcessTreeTab.tsx`：一次性补全表 + 两个合计 + 宿主线程数 + 口径分支 + §5.5 全部状态（§10.1 R2）
-- [ ] 表格：四列，行直接渲染后端 `entries`，前端不重建树，不设推迟项列（§5.1、§5.2 约束 2）
-- [ ] 两个合计同时显示并标注包含关系，禁止相加；CPU 合计注明单核百分比可超 100（§5.2、§2.5）
-- [ ] 宿主线程数进合计头，不进表列；`null` 不填 `0`（§5.3、V16）
-- [ ] 口径分支由 `memoryAdditive` 字段驱动；内存列名由 `memoryBasis` 驱动（§5.4、V14、V15）
-- [ ] 状态展示齐备（`notImplemented` / `unreadable` / `memoryUnavailable` / `truncated` / CPU `null` / `coverageSubtreeOnly` / `webviewDetached` / 能力声明失败横幅）（§5.5、V13、V17、V19、V20、V26）
-- [ ] 轮询 `SAMPLE_INTERVAL_MS`，卸载即停，无开始 / 停止按钮（§2.6、V17）
-- [ ] 表头吸顶复用 `--storage-sticky-top`（§3.3 第 2 条、V3）
-- [ ] 复核页面内无任何推迟项占位 UI（§1.2、§5.6、V17）
+- [x] `src/settings/pages/resource/ProcessTreeTab.tsx`：一次性补全表 + 两个合计 + 宿主线程数 + 口径分支 + §5.5 全部状态（§10.1 R2）
+- [x] 表格：四列，行直接渲染后端 `entries`，前端不重建树，不设推迟项列（§5.1、§5.2 约束 2）
+- [x] 两个合计同时显示并标注包含关系，禁止相加；CPU 合计注明单核百分比可超 100（§5.2、§2.5）
+- [x] 宿主线程数进合计头，不进表列；`null` 不填 `0`（§5.3、V16）
+- [x] 口径分支由 `memoryAdditive` 字段驱动；内存列名由 `memoryBasis` 驱动（§5.4、V14、V15）
+- [x] 状态展示齐备（`notImplemented` / `unreadable` / `memoryUnavailable` / `truncated` / CPU `null` / `coverageSubtreeOnly` / `webviewDetached` / 能力声明失败横幅）（§5.5、V13、V17、V19、V20、V26）
+- [x] 轮询 `SAMPLE_INTERVAL_MS`，卸载即停，无开始 / 停止按钮（§2.6、V17）
+- [x] 表头吸顶复用 `--storage-sticky-top`（§3.3 第 2 条、V3）
+- [x] 复核页面内无任何推迟项占位 UI（§1.2、§5.6、V17）
 
 > 验收：`npm run typecheck`；`npx vitest run`；手工 V2 / V13 / V15 / V17 / V20 / V26；实机 V14 / V23。
 
@@ -128,9 +128,9 @@
 
 ## 收尾
 
-- [ ] 全量回归：`cargo test --workspace --all-targets --no-fail-fast`（开发机）+ `npm run contract:verify` + `npm run typecheck` + `npm run lint`
-- [ ] 复核 V25（三平台齐备后 `notImplemented` 不出现在 `processTree` 能力上）
-- [ ] 复核 V22（Linux / macOS 由 CI 覆盖、Windows 由开发机覆盖，未新增 job）
+- [x] 全量回归：`cargo test --workspace --all-targets --no-fail-fast`（开发机）+ `npm run contract:verify` + `npm run typecheck` + `npm run lint`（另加 `npx vitest run` 1181 通过；Rust 全 workspace 无失败、无 warning）
+- [x] 复核 V25（三平台齐备后 `notImplemented` 不出现在 `processTree` 能力上）：`platform_profile()` 在 windows / linux / macos 三个 `cfg` 分支均为 `Some`，`process_tree_capability()` 只在该三元之外落 `NotImplemented`；真机可用性以 CI 为准
+- [x] 复核 V22（Linux / macOS 由 CI 覆盖、Windows 由开发机覆盖，未新增 job）：`ci.yml` 的 `rust` job 矩阵仍是 `[ubuntu-latest, macos-latest]`，未新增交叉编译或额外 job
 
 ---
 

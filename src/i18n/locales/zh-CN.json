@@ -386,7 +386,22 @@
       "summary": {
         "self": "自身",
         "subtree": "全树",
-        "hostThreads": "宿主线程"
+        "hostThreads": "宿主线程",
+        "relation": "自身 ⊆ 全树，两者不相加",
+        "cpuNote": "单核百分比之和，可超过 100",
+        "memoryApprox": "≈ 物理占用",
+        "memoryNotDoubleCounted": "不含共享页重复计数",
+        "pidCount": "{{count}} 个进程",
+        "sampledAt": "统计时间：{{time}}"
+      },
+      "role": {
+        "host": "宿主",
+        "webviewBrowser": "WebView 主进程",
+        "webviewRenderer": "WebView 渲染进程",
+        "webviewGpu": "WebView GPU 进程",
+        "webviewUtility": "WebView 工具进程",
+        "webviewUnknown": "WebView 进程（类型未知）",
+        "otherChild": "其他子进程"
       },
       "status": {
         "notImplemented": "当前平台暂不支持进程资源监视",

@@ -1,21 +1,21 @@
 # 代码结构索引（脚本生成）
 
 > 全文由 `node scripts/structure-index.mjs` 生成，**请勿手改**；代码变动后重跑即刷新。
-> 生成时间：2026-11-26T05:36:23.195Z｜范围：all｜单文件导出名上限：6
+> 生成时间：2026-11-26T11:50:22.347Z｜范围：all｜单文件导出名上限：6
 > 口径：只做机械提取（路径 → 领域 / 角色 / 关键导出 / 行数）；跳过测试、生成物与 `*.module.css`；测试替身单列，不计入生产合计。
 > 语义（分层、边界、依赖方向、改动路由）见 `docs/CODE-STRUCTURE.md`。
 
 ## 1. 前端 `src/`
 
-共 542 个文件（跳过测试 / 生成物 / 组件样式 167 个）。
+共 545 个文件（跳过测试 / 生成物 / 组件样式 169 个）。
 
 ### 领域概览
 
 **领域规模**（文件数 / 行数，括号内为子域）：
 
-**`assets`** 3/1094 · **`chat`** 91/11592 · **`components`** 12/1466 · **`config`** 1/57 · **`features`** 39/5528（`canvas` 18/2889 · `observation` 6/1254 · `orchestration` 5/572 · `timekeeper` 1/6 · `vault` 5/512） · **`history`** 20/3090 · **`hooks`** 5/182 · **`i18n`** 3/79 · **`layouts`** 6/259 · **`mascot`** 31/3198 · **`orb`** 11/2175 · **`screenshot`** 4/673 · **`services`** 32/2674 · **`settings`** 95/12839 · **`src 根`** 4/181 · **`stores`** 31/4322 · **`test-utils`** 3/166 · **`tools`** 68/9262（`base64-string-converter` 2/130 · `calculator` 2/109 · `color-converter` 2/211 · `cron-parser` 2/258 · `date-time-converter` 2/217 · `framework` 6/779 · `fs-link` 2/286 · `hash-text` 2/135 · `image-compressor` 2/317 · `integer-base-converter` 2/170 · `ip-info` 2/528 · `json-viewer` 2/132 · `jwt-parser` 2/160 · `password-generator` 3/2319 · `qrcode-generator` 2/152 · `regex-tester` 2/464 · `sql-formatter` 2/221 · `svg-preview` 2/220 · `text-diff` 2/284 · `text-statistics` 2/82 · `timekeeper` 8/704 · `ui` 9/736 · `unit-converter` 2/375 · `url-encoder` 2/117 · `uuid-generator` 2/156） · **`types`** 1/44 · **`utils`** 5/351 · **`vault`** 77/10812（`core` 22/3013 · `entry` 11/1883 · `settings` 26/3547 · `unlock` 7/699）
+**`assets`** 3/1094 · **`chat`** 91/11592 · **`components`** 12/1466 · **`config`** 1/57 · **`features`** 39/5528（`canvas` 18/2889 · `observation` 6/1254 · `orchestration` 5/572 · `timekeeper` 1/6 · `vault` 5/512） · **`history`** 20/3090 · **`hooks`** 5/182 · **`i18n`** 3/79 · **`layouts`** 6/259 · **`mascot`** 31/3198 · **`orb`** 11/2175 · **`screenshot`** 4/673 · **`services`** 33/2687 · **`settings`** 97/13581 · **`src 根`** 4/181 · **`stores`** 31/4336 · **`test-utils`** 3/166 · **`tools`** 68/9262（`base64-string-converter` 2/130 · `calculator` 2/109 · `color-converter` 2/211 · `cron-parser` 2/258 · `date-time-converter` 2/217 · `framework` 6/779 · `fs-link` 2/286 · `hash-text` 2/135 · `image-compressor` 2/317 · `integer-base-converter` 2/170 · `ip-info` 2/528 · `json-viewer` 2/132 · `jwt-parser` 2/160 · `password-generator` 3/2319 · `qrcode-generator` 2/152 · `regex-tester` 2/464 · `sql-formatter` 2/221 · `svg-preview` 2/220 · `text-diff` 2/284 · `text-statistics` 2/82 · `timekeeper` 8/704 · `ui` 9/736 · `unit-converter` 2/375 · `url-encoder` 2/117 · `uuid-generator` 2/156） · **`types`** 1/44 · **`utils`** 5/351 · **`vault`** 77/10812（`core` 22/3013 · `entry` 11/1883 · `settings` 26/3547 · `unlock` 7/699）
 
-**合计** 542 个文件 / 70044 行。
+**合计** 545 个文件 / 70813 行。
 
 ### 逐文件
 
@@ -253,6 +253,7 @@
 | `src/services/chat/chatStreamEvents.ts` | services | 逻辑 | setChatOrchestrator、subscribeChatStreamEvents | 58 |
 | `src/services/desktop/assetDirs.ts` | services | 逻辑 | assetDirs、assetUrl | 24 |
 | `src/services/desktop/orbService.ts` | services | 逻辑 | orbService | 46 |
+| `src/services/desktop/resourceService.ts` | services | 逻辑 | resourceService | 13 |
 | `src/services/desktop/storageService.ts` | services | 逻辑 | storageService | 53 |
 | `src/services/desktop/windowService.ts` | services | 逻辑 | WindowMode、windowService | 8 |
 | `src/services/desktop/workspaceService.ts` | services | 逻辑 | WorkspaceEntry、workspaceService | 33 |
@@ -287,7 +288,7 @@
 | `src/settings/core/provider/providerFormatRegistry.ts` | settings | 逻辑 | ProviderFormatDef、defineProviderFormat、getProviderFormat、getProviderFormatByCustomType、getAllProviderFormats、getProviderFormatLabel | 48 |
 | `src/settings/core/provider/providerLookup.ts` | settings | 逻辑 | API_FORMATS、API_FORMAT_MAP、PROVIDER_PRESETS、PRESET_MAP、getPresetByType、getApiFormatByType | 92 |
 | `src/settings/core/provider/providerPresetRegistry.ts` | settings | 逻辑 | ProviderPresetDef、defineProviderPreset、getProviderPreset、getAllProviderPresets、getPresetsByFormat | 27 |
-| `src/settings/core/registry/builtinRegistry.ts` | settings | 逻辑 | DEFAULT_SETTINGS_PAGE_ID、AGENT_SETTINGS_PAGE_ID、BuiltinCategory、bumpBuiltinVersion、getBuiltinVersion、insertUnique | 291 |
+| `src/settings/core/registry/builtinRegistry.ts` | settings | 逻辑 | DEFAULT_SETTINGS_PAGE_ID、AGENT_SETTINGS_PAGE_ID、BuiltinCategory、bumpBuiltinVersion、getBuiltinVersion、insertUnique | 305 |
 | `src/settings/core/registry/definePage.ts` | settings | 逻辑 | definePage | 17 |
 | `src/settings/core/registry/initSettingSystem.ts` | settings | 逻辑 | initSettingSystem | 34 |
 | `src/settings/core/registry/pageRegistry.ts` | settings | 逻辑 | SettingsCategory、getSettingsPages、getSettingsDetailPages、getSettingsCategories、getSettingsPageMap、getSettingsPageManifest | 45 |
@@ -319,6 +320,8 @@
 | `src/settings/pages/agentMode/useModeForm.ts` | settings | Hook | useModeForm | 187 |
 | `src/settings/pages/AppearanceSettings.tsx` | settings | 组件 | AppearanceSettings | 37 |
 | `src/settings/pages/GeneralSettings.tsx` | settings | 组件 | GeneralSettings | 52 |
+| `src/settings/pages/resource/ProcessTreeTab.tsx` | settings | 组件 | ProcessTreeTab | 306 |
+| `src/settings/pages/resource/processTreeView.ts` | settings | 逻辑 | ProcessGroupKey、ProcessRowView、ProcessGroupView、ProcessSummaryView、roleText、memoryColumnText | 147 |
 | `src/settings/pages/ShortcutSettings.tsx` | settings | 组件 | ShortcutSettings | 110 |
 | `src/settings/pages/storage/AttachmentBlock.tsx` | settings | 组件 | AttachmentBlock | 248 |
 | `src/settings/pages/storage/CleanupDialog.tsx` | settings | 组件 | CleanupDialog | 113 |
@@ -329,15 +332,15 @@
 | `src/settings/pages/storage/EntryTable.tsx` | settings | 组件 | EntryTable | 266 |
 | `src/settings/pages/storage/entryView.ts` | settings | 逻辑 | CleanupActionView、EntryAvailabilityBadge、EntryRowView、EntryDetailItem、EntryDetailView、entryRowView | 236 |
 | `src/settings/pages/storage/format.ts` | settings | 逻辑 | TagTone、tagColor、formatTimestamp、timeText、bytesOrDash、countText | 47 |
-| `src/settings/pages/storage/lexicon.ts` | settings | 逻辑 | registerEntryNames、entryNameText、groupNameText、availabilityText、eligibilityText、reasonText | 224 |
+| `src/settings/pages/storage/lexicon.ts` | settings | 逻辑 | registerEntryNames、entryNameText、groupNameText、availabilityText、eligibilityText、reasonText | 226 |
 | `src/settings/pages/storage/ResidualSection.tsx` | settings | 组件 | ResidualSection | 115 |
 | `src/settings/pages/storage/ResidualTable.tsx` | settings | 组件 | ResidualTable | 253 |
 | `src/settings/pages/storage/residualView.ts` | settings | 逻辑 | ResidualNoticeLevel、ResidualNotice、ResidualChildView、ResidualRowView、ResidualTotalLine、ResidualViewModel | 334 |
 | `src/settings/pages/storage/SnapshotToolbar.tsx` | settings | 组件 | SnapshotToolbar | 53 |
-| `src/settings/pages/storage/StorageContent.tsx` | settings | 组件 | StorageContent | 67 |
+| `src/settings/pages/storage/StorageContent.tsx` | settings | 组件 | StorageContent | 66 |
 | `src/settings/pages/storage/useCleanup.ts` | settings | Hook | CleanupHandle、useCleanup | 179 |
 | `src/settings/pages/storage/useStorageSnapshot.ts` | settings | Hook | STORAGE_INVENTORY_UPDATED、SnapshotPhase、StorageSnapshotHandle、useStorageSnapshot | 128 |
-| `src/settings/pages/StorageSettings.tsx` | settings | 组件 | StorageSettings | 6 |
+| `src/settings/pages/StorageSettings.tsx` | settings | 组件 | StorageSettings | 77 |
 | `src/settings/provider/AddProviderDialog.tsx` | settings | 组件 | AddProviderDialog | 103 |
 | `src/settings/provider/ConnectDialog/fieldSchemas.ts` | settings | 逻辑 | buildFieldSchemas | 141 |
 | `src/settings/provider/ConnectDialog/index.tsx` | settings | 视图入口 | ConnectDialog | 239 |
@@ -373,7 +376,7 @@
 | `src/settings/shared/sections/SettingsGroup.tsx` | settings | 组件 | SettingsGroup | 228 |
 | `src/settings/shared/sections/ToolAssemblySection.tsx` | settings | 组件 | loadToolDescriptors、ToolAssemblySection | 294 |
 | `src/settings/shared/useSettingMessage.ts` | settings | Hook | SettingMessageAPI、useSettingMessage | 68 |
-| `src/settings/styles/settings.css` | settings | 样式 | - | 1126 |
+| `src/settings/styles/settings.css` | settings | 样式 | - | 1329 |
 | `src/App.tsx` | src 根 | 组件 | - | 39 |
 | `src/main.tsx` | src 根 | 组件 | - | 122 |
 | `src/testSetup.ts` | src 根 | 逻辑 | - | 12 |
@@ -405,7 +408,7 @@
 | `src/stores/settingsStore.ts` | stores | 状态聚合 | SettingsState、useSettingsStore、AppConf、OrbConf、MascotConf | 53 |
 | `src/stores/system/localeStore.ts` | stores | 状态聚合 | useLocaleStore | 11 |
 | `src/stores/system/notifyStore.ts` | stores | 状态聚合 | NotifyLevel、useNotifyStore、notifyError、notifyWarning、notifyInfo | 84 |
-| `src/stores/system/startupStore.ts` | stores | 状态聚合 | useStartupStore、subscribeStartupCapabilities | 84 |
+| `src/stores/system/startupStore.ts` | stores | 状态聚合 | useStartupStore、subscribeStartupCapabilities | 98 |
 | `src/stores/system/themeStore.ts` | stores | 状态聚合 | useThemeStore | 92 |
 | `src/stores/system/windowModeStore.ts` | stores | 状态聚合 | useWindowModeStore、WindowMode | 41 |
 | `src/stores/toolStore.ts` | stores | 状态聚合 | useToolStore | 150 |
@@ -568,15 +571,15 @@
 
 ## 2. 后端 `src-tauri/`
 
-共 560 个文件（跳过测试 131 个）。
+共 578 个文件（跳过测试 132 个）。
 
 ### 领域概览
 
 **领域规模**（文件数 / 行数，括号内为子域）：
 
-**`src 根`** 13/1655 · **`src-tauri 根`** 2/219 · **`app`** 145/23302（`adapters` 17/3152 · `app_dirs` 7/1382 · `boot` 18/1489 · `cmd` 73/13872 · `mcp` 3/385 · `protocol` 2/50 · `screenshot` 18/2146 · `window` 7/826） · **`assistant-agent`** 46/9255（`agent` 14/4365 · `kernel` 14/2505 · `multimodal` 9/1045） · **`assistant-clock`** 1/287 · **`assistant-config`** 11/1000 · **`assistant-crash`** 2/371 · **`assistant-crypto`** 6/1224（`vault_crypto` 3/1084） · **`assistant-i18n`** 2/159 · **`assistant-orb`** 4/422 · **`assistant-protocol`** 25/2472（`chat` 6/571） · **`assistant-providers`** 48/10347（`anthropic` 8/1584 · `client` 3/622 · `gemini` 10/2156 · `openai` 8/2746 · `stream` 4/785 · `types` 6/1084） · **`assistant-security`** 26/3118（`hibp` 1/110 · `screen_lock` 4/478 · `ssh_agent` 4/584 · `unlock_dialog` 14/1664） · **`assistant-storage`** 23/4994（`conversations` 7/1922 · `tools` 4/294） · **`assistant-sync`** 17/1738（`git_sync` 14/1362 · `types` 1/310） · **`assistant-tools`** 121/31048（`contract` 7/794 · `mcp` 13/2815 · `os` 70/17316 · `runtime` 24/6991 · `sandbox` 5/2843） · **`assistant-vault`** 67/12243（`audit` 2/828 · `biometric` 4/950 · `dto` 16/1218 · `examples` 2/233 · `password_strength` 1/146 · `recovery_key` 3/452 · `security_db` 18/3938 · `shared` 2/201 · `sync_engine` 7/1322 · `types` 1/245 · `vault_file` 4/1034）
+**`src 根`** 13/1657 · **`src-tauri 根`** 2/219 · **`app`** 146/23458（`adapters` 17/3157 · `app_dirs` 7/1382 · `boot` 18/1502 · `cmd` 74/14010 · `mcp` 3/385 · `protocol` 2/50 · `screenshot` 18/2146 · `window` 7/826） · **`assistant-agent`** 46/9255（`agent` 14/4365 · `kernel` 14/2505 · `multimodal` 9/1045） · **`assistant-clock`** 1/287 · **`assistant-config`** 11/1000 · **`assistant-crash`** 2/371 · **`assistant-crypto`** 6/1224（`vault_crypto` 3/1084） · **`assistant-i18n`** 2/159 · **`assistant-orb`** 4/422 · **`assistant-protocol`** 26/2610（`chat` 6/571） · **`assistant-providers`** 48/10347（`anthropic` 8/1584 · `client` 3/622 · `gemini` 10/2156 · `openai` 8/2746 · `stream` 4/785 · `types` 6/1084） · **`assistant-resource-probe`** 9/1712 · **`assistant-security`** 26/3118（`hibp` 1/110 · `screen_lock` 4/478 · `ssh_agent` 4/584 · `unlock_dialog` 14/1664） · **`assistant-storage`** 23/4994（`conversations` 7/1922 · `tools` 4/294） · **`assistant-sync`** 17/1738（`git_sync` 14/1362 · `types` 1/310） · **`assistant-tools`** 128/31408（`contract` 7/794 · `mcp` 13/2815 · `os` 70/17335 · `runtime` 31/7329 · `sandbox` 5/2843） · **`assistant-vault`** 67/12243（`audit` 2/828 · `biometric` 4/950 · `dto` 16/1218 · `examples` 2/233 · `password_strength` 1/146 · `recovery_key` 3/452 · `security_db` 18/3938 · `shared` 2/201 · `sync_engine` 7/1322 · `types` 1/245 · `vault_file` 4/1034）
 
-**合计** 559 个文件 / 103854 行。
+**合计** 577 个文件 / 106222 行。
 
 **测试替身** 1 个文件 / 892 行（不计入生产合计）。
 
@@ -586,7 +589,7 @@
 |---|---|---|---|---|
 | `src-tauri/src/db_state.rs` | src 根 | 实现 | DbState、db_file_stats | 64 |
 | `src-tauri/src/feature_mounts.rs` | src 根 | 实现 | PluginFactory、SetupHook、ExitHook、FeatureMount、mounts | 32 |
-| `src-tauri/src/ipc.rs` | src 根 | 实现 | handler | 112 |
+| `src-tauri/src/ipc.rs` | src 根 | 实现 | handler | 114 |
 | `src-tauri/src/lib.rs` | src 根 | crate 入口 | adapters、app_dirs、boot、cmd、db_state、mcp | 39 |
 | `src-tauri/src/lifecycle.rs` | src 根 | 实现 | request_exit、should_exit、on_run_event | 28 |
 | `src-tauri/src/main.rs` | src 根 | 实现 | - | 42 |
@@ -614,7 +617,7 @@
 | `src-tauri/src/adapters/runner.rs` | app/adapters | 实现 | build_turn_runner | 53 |
 | `src-tauri/src/adapters/system_time_source.rs` | app/adapters | 实现 | SystemTimeSource、new | 20 |
 | `src-tauri/src/adapters/tool_escalation.rs` | app/adapters | 实现 | MaxToolTierSource、RegistryEscalationPort、new | 171 |
-| `src-tauri/src/adapters/tool_exec.rs` | app/adapters | 实现 | WorkspaceRootSource、PipelineToolExecution、new、with_workspace_source、with_index_root、with_tool_scratch | 545 |
+| `src-tauri/src/adapters/tool_exec.rs` | app/adapters | 实现 | WorkspaceRootSource、PipelineToolExecution、new、with_workspace_source、with_index_root、with_tool_scratch | 550 |
 | `src-tauri/src/adapters/tool_resolver.rs` | app/adapters | 实现 | resolve_available_tools | 50 |
 | `src-tauri/src/app_dirs/dir_name.rs` | app/app_dirs | 实现 | DATABASE、ATTACHMENTS、TOOL_RESULTS、TOOL_INDEX、TOOL_SCRATCH、MASCOT_ASSETS | 36 |
 | `src-tauri/src/app_dirs/form.rs` | app/app_dirs | 实现 | strip_verbatim_prefix | 51 |
@@ -623,7 +626,7 @@
 | `src-tauri/src/app_dirs/registry.rs` | app/app_dirs | 实现 | RootScope、RootCoverage、CoreEntry、ALL、fn、ManagedRoot | 525 |
 | `src-tauri/src/app_dirs/roots.rs` | app/app_dirs | 实现 | DirError、AppDirs、resolve、with_bases、data、local | 226 |
 | `src-tauri/src/app_dirs/webview_profile.rs` | app/app_dirs | 实现 | PurgeReport、profile_stats、pending_marker、mark_pending、run_pending_purge、purge_cache | 311 |
-| `src-tauri/src/boot/access.rs` | app/boot | 实现 | dirs、boot_conf、tools、tool_exec、mcp_manager、pending_approval | 68 |
+| `src-tauri/src/boot/access.rs` | app/boot | 实现 | dirs、boot_conf、tools、tool_exec、tool_scratch、mcp_manager | 77 |
 | `src-tauri/src/boot/build/attachments.rs` | app/boot | 实现 | build | 24 |
 | `src-tauri/src/boot/build/conf.rs` | app/boot | 配置组 | build | 17 |
 | `src-tauri/src/boot/build/dirs.rs` | app/boot | 实现 | build | 10 |
@@ -633,7 +636,7 @@
 | `src-tauri/src/boot/build/shell.rs` | app/boot | 实现 | build_tray、build_screen_inspection、build_shortcuts | 24 |
 | `src-tauri/src/boot/build/state.rs` | app/boot | 实现 | build_i18n、build_feature_on_setup、build_runtime_state | 49 |
 | `src-tauri/src/boot/build/storage.rs` | app/boot | 实现 | build | 23 |
-| `src-tauri/src/boot/build/tools.rs` | app/boot | 实现 | sandbox_host_paths、shell_registration_allowed、build | 327 |
+| `src-tauri/src/boot/build/tools.rs` | app/boot | 实现 | sandbox_host_paths、shell_registration_allowed、build | 331 |
 | `src-tauri/src/boot/build/windows.rs` | app/boot | 实现 | build_orb_shell、build_window_main | 38 |
 | `src-tauri/src/boot/conf.rs` | app/boot | 配置组 | BootConf、load_all、app_path、orb_path | 70 |
 | `src-tauri/src/boot/ctx.rs` | app/boot | 实现 | Outcome、BootClock、start、startup_id、t0_epoch_ms、process_ms | 288 |
@@ -655,11 +658,11 @@
 | `src-tauri/src/cmd/conversation/export.rs` | app/cmd | 实现 | export_conversation | 147 |
 | `src-tauri/src/cmd/conversation/list.rs` | app/cmd | 实现 | create_conversation、list_conversations、search_conversations | 75 |
 | `src-tauri/src/cmd/conversation/mod.rs` | app/cmd | 实现（含聚合） | to_dto | 35 |
-| `src-tauri/src/cmd/conversation/mutate.rs` | app/cmd | 实现 | delete_conversation、patch_conversation、get_message_subtree_size、delete_message_persist、toggle_conversation_pin、duplicate_conversation | 293 |
+| `src-tauri/src/cmd/conversation/mutate.rs` | app/cmd | 实现 | delete_conversation、patch_conversation、get_message_subtree_size、delete_message_persist、toggle_conversation_pin、duplicate_conversation | 304 |
 | `src-tauri/src/cmd/conversation/to_dto.rs` | app/cmd | 实现 | wire_message_dto、messages_with_sibling_counts、resolve_context_window_for_conversation | 212 |
 | `src-tauri/src/cmd/mascot_asset.rs` | app/cmd | 实现 | mascot_assets_dir、asset_stats、install_mascot_asset、uninstall_mascot_asset、get_mascot_manifest、set_mascot_manifest | 417 |
 | `src-tauri/src/cmd/mcp.rs` | app/cmd | 实现 | list_mcp_servers、create_mcp_server、update_mcp_server、delete_mcp_server、set_mcp_server_enabled | 236 |
-| `src-tauri/src/cmd/mod.rs` | app/cmd | 实现（含聚合） | chat、conversation、orb、startup、storage、timekeeper | 171 |
+| `src-tauri/src/cmd/mod.rs` | app/cmd | 实现（含聚合） | chat、conversation、orb、startup、storage、timekeeper | 173 |
 | `src-tauri/src/cmd/orb.rs` | app/cmd | 实现 | ORB_CLICK_THROUGH、get_mouse_position、toggle_orb_visibility、set_orb_click_through、orb_click_through、apply_orb_click_through | 244 |
 | `src-tauri/src/cmd/os_tool_exec.rs` | app/cmd | 实现 | os_tool_exec | 44 |
 | `src-tauri/src/cmd/permission/audit.rs` | app/cmd | 实现 | GRANT_ACTION_REVOKE、GRANT_ACTION_CLEAR、GRANT_ACTION_SCOPE、GRANT_AUDIT_NO_RESOURCE、audit_resource_from_key、write_grant_audit | 370 |
@@ -667,9 +670,10 @@
 | `src-tauri/src/cmd/permission/mod.rs` | app/cmd | 实现（含聚合） | - | 23 |
 | `src-tauri/src/cmd/permission/project_rules.rs` | app/cmd | 实现 | project_permission_status_cmd、project_rule_save_cmd | 68 |
 | `src-tauri/src/cmd/provider.rs` | app/cmd | 实现 | list_providers、save_provider、delete_provider、list_models_cmd、preview_models_cmd | 264 |
+| `src-tauri/src/cmd/resource.rs` | app/cmd | 实现 | get_resource_capabilities、get_process_snapshot | 45 |
 | `src-tauri/src/cmd/screenshot.rs` | app/cmd | 实现 | start_screenshot、get_screenshot_session、crop_screenshot、cancel_screenshot、screenshot_permission_granted | 62 |
 | `src-tauri/src/cmd/startup.rs` | app/cmd | 实现 | report_first_frame、get_capability_states、retry_capability | 74 |
-| `src-tauri/src/cmd/storage/entries/assemble.rs` | app/cmd | 实现 | judgeable、build_plan_entry、assemble_breakdown | 584 |
+| `src-tauri/src/cmd/storage/entries/assemble.rs` | app/cmd | 实现 | judgeable、build_plan_entry、assemble_breakdown | 587 |
 | `src-tauri/src/cmd/storage/entries/decl.rs` | app/cmd | 实现 | EntryStatic、static_for | 148 |
 | `src-tauri/src/cmd/storage/entries/eligibility.rs` | app/cmd | 实现 | eligibility_for、confirmation_for | 167 |
 | `src-tauri/src/cmd/storage/entries/mod.rs` | app/cmd | 实现（含聚合） | EntrySample、observed、missing、degraded、with_policy、with_eligibility | 108 |
@@ -681,17 +685,17 @@
 | `src-tauri/src/cmd/storage/inventory/subtract.rs` | app/cmd | 实现 | subtract_declared、node_dto、sum_unregistered | 206 |
 | `src-tauri/src/cmd/storage/inventory/walk.rs` | app/cmd | 实现 | scan | 448 |
 | `src-tauri/src/cmd/storage/ledger.rs` | app/cmd | 实现 | AttachmentRefs、ConvAttachmentRow、load_attachment_refs、build_base | 261 |
-| `src-tauri/src/cmd/storage/mod.rs` | app/cmd | 实现（含聚合） | entries、inventory、reclaim、section、get_storage_breakdown、refresh_storage_inventory | 216 |
-| `src-tauri/src/cmd/storage/reclaim/execute.rs` | app/cmd | 实现 | execute_storage_reclaim | 193 |
-| `src-tauri/src/cmd/storage/reclaim/executors.rs` | app/cmd | 实现 | execute_orphans、execute_derived、execute_index、execute_tool_results、execute_section、execute_webview | 385 |
-| `src-tauri/src/cmd/storage/reclaim/mod.rs` | app/cmd | 实现（含聚合） | PLAN_TTL_SECONDS、ReclaimPorts | 46 |
-| `src-tauri/src/cmd/storage/reclaim/plan.rs` | app/cmd | 实现 | plan_storage_reclaim | 133 |
+| `src-tauri/src/cmd/storage/mod.rs` | app/cmd | 实现（含聚合） | entries、inventory、reclaim、section、get_storage_breakdown、refresh_storage_inventory | 220 |
+| `src-tauri/src/cmd/storage/reclaim/execute.rs` | app/cmd | 实现 | execute_storage_reclaim | 196 |
+| `src-tauri/src/cmd/storage/reclaim/executors.rs` | app/cmd | 实现 | execute_orphans、execute_derived、execute_index、execute_tool_results、execute_section、execute_webview | 432 |
+| `src-tauri/src/cmd/storage/reclaim/mod.rs` | app/cmd | 实现（含聚合） | PLAN_TTL_SECONDS、ReclaimPorts | 48 |
+| `src-tauri/src/cmd/storage/reclaim/plan.rs` | app/cmd | 实现 | plan_storage_reclaim | 134 |
 | `src-tauri/src/cmd/storage/reclaim/report.rs` | app/cmd | 实现 | Totals、status_of、failure_errors、error_dto、entry_result | 77 |
 | `src-tauri/src/cmd/storage/reclaim/store.rs` | app/cmd | 实现 | CachedPlanEntry、CachedPlan、allows、policy_of、PlanLookupError、as_str | 128 |
-| `src-tauri/src/cmd/storage/sample/collect.rs` | app/cmd | 实现 | collect、collect_with | 209 |
-| `src-tauri/src/cmd/storage/sample/mod.rs` | app/cmd | 实现（含聚合） | SAMPLE_TIMEOUT、SampleInputs、Sampled | 61 |
+| `src-tauri/src/cmd/storage/sample/collect.rs` | app/cmd | 实现 | collect、collect_with | 218 |
+| `src-tauri/src/cmd/storage/sample/mod.rs` | app/cmd | 实现（含聚合） | SAMPLE_TIMEOUT、SampleInputs、Sampled | 63 |
 | `src-tauri/src/cmd/storage/sample/policy.rs` | app/cmd | 实现 | config_policy | 13 |
-| `src-tauri/src/cmd/storage/sample/rows.rs` | app/cmd | 实现 | attachment_sample、sample_tool_results、sample_index、derived_sample、sample_mascot、sample_crashes | 211 |
+| `src-tauri/src/cmd/storage/sample/rows.rs` | app/cmd | 实现 | attachment_sample、sample_tool_results、sample_index、derived_sample、sample_mascot、sample_crashes | 220 |
 | `src-tauri/src/cmd/storage/sample/sections.rs` | app/cmd | 实现 | section_sample | 38 |
 | `src-tauri/src/cmd/storage/sample/stats.rs` | app/cmd | 实现 | from_dir_stats、from_io、StatsView、attachment_reason | 74 |
 | `src-tauri/src/cmd/storage/sample/timeout.rs` | app/cmd | 实现 | SampleFuture、timed、timed_blocking | 57 |
@@ -823,16 +827,17 @@
 | `src-tauri/crates/assistant-protocol/src/clock.rs` | assistant-protocol | 实现 | ClockModeDto、ClockStatusDto、ClockSnapshotDto | 38 |
 | `src-tauri/crates/assistant-protocol/src/config.rs` | assistant-protocol | 实现 | ThemeModeDto、AppConfDto、OrbConfDto、MascotConfDto | 65 |
 | `src-tauri/crates/assistant-protocol/src/error.rs` | assistant-protocol | 实现 | CommandErrorCodeDto、is_retryable、CommandErrorDto、new、internal、with_retry_after_ms | 90 |
-| `src-tauri/crates/assistant-protocol/src/lib.rs` | assistant-protocol | crate 入口 | agent、agent_mode、branch、chat、clock、config | 42 |
+| `src-tauri/crates/assistant-protocol/src/lib.rs` | assistant-protocol | crate 入口 | agent、agent_mode、branch、chat、clock、config | 44 |
 | `src-tauri/crates/assistant-protocol/src/mascot.rs` | assistant-protocol | 实现 | InstallMascotAssetResultDto、RiveManifestPropertiesDto、RiveManifestDto | 68 |
 | `src-tauri/crates/assistant-protocol/src/mcp.rs` | assistant-protocol | 实现 | McpLaunchInputDto、McpServerCreateDto、McpServerUpdateDto、McpServerStatusDto、McpServerDto | 74 |
 | `src-tauri/crates/assistant-protocol/src/orb.rs` | assistant-protocol | 实现 | MousePositionDto、ScreenSizeDto、ScreenRectDto | 24 |
 | `src-tauri/crates/assistant-protocol/src/os_tool.rs` | assistant-protocol | 实现 | OsToolExecRequestDto、ToolErrorKindDto、OsToolResultDto | 38 |
 | `src-tauri/crates/assistant-protocol/src/provider.rs` | assistant-protocol | 实现 | ReasoningLevelsDto、CapabilitySupportDto、CapabilitySourceDto、ModelCapabilityDto、ModelConfigDto、ProviderInputDto | 130 |
+| `src-tauri/crates/assistant-protocol/src/resource.rs` | assistant-protocol | 实现 | ResourceTabDto、ResourceAvailabilityDto、ProcessRoleDto、MemoryBasisDto、CpuBasisDto、CoverageDto | 131 |
 | `src-tauri/crates/assistant-protocol/src/screenshot.rs` | assistant-protocol | 实现 | ScreenshotSessionDto、ScreenshotCropArgsDto、ScreenshotCropResultDto | 38 |
 | `src-tauri/crates/assistant-protocol/src/shortcut.rs` | assistant-protocol | 实现 | ShortcutWarningPayloadDto | 10 |
 | `src-tauri/crates/assistant-protocol/src/startup.rs` | assistant-protocol | 实现 | CapStateDto、CapabilityStateDto | 23 |
-| `src-tauri/crates/assistant-protocol/src/storage.rs` | assistant-protocol | 实现 | AttachmentSummary、ConversationAttachmentSummary、StorageBreakdownDto、AttachmentImportDto、AssetDirsDto、AttachmentLimitsDto | 465 |
+| `src-tauri/crates/assistant-protocol/src/storage.rs` | assistant-protocol | 实现 | AttachmentSummary、ConversationAttachmentSummary、StorageBreakdownDto、AttachmentImportDto、AssetDirsDto、AttachmentLimitsDto | 470 |
 | `src-tauri/crates/assistant-protocol/src/theme.rs` | assistant-protocol | 实现 | ResolvedThemeDto、ThemeChangedPayloadDto | 16 |
 | `src-tauri/crates/assistant-protocol/src/window.rs` | assistant-protocol | 实现 | WindowModeDto、WindowModeChangedPayloadDto | 16 |
 | `src-tauri/crates/assistant-protocol/src/workspace.rs` | assistant-protocol | 实现 | WorkspaceDto | 12 |
@@ -890,6 +895,15 @@
 | `src-tauri/crates/assistant-providers/src/types/mod.rs` | assistant-providers/types | 实现（含聚合） | chat_delta、config、message、tool、unified | 20 |
 | `src-tauri/crates/assistant-providers/src/types/tool.rs` | assistant-providers/types | 实现 | ToolCall、ToolSpec | 17 |
 | `src-tauri/crates/assistant-providers/src/types/unified.rs` | assistant-providers/types | 实现 | ReasoningContentKind、ToolCallCompletion、UnifiedToolCall、UnifiedTokenUsage、ModelResponseReplayCapture、ModelResponseReplayItem | 122 |
+| `src-tauri/crates/assistant-resource-probe/src/classify.rs` | assistant-resource-probe | 实现 | PlatformProfile、role、is_self_role | 140 |
+| `src-tauri/crates/assistant-resource-probe/src/cpu.rs` | assistant-resource-probe | 实现 | CpuDiffCache、new、sample | 198 |
+| `src-tauri/crates/assistant-resource-probe/src/lib.rs` | assistant-resource-probe | crate 入口 | classify、cpu、mock、source、tree、SAMPLE_INTERVAL_MS | 671 |
+| `src-tauri/crates/assistant-resource-probe/src/linux.rs` | assistant-resource-probe | 实现 | LinuxSource、new | 95 |
+| `src-tauri/crates/assistant-resource-probe/src/macos.rs` | assistant-resource-probe | 实现 | MacosSource、new | 136 |
+| `src-tauri/crates/assistant-resource-probe/src/mock.rs` | assistant-resource-probe | 实现 | MockSource、new、failing、calls | 41 |
+| `src-tauri/crates/assistant-resource-probe/src/source.rs` | assistant-resource-probe | 实现 | RawProcess、new、with_cmd、with_memory、with_cpu_time、thread | 110 |
+| `src-tauri/crates/assistant-resource-probe/src/tree.rs` | assistant-resource-probe | 实现 | TreeScan、collect | 229 |
+| `src-tauri/crates/assistant-resource-probe/src/win.rs` | assistant-resource-probe | 实现 | WinSource、new | 92 |
 | `src-tauri/crates/assistant-security/src/clipboard_guard.rs` | assistant-security | 实现 | ClipboardBackend、ArboardBackend、ClipboardGuard、new、with_backend、copy_and_guard | 227 |
 | `src-tauri/crates/assistant-security/src/lib.rs` | assistant-security | crate 入口 | clipboard_guard、hibp、reveal_guard、screen_lock、ssh_agent、unlock_dialog | 6 |
 | `src-tauri/crates/assistant-security/src/reveal_guard.rs` | assistant-security | 实现 | RevealGuard、new、clear、check_and_record | 49 |
@@ -957,7 +971,7 @@
 | `src-tauri/crates/assistant-sync/src/git_sync/state.rs` | assistant-sync/git_sync | 实现 | new、path、is_init | 19 |
 | `src-tauri/crates/assistant-sync/src/types/mod.rs` | assistant-sync/types | 实现（含聚合） | SyncError、Readyness、RemoteStatusErrorKind、RemoteStatus、RepositoryState、as_str | 310 |
 | `src-tauri/crates/assistant-tools/src/dto_bridge.rs` | assistant-tools | 实现 | - | 264 |
-| `src-tauri/crates/assistant-tools/src/lib.rs` | assistant-tools | crate 入口 | mcp、os、sandbox | 25 |
+| `src-tauri/crates/assistant-tools/src/lib.rs` | assistant-tools | crate 入口 | mcp、os、sandbox | 28 |
 | `src-tauri/crates/assistant-tools/src/contract/catalog.rs` | assistant-tools/contract | 实现 | CatalogEntry、ToolCatalog | 31 |
 | `src-tauri/crates/assistant-tools/src/contract/context.rs` | assistant-tools/contract | 实现 | ToolCallSource、as_str、ToolUseContext、for_toolbox | 137 |
 | `src-tauri/crates/assistant-tools/src/contract/definition.rs` | assistant-tools/contract | 实现 | ToolDefinition、new、ToolDescriptor | 49 |
@@ -978,7 +992,7 @@
 | `src-tauri/crates/assistant-tools/src/mcp/stdio/mod.rs` | assistant-tools/mcp | 实现（含聚合） | DEFAULT_CALL_TIMEOUT、DEFAULT_HANDSHAKE_TIMEOUT、PROTOCOL_VERSION | 545 |
 | `src-tauri/crates/assistant-tools/src/mcp/stdio/stderr.rs` | assistant-tools/mcp | 实现 | spawn_stderr_logger | 30 |
 | `src-tauri/crates/assistant-tools/src/mcp/stdio/transport.rs` | assistant-tools/mcp | 实现 | read_loop | 81 |
-| `src-tauri/crates/assistant-tools/src/os/mod.rs` | assistant-tools/os | 实现（含聚合） | test_support、register_bridge_tools、register_readonly_tools、register_write_tools、register_dangerous_tools、register_interactive_tools | 101 |
+| `src-tauri/crates/assistant-tools/src/os/mod.rs` | assistant-tools/os | 实现（含聚合） | test_support、register_bridge_tools、register_readonly_tools、register_write_tools、register_dangerous_tools、register_interactive_tools | 104 |
 | `src-tauri/crates/assistant-tools/src/os/shared/footer.rs` | assistant-tools/os | 实现 | ENCODING、NON_UTF8、CATALOG、LONG_LINES、INDEX、COLUMN | 109 |
 | `src-tauri/crates/assistant-tools/src/os/shared/fs_util.rs` | assistant-tools/os | 实现 | ensure_empty_directory | 15 |
 | `src-tauri/crates/assistant-tools/src/os/shared/mod.rs` | assistant-tools/os | 模块聚合 | output、path、process_output、text_encoding、footer、fs_util | 9 |
@@ -1021,11 +1035,11 @@
 | `src-tauri/crates/assistant-tools/src/os/tools/agent_read/window.rs` | assistant-tools/os | 实现 | CHUNK_BYTES、EOF_GRACE_BYTES、GUESS_SAMPLE_BYTES、WindowRequest、WindowOutcome、LineSink | 896 |
 | `src-tauri/crates/assistant-tools/src/os/tools/agent_shell/classify.rs` | assistant-tools/os | 实现 | CommandClass、fn、classify | 380 |
 | `src-tauri/crates/assistant-tools/src/os/tools/agent_shell/deny.rs` | assistant-tools/os | 实现 | is_sandbox_denied | 157 |
-| `src-tauri/crates/assistant-tools/src/os/tools/agent_shell/mod.rs` | assistant-tools/os | 实现（含聚合） | classify、deny、parse、run、schema、spawn | 183 |
+| `src-tauri/crates/assistant-tools/src/os/tools/agent_shell/mod.rs` | assistant-tools/os | 实现（含聚合） | classify、deny、parse、run、schema、spawn | 201 |
 | `src-tauri/crates/assistant-tools/src/os/tools/agent_shell/parse.rs` | assistant-tools/os | 实现 | CommandFacts、chains、preview、scan | 407 |
-| `src-tauri/crates/assistant-tools/src/os/tools/agent_shell/run.rs` | assistant-tools/os | 实现 | execute | 516 |
+| `src-tauri/crates/assistant-tools/src/os/tools/agent_shell/run.rs` | assistant-tools/os | 实现 | execute | 525 |
 | `src-tauri/crates/assistant-tools/src/os/tools/agent_shell/schema.rs` | assistant-tools/os | 实现 | MAX_COMMAND_CHARS、DEFAULT_TIMEOUT_MS、MIN_TIMEOUT_MS、MAX_TIMEOUT_MS、SANDBOX_ROOT_MISSING、ShellInput | 210 |
-| `src-tauri/crates/assistant-tools/src/os/tools/agent_shell/spawn.rs` | assistant-tools/os | 实现 | ShellFlavor、fn、ShellSpawnPlan、SpawnPlanError | 431 |
+| `src-tauri/crates/assistant-tools/src/os/tools/agent_shell/spawn.rs` | assistant-tools/os | 实现 | ShellFlavor、fn、ShellSpawnPlan、SpawnPlanError | 420 |
 | `src-tauri/crates/assistant-tools/src/os/tools/agent_write/atomic.rs` | assistant-tools/os | 实现 | WriteOutcome、write_atomically | 144 |
 | `src-tauri/crates/assistant-tools/src/os/tools/agent_write/encoding.rs` | assistant-tools/os | 实现 | TargetEncoding、name、is_plain_utf8、written_bom、resolve_target_encoding、build_payload | 83 |
 | `src-tauri/crates/assistant-tools/src/os/tools/agent_write/lines.rs` | assistant-tools/os | 实现 | count_lines、count_lines_in_file | 32 |
@@ -1066,12 +1080,19 @@
 | `src-tauri/crates/assistant-tools/src/runtime/gateway/mod.rs` | assistant-tools/runtime | 实现（含聚合） | ToolGateway、new、with_timeout_source、evaluate、audit_external | 385 |
 | `src-tauri/crates/assistant-tools/src/runtime/gateway/stores.rs` | assistant-tools/runtime | 实现 | GrantScope、redact_resource、redact_secrets、AuditEntry、allowed、bypassed | 318 |
 | `src-tauri/crates/assistant-tools/src/runtime/gateway/testing.rs` | assistant-tools/runtime | 实现 | ScriptedApprovalPrompter、new、with_delay、request_count、requests | 59 |
-| `src-tauri/crates/assistant-tools/src/runtime/mod.rs` | assistant-tools/runtime | 模块聚合 | args、compact、exec、gateway、pipeline、policy | 9 |
+| `src-tauri/crates/assistant-tools/src/runtime/mod.rs` | assistant-tools/runtime | 模块聚合 | args、compact、exec、gateway、pipeline、policy | 10 |
 | `src-tauri/crates/assistant-tools/src/runtime/pipeline.rs` | assistant-tools/runtime | 实现 | ToolCall、new、PipelineStage、ToolOutcome、PipelineEvent、PipelineEventSink | 557 |
 | `src-tauri/crates/assistant-tools/src/runtime/policy.rs` | assistant-tools/runtime | 实现 | PermissionEffect、fn、PermissionRule、new、with_origin、matches | 891 |
 | `src-tauri/crates/assistant-tools/src/runtime/question.rs` | assistant-tools/runtime | 实现 | QuestionOption、QuestionSpec、QuestionRequest、QuestionAnswerItem、new、as_text | 299 |
 | `src-tauri/crates/assistant-tools/src/runtime/registry.rs` | assistant-tools/runtime | 实现 | RegisteredTool、ToolRegistry、new、register、find、unregister | 548 |
-| `src-tauri/crates/assistant-tools/src/runtime/storage.rs` | assistant-tools/runtime | 实现 | PER_TOOL_LIMIT_CHARS、PER_ROUND_LIMIT_CHARS、PREVIEW_HEAD_CHARS、PREVIEW_TAIL_CHARS、PREVIEW_CHARS、MAX_SPILL_BYTES | 1447 |
+| `src-tauri/crates/assistant-tools/src/runtime/scratch.rs` | assistant-tools/runtime | 实现 | ToolScratchStore、FileToolScratchStore、new | 283 |
+| `src-tauri/crates/assistant-tools/src/runtime/storage/mod.rs` | assistant-tools/runtime | 实现（含聚合） | PersistToolResult、PersistedRef、model_ref、ToolResultStorage、FileToolResultStorage、new | 240 |
+| `src-tauri/crates/assistant-tools/src/runtime/storage/naming.rs` | assistant-tools/runtime | 实现 | session_namespace、scratch_root_for、unique_prefix、safe_component、result_file_name | 88 |
+| `src-tauri/crates/assistant-tools/src/runtime/storage/preview.rs` | assistant-tools/runtime | 实现 | PER_TOOL_LIMIT_CHARS、PER_ROUND_LIMIT_CHARS、PREVIEW_HEAD_CHARS、PREVIEW_TAIL_CHARS、PREVIEW_CHARS、select_persist_targets | 103 |
+| `src-tauri/crates/assistant-tools/src/runtime/storage/receipt.rs` | assistant-tools/runtime | 实现 | ReadReceiptKey、DEFAULT_LINE_WINDOW_MAX_CHARS、ReadReceipt、utf8、ReadReceiptStore、InMemoryReadReceiptStore | 109 |
+| `src-tauri/crates/assistant-tools/src/runtime/storage/retention.rs` | assistant-tools/runtime | 实现 | ExpiredCandidate、DeleteReport、CleanupReport、cleanup_expired_results、collect_expired、delete_candidates | 145 |
+| `src-tauri/crates/assistant-tools/src/runtime/storage/sink.rs` | assistant-tools/runtime | 实现 | MAX_SPILL_BYTES、STDERR_RING_CHARS、SPILL_TRUNCATED_MARKER、ENCODING_PROBE_BYTES、OutputEncoding、label | 642 |
+| `src-tauri/crates/assistant-tools/src/runtime/storage/tree.rs` | assistant-tools/runtime | 实现 | DirStats、result_stats、dir_tree_stats、PurgeReport、purge_tree_files、for_each_file | 174 |
 | `src-tauri/crates/assistant-tools/src/sandbox/linux.rs` | assistant-tools/sandbox | 实现 | LandlockBackend、new | 504 |
 | `src-tauri/crates/assistant-tools/src/sandbox/macos.rs` | assistant-tools/sandbox | 实现 | SeatbeltBackend、new | 539 |
 | `src-tauri/crates/assistant-tools/src/sandbox/mod.rs` | assistant-tools/sandbox | 实现（含聚合） | SandboxKind、fn、SandboxEnforcement、SandboxDimension、enforcement_from_missing | 550 |

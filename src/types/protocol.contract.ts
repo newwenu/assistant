@@ -365,6 +365,7 @@ export type ProcessSnapshotDto = {
 availability: ResourceAvailabilityDto, reason: string | null, 
 /**
  * 一次遍历一个时刻；非 `available` 时为 `null`（不填 `0`）。
+ * 单位是 **epoch 毫秒**（不是秒，与存储域的 `sampled_at` 不同）。
  */
 sampledAt: number | null, 
 /**

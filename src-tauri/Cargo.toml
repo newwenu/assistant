@@ -23,6 +23,7 @@ members = [
     "crates/assistant-vault",
     "crates/assistant-clock",
     "crates/assistant-crash",
+    "crates/assistant-resource-probe",
 ]
 
 [workspace.package]
@@ -109,6 +110,7 @@ assistant-sync = { path = "crates/assistant-sync" }
 assistant-vault = { path = "crates/assistant-vault" }
 assistant-clock = { path = "crates/assistant-clock" }
 assistant-crash = { path = "crates/assistant-crash" }
+assistant-resource-probe = { path = "crates/assistant-resource-probe" }
 arboard = "3"
 csv = "1"
 hmac = "0.12"
@@ -208,6 +210,7 @@ assistant-sync = { workspace = true, optional = true }
 assistant-vault = { workspace = true, optional = true }
 assistant-clock = { workspace = true, optional = true }
 assistant-crash = { workspace = true }
+assistant-resource-probe = { workspace = true }
 rustc_version_runtime.workspace = true
 
 [target.'cfg(target_os = "windows")'.dependencies]
