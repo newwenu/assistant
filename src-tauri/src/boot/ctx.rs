@@ -1,14 +1,11 @@
-// 参考: docs/store/I75-startup-layering-spec.md §4.2 — 启动上下文与度量载体
+// 参考: docs/store/I75-startup-layering-spec.md §4.2 — 启动上下文与阶段记录
 
 use std::any::Any;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use tauri::AppHandle;
-
-use assistant_protocol::startup::{
-    CapIssueDto, FrameRecordDto, OutcomeDto, PhaseRecordDto, StartupReportDto,
-};
 
 use crate::app_dirs::AppDirs;
 use crate::boot::conf::BootConf;
@@ -31,15 +28,6 @@ impl Outcome {
             Outcome::Degraded => "degraded",
             Outcome::Fatal => "fatal",
             Outcome::Ignored => "ignored",
-        }
-    }
-
-    fn dto(self) -> OutcomeDto {
-        match self {
-            Outcome::Ok => OutcomeDto::Ok,
-            Outcome::Degraded => OutcomeDto::Degraded,
-            Outcome::Fatal => OutcomeDto::Fatal,
-            Outcome::Ignored => OutcomeDto::Ignored,
         }
     }
 }
@@ -71,12 +59,13 @@ impl BootClock {
         self.t0_epoch_ms
     }
 
-    pub fn process_ms(&self) -> u64 {
+    /// 进程累计耗时（内部诊断）：只供阶段行打印，不进结构、不出命令。
+    pub(crate) fn process_ms(&self) -> u64 {
         millis(self.t0.elapsed())
     }
 
-    /// 距上一个阶段结束的间隔。用于阶段间隙诊断，不替代单阶段耗时。
-    pub fn since_last_ms(&self) -> u64 {
+    /// 距上一阶段结束的空隙（内部诊断）：区分「阶段本身慢」与「阶段之间有空隙」。
+    pub(crate) fn since_last_ms(&self) -> u64 {
         let last = *self.last.lock().unwrap_or_else(|e| e.into_inner());
         millis(last.elapsed())
     }
@@ -97,22 +86,21 @@ fn millis(duration: std::time::Duration) -> u64 {
     u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
 }
 
-/// 启动报告。阶段记录与降档集合的唯一写入口。
+/// 启动报告：只记「哪些阶段已跑过」，供 `run_idle` 去重；首帧与阶段毫秒只进日志。
+///
+/// 不存阶段毫秒与降档集合：同一份数据既进日志又存结构，就必须有第二个读者，
+/// 否则只是给无人调用的查询命令供料，反而制造出两份可能不一致的事实。
 pub struct StartupReport {
-    phases: Mutex<Vec<PhaseRecordDto>>,
-    degraded: Mutex<Vec<CapIssueDto>>,
-    first_frame: Mutex<Option<FrameRecordDto>>,
+    phases: Mutex<HashSet<&'static str>>,
     /// 唤起轮次起点：`wake-<uuid>` → 入口 epoch 毫秒。首帧回传时取出并相减即得 T_wake。
-    wake_starts: Mutex<std::collections::HashMap<String, i64>>,
+    wake_starts: Mutex<HashMap<String, i64>>,
 }
 
 impl Default for StartupReport {
     fn default() -> Self {
         Self {
-            phases: Mutex::new(Vec::new()),
-            degraded: Mutex::new(Vec::new()),
-            first_frame: Mutex::new(None),
-            wake_starts: Mutex::new(std::collections::HashMap::new()),
+            phases: Mutex::new(HashSet::new()),
+            wake_starts: Mutex::new(HashMap::new()),
         }
     }
 }
@@ -131,14 +119,13 @@ impl StartupReport {
         clock: &BootClock,
         id: &'static str,
         lane: Lane,
-        budget_ms: u32,
         on_err: Outcome,
         body: impl FnOnce() -> Result<T, E>,
     ) -> Result<T, E> {
         let started = Instant::now();
         let result = body();
         let outcome = if result.is_ok() { Outcome::Ok } else { on_err };
-        self.commit(clock, id, lane, budget_ms, started, outcome);
+        self.commit(clock, id, lane, started, outcome);
         result
     }
 
@@ -154,7 +141,6 @@ impl StartupReport {
         clock: &BootClock,
         id: &'static str,
         lane: Lane,
-        budget_ms: u32,
         body: impl FnOnce() -> Result<(), E>,
     ) {
         let started = Instant::now();
@@ -163,7 +149,7 @@ impl StartupReport {
         } else {
             Outcome::Degraded
         };
-        self.commit(clock, id, lane, budget_ms, started, outcome);
+        self.commit(clock, id, lane, started, outcome);
     }
 
     /// 尽力而为：失败记 `ignored`，原因同样由 `Registry::build` 记。
@@ -172,7 +158,6 @@ impl StartupReport {
         clock: &BootClock,
         id: &'static str,
         lane: Lane,
-        budget_ms: u32,
         body: impl FnOnce() -> Result<(), E>,
     ) {
         let started = Instant::now();
@@ -181,27 +166,10 @@ impl StartupReport {
         } else {
             Outcome::Ignored
         };
-        self.commit(clock, id, lane, budget_ms, started, outcome);
+        self.commit(clock, id, lane, started, outcome);
     }
 
-    /// 登记一个未就绪能力（降档集合的唯一写入口）。
-    pub fn degrade(&self, id: &str, message: impl Into<String>) {
-        let mut degraded = self.degraded.lock().unwrap_or_else(|e| e.into_inner());
-        degraded.retain(|issue| issue.id != id);
-        degraded.push(CapIssueDto {
-            id: id.to_string(),
-            message: message.into(),
-        });
-    }
-
-    /// 重试成功后撤销降档：报告里的降档集合跟随状态机，不留历史残项。
-    pub fn recover(&self, id: &str) {
-        self.degraded
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .retain(|issue| issue.id != id);
-    }
-
+    /// 首帧回传：只落一条 `info` 锚点，前端算好的 epoch 毫秒与 `t0_epoch_ms` 相减。
     pub fn record_first_frame(&self, clock: &BootClock, frame_epoch_ms: i64) {
         let visible_ms =
             u64::try_from(frame_epoch_ms.saturating_sub(clock.t0_epoch_ms())).unwrap_or(0);
@@ -210,11 +178,6 @@ impl StartupReport {
             clock.startup_id(),
             visible_ms
         );
-        *self.first_frame.lock().unwrap_or_else(|e| e.into_inner()) = Some(FrameRecordDto {
-            startup_id: clock.startup_id().to_string(),
-            frame_epoch_ms,
-            visible_ms,
-        });
     }
 
     /// 唤起入口打点：生成 id 的同一时刻记起点，首帧回传时相减即 T_wake。
@@ -238,26 +201,7 @@ impl StartupReport {
         self.phases
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .iter()
-            .any(|phase| phase.id == id)
-    }
-
-    pub fn snapshot(&self, clock: &BootClock) -> StartupReportDto {
-        StartupReportDto {
-            startup_id: clock.startup_id().to_string(),
-            process_ms: clock.process_ms(),
-            phases: self
-                .phases
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .clone(),
-            degraded: self
-                .degraded
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .clone(),
-            first_frame: (*self.first_frame.lock().unwrap_or_else(|e| e.into_inner())).clone(),
-        }
+            .contains(id)
     }
 
     fn commit(
@@ -265,37 +209,32 @@ impl StartupReport {
         clock: &BootClock,
         id: &'static str,
         lane: Lane,
-        budget_ms: u32,
         started: Instant,
         outcome: Outcome,
     ) {
         let ms = millis(started.elapsed());
+        // 空隙必须在 `touch` 之前取：`touch` 把基准移到本阶段结束点。
+        let gap_ms = clock.since_last_ms();
         clock.touch();
-        if budget_ms > 0 && ms > u64::from(budget_ms) {
-            log::warn!("startup budget exceeded stage={id} ms={ms} budget_ms={budget_ms}");
-        }
+        let process_ms = clock.process_ms();
         // 单阶段行只给 dev：release 档日志级别是 `Info`，`debug` 自然静默。
-        // 健康启动若按阶段刷 info，会固定占「表项数」行；release 的度量口径改由
-        // `summarize_lane` 的一条汇总行承载，两个档位各自恰好一份数据。
+        // 三个毫秒各有分工：`ms` 是本阶段耗时，`gap_ms` 是距上一阶段结束的空隙，
+        // `process_ms` 是从进程起点累计——只有同时看才能区分「阶段慢」与「阶段间空转」。
+        // 它们只进这一行，不另存结构：没有读者的数据只是第二份会漂的事实。
         log::debug!(
-            "startup stage={} lane={} startup_id={} ms={} budget_ms={} outcome={}",
+            "startup stage={} lane={} startup_id={} ms={} gap_ms={} process_ms={} outcome={}",
             id,
             lane.label(),
             clock.startup_id(),
             ms,
-            budget_ms,
+            gap_ms,
+            process_ms,
             outcome.label()
         );
         self.phases
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .push(PhaseRecordDto {
-                id: id.to_string(),
-                lane: lane.dto(),
-                ms,
-                budget_ms,
-                outcome: outcome.dto(),
-            });
+            .insert(id);
     }
 }
 

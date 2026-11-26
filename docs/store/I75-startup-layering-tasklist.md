@@ -16,8 +16,8 @@
 ## P0 — 度量脚手架（§7 / §12.4）
 
 - [x] `src-tauri/src/main.rs`：`let t0 = Instant::now()` 与 `t0_epoch_ms`（`SystemTime` → epoch 毫秒）在同一行采集，生成 `startup_id`（§4.2 / §7.1 / M1）
-- [x] `src-tauri/src/boot/ctx.rs`：`BootClock`（`startup_id` / `t0` / `t0_epoch_ms` / `last`）、`StartupReport`（`phases` 去重集合 + `wake_starts`）；`BootClock` 与 `StartupReport` 各 `manage` 一次（§4.2）
-- [x] 阶段日志：单阶段行 `startup stage=<id> lane=<…> startup_id=<uuid> ms=<n> outcome=<ok|degraded|fatal|ignored>`（`debug`，dev 档）；失败原因由 `Registry::build` 记一次，阶段行不重复（§7.1 / §7.1.1）
+- [x] `src-tauri/src/boot/ctx.rs`：`BootClock`（`startup_id` / `t0` / `t0_epoch_ms` / `last`）、`StartupReport`（`phases` 去重集合 + `wake_starts`）；`BootClock` 与 `StartupReport` 各 `manage` 一次（§4.2）。`last` / `process_ms` / `since_last_ms` 只作阶段行的内部诊断（`gap_ms` / `process_ms`），不进结构、不出命令
+- [x] 阶段日志：单阶段行 `startup stage=<id> lane=<…> startup_id=<uuid> ms=<n> gap_ms=<n> process_ms=<n> outcome=<ok|degraded|fatal|ignored>`（`debug`，dev 档）；失败原因由 `Registry::build` 记一次，阶段行不重复（§7.1 / §7.1.1）
 - [x] `src-tauri/src/cmd/startup.rs`：`report_first_frame`（写首帧记录）；idle pass 的 `OnceLock` 触发随 P1 的 `run_idle` 接入（P0 无 idle 泳道可触发）
 - [x] `src-tauri/src/ipc.rs` 的 `generate_handler!` 增该命令；`assistant-protocol/src/lib.rs` 增 `pub mod startup;`；`startup.rs` 定义 `CapStateDto` / `CapabilityStateDto`（N16 / §10.1）
 - [x] 跑 `npm run contract:gen` 并提交 `protocol.contract.ts` 变更（§4.4 / I10）

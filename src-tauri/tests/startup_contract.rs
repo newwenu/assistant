@@ -90,13 +90,11 @@ fn relative(file: &Path) -> String {
         .replace('\\', "/")
 }
 
-/// 源码里的表项行：只保留 G1 / G8 需要的字段。
+/// 源码里的表项行：只保留 G1 需要的字段。
 struct Row {
     id: String,
     lane: String,
     needs: Vec<String>,
-    /// 0 = 未测量，G8 跳过该项比较（§7.2）。
-    budget_ms: u32,
     /// `build` 目标（文件, 函数）。`build` 是函数指针，运行期不可内省，
     /// 只有源码能给出「哪个 id 由哪个函数装配」。
     build: (String, String),
@@ -159,11 +157,6 @@ fn rows(table: &str) -> Vec<Row> {
         let needs = quoted(
             between(block, "needs: &[", "]").unwrap_or_else(|| panic!("表项 {id} 缺 needs")),
         );
-        let budget_ms = between(block, "budget_ms: ", ",")
-            .unwrap_or_else(|| panic!("表项 {id} 缺 budget_ms"))
-            .trim()
-            .parse::<u32>()
-            .unwrap_or_else(|_| panic!("表项 {id} 的 budget_ms 不是整数"));
         let target = between(block, "build: crate::boot::build::", ",")
             .unwrap_or_else(|| panic!("表项 {id} 缺 build"))
             .trim()
@@ -175,7 +168,6 @@ fn rows(table: &str) -> Vec<Row> {
             id,
             lane,
             needs,
-            budget_ms,
             build: (file.to_string(), func.to_string()),
         });
     }
@@ -495,65 +487,6 @@ fn g5_command_layer_uses_accessors() {
     assert!(
         problems.is_empty(),
         "能力门禁被绕过：\n{}",
-        problems.join("\n")
-    );
-}
-
-/// G8：预算回归。基线文件缺失即失败，`phases` 键必须与表项一一对应，
-/// 只对 `budget_ms > 0` 的表项断言 p95 ≤ `budget_ms`（§7.2 / §7.4）。
-const BUDGET_BASELINE: &str = "tests/fixtures/startup-budget-baseline.json";
-
-#[test]
-fn g8_budget_baseline_within_limits() {
-    let path = manifest_dir().join(BUDGET_BASELINE);
-    let text = fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("{} 缺失或不可读（G8 不静默跳过）: {e}", path.display()));
-    let value: serde_json::Value = serde_json::from_str(&text).expect("预算基线是合法 JSON");
-
-    for key in ["date", "profile", "phases"] {
-        if value.get(key).is_none() {
-            panic!("预算基线缺字段 {key}（格式见 §7.4）");
-        }
-    }
-    let phases = value
-        .get("phases")
-        .and_then(|phases| phases.as_object())
-        .expect("phases 是对象");
-
-    let table = strip_rust_comments(&read(RESOURCES_FILE));
-    let rows = rows(&table);
-    let ids: BTreeSet<&str> = rows.iter().map(|row| row.id.as_str()).collect();
-    let mut problems = Vec::new();
-
-    for key in phases.keys() {
-        if !ids.contains(key.as_str()) {
-            problems.push(format!("phases 含表外键 {key}：改名后残留的死数据"));
-        }
-    }
-
-    for row in &rows {
-        let Some(entry) = phases.get(&row.id) else {
-            problems.push(format!("phases 缺表项 {}", row.id));
-            continue;
-        };
-        if row.budget_ms == 0 {
-            continue;
-        }
-        let Some(p95) = entry.get("p95").and_then(|p95| p95.as_f64()) else {
-            problems.push(format!("{} 缺 p95", row.id));
-            continue;
-        };
-        if p95 > row.budget_ms as f64 {
-            problems.push(format!(
-                "{} 的 p95 {p95}ms 超出预算 {}ms",
-                row.id, row.budget_ms
-            ));
-        }
-    }
-
-    assert!(
-        problems.is_empty(),
-        "预算回归断言失败：\n{}",
         problems.join("\n")
     );
 }

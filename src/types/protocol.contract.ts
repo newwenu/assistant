@@ -106,7 +106,6 @@ export type BudgetSplitDetailDto = { requested: number, executed: number, deferr
 export type CapabilitySourceDto = "api" | "catalog" | "snapshot" | "fallback";
 export type CapabilityStateDto = { id: string, state: CapStateDto, message: string | null, };
 export type CapabilitySupportDto = "supported" | "unsupported" | "unknown";
-export type CapIssueDto = { id: string, message: string, };
 export type CapStateDto = "pending" | "ready" | "failed";
 export type ChatDeltaPayloadDto = { conversationId: string, attemptId: string, messageId: string, seq: number, 
 /**
@@ -214,7 +213,6 @@ export type ConversationUnlockedPayloadDto = { conversationId: string, };
 export type DocAnchorDto = { path: string, ranges: Array<DocLineRangeDto>, };
 export type DocLineRangeDto = { start: number, end: number, };
 export type FileAttachmentRefDto = { attachmentId: string, name: string, bytes: number, };
-export type FrameRecordDto = { startupId: string, frameEpochMs: number, visibleMs: number, };
 export type GrantScopeDto = "session" | "global";
 export type ImageAttachmentRefDto = { attachmentId: string, mediaType: string | null, bytes: number | null, width: number | null, height: number | null, name: string | null, };
 export type InstallMascotAssetResultDto = { 
@@ -223,7 +221,6 @@ export type InstallMascotAssetResultDto = {
  */
 relPath: string, bytes: number, version: number, };
 export type LadderDetailDto = { applied: Array<string>, droppedMessages: number | null, trimmedChars: number | null, };
-export type LaneDto = "boot" | "idle" | "onDemand";
 export type MascotConfDto = { renderer: string, primaryColor: string | null, secondaryColor: string | null, riveIdlePoseRotation: boolean, riveSrc: string | null, svgAnimated: boolean, gifSrc: string | null, gifBorderRadius: number, };
 export type McpLaunchInputDto = { command: string, args: Array<string>, cwd?: string | null, env: { [key in string]: string }, callTimeoutMs?: number | null, };
 export type McpServerCreateDto = { name: string, launch: McpLaunchInputDto, };
@@ -319,13 +316,11 @@ export type NodeStateDto = "pending" | "running" | "waiting" | "finished" | "err
 export type OrbConfDto = { clickThrough: boolean, alwaysOnTop: boolean, opacityPercent: number, hideOnPointerHover: boolean, hoverDelayMs: number, idleOpacityPercent: number, positionX: number | null, positionY: number | null, };
 export type OsToolExecRequestDto = { tool: string, action: string, params: unknown, };
 export type OsToolResultDto = { ok: boolean, data: unknown, resultForAssistant: string | null, error: string | null, errorKind: ToolErrorKindDto | null, };
-export type OutcomeDto = "ok" | "degraded" | "fatal" | "ignored";
 export type PermissionGrantDto = { grantKey: string, tool: string, scope: GrantScopeDto, conversationId: string | null, scopeSummary: string, createdAt: number, };
 export type PermissionAuditEntryDto = { tool: string, action: string, resource: string, outcome: string, atMillis: number, conversationId: string | null, turnId: string | null, iteration: number | null, source: string | null, };
 export type PermissionAuditPageDto = { entries: Array<PermissionAuditEntryDto>, hasMore: boolean, };
 export type PermissionIntentDto = { action: string, resources: Array<string>, };
 export type PersistDetailDto = { rows: number, messageIds: Array<string>, };
-export type PhaseRecordDto = { id: string, lane: LaneDto, ms: number, budgetMs: number, outcome: OutcomeDto, };
 export type PersistedResultDto = { path: string, bytes: number | null, };
 export type PipelineDetailDto = { stage: PipelineStageDto | null, index: number | null, total: number | null, toolName: string | null, toolCallId: string | null, };
 export type PipelineStageDto = "find" | "validate" | "gateway" | "execute" | "persist";
@@ -431,7 +426,6 @@ targetsScope: string | null,
  */
 confidence: string, };
 export type SiblingInfoDto = { id: string, siblingIndex: number, contentPreview: string, };
-export type StartupReportDto = { startupId: string, processMs: number, phases: Array<PhaseRecordDto>, degraded: Array<CapIssueDto>, firstFrame: FrameRecordDto | null, };
 export type StorageAvailabilityDto = "available" | "missing" | "locked" | "unreadable" | "unavailable" | "notImplemented" | "noReportYet" | "staleReport";
 export type StorageBreakdownDto = { 
 /**

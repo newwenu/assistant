@@ -6,12 +6,12 @@ use crate::boot::conf::BootConf;
 use crate::boot::ctx::StartupCtx;
 use crate::boot::resources::{CapErr, CapValue};
 
-/// 失败不终止启动：回落默认值并逐项记降档（`BootConf::load_all` 永不返回 `Err`）。
+/// 失败不终止启动：回落默认值并逐项记 `warn`（`BootConf::load_all` 永不返回 `Err`）。
 pub fn build(ctx: &StartupCtx<'_>) -> Result<CapValue, CapErr> {
+    let _ = ctx;
     let (conf, failures) = BootConf::load_all();
     for failure in failures {
         log::warn!("boot config degraded: {failure}");
-        ctx.report.degrade("boot_conf", failure);
     }
     Ok(Arc::new(conf))
 }

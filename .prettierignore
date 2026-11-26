@@ -2,6 +2,7 @@
 src/vault/core/contract
 src/types/protocol.contract.ts
 src/types/shortcutDefaults.generated.ts
+src/settings/core/runtime/windowRequirements.generated.ts
 # golden fixtures — must stay byte-identical to JSON.stringify output
 src/settings/__tests__/fixtures
 # Rust 源码与 target 产物，格式化归 cargo fmt

@@ -189,7 +189,7 @@ pub struct BootClock {
     pub startup_id: String,      // uuid v4，一次进程一份
     pub t0: Instant,             // 单调时钟，进程内分段计时
     pub t0_epoch_ms: i64,        // 与前端 performance.timeOrigin 同域，跨端相减
-    pub last: Mutex<Instant>,
+    pub last: Mutex<Instant>,    // 上一阶段结束点，仅供 gap_ms 内部诊断
 }
 
 pub struct StartupReport {
@@ -200,7 +200,7 @@ pub struct StartupReport {
 
 - `BootClock` 与 `StartupReport` 均 `manage` 进 Tauri state，供命令层与退出期读取。
 - `t0` 与 `t0_epoch_ms` 在同一行同时采集；跨端只做一次减法（§7.2 M1），不做时钟校准。
-- `StartupReport` 不存阶段毫秒与降档集合：阶段毫秒只进日志，降档/失败状态由 `Registry` 的槽位与 `startup:capability-changed` 广播承载，避免同一状态有两份读源。
+- `StartupReport` 不存阶段毫秒与降档集合：阶段毫秒只进日志（`ms` / `gap_ms` / `process_ms` 三个诊断值同处一行），降档/失败状态由 `Registry` 的槽位与 `startup:capability-changed` 广播承载，避免同一状态有两份读源。
 - `BootConf` 由 `boot_conf` 表项构建后进入槽；`window/` 中**启动路径上的**几何与 Orb 属性函数（`geometry.rs::restore_main_window`、`create.rs::apply_orb_window_attrs`）改为收 `&BootConf`。运行期调用点（`set_main_window_mode`、`cmd/config.rs` 的 Orb 属性刷新、`orb_overlay`）保持现读 `AppConf`/`OrbConf`，否则会把配置冻结在启动时刻（§11 I2）。
 
 ### 4.3 失败语义：集合成员派生
@@ -457,8 +457,10 @@ requestAnimationFrame(() => {
 **单阶段行（`debug`，dev 档可见）**：每阶段结束一行，用于定位卡在哪个阶段：
 
 ```text
-startup stage=<id> lane=<boot|idle> startup_id=<uuid> ms=<n> outcome=<ok|degraded|fatal|ignored>
+startup stage=<id> lane=<boot|idle> startup_id=<uuid> ms=<n> gap_ms=<n> process_ms=<n> outcome=<ok|degraded|fatal|ignored>
 ```
+
+三个毫秒各有分工，缺一不可：`ms` 是本阶段自身耗时，`gap_ms` 是距上一阶段结束的空隙（表项之间、或等待前序产物），`process_ms` 是从进程起点累计的耗时。只看 `ms` 无法区分「阶段本身慢」与「阶段之间空转」；`process_ms` 给出该阶段在整条启动链上的绝对位置。三者都只进这一行日志，不存结构、不出命令——没有第二个读者的数据只是第二份会漂的事实。
 
 release 档日志级别是 `Info`，本行自然静默：release 不做阶段级取数。**不在 release 另出泳道汇总行**——它没有读者（devtools 关闭、无取数脚本、无人回填基线），而 dev 已有每阶段自己的行，再加一行只是把同一批毫秒打两遍。度量只在 dev 做，结论写进对应的验收记录，不维护机器可读基线文件。
 

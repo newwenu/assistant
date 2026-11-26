@@ -52,14 +52,6 @@ impl Registry {
         }
     }
 
-    pub fn state_of(&self, id: &str) -> CapStateDto {
-        match self.slots().get(id) {
-            Some(Slot::Ready(_)) => CapStateDto::Ready,
-            Some(Slot::Failed(_)) => CapStateDto::Failed,
-            _ => CapStateDto::Pending,
-        }
-    }
-
     /// 全表状态快照（表序）：状态查询命令与首屏水合共用，未触发过的按需项为 `Pending`。
     pub fn snapshot(&self) -> Vec<CapabilityStateDto> {
         let slots = self.slots();
@@ -94,8 +86,6 @@ impl Registry {
         match &result {
             Ok(value) => {
                 self.slots().insert(res.id, Slot::Ready(value.clone()));
-                // 重试成功后撤销降档：报告跟随状态机，不留历史残项（C5）。
-                ctx.report.recover(res.id);
                 emit(ctx, res.id, CapStateDto::Ready, None);
             }
             Err(err) => {
@@ -107,8 +97,7 @@ impl Registry {
                         log::error!("capability {} build failed: {err}", res.id);
                     }
                     crate::boot::resources::Severity::Degraded => {
-                        // 降档项在任何入口失败都要进报告：`ensure` 重试路径不经过 runner。
-                        ctx.report.degrade(res.id, err.to_string());
+                        // 降档项在任何入口失败都要记一次：`ensure` 重试路径不经过 runner。
                         log::warn!("capability {} unavailable: {err}", res.id);
                     }
                     crate::boot::resources::Severity::Ignore => {

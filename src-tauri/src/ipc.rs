@@ -8,7 +8,6 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
     tauri::generate_handler![
         cmd::get_mouse_position,
         cmd::report_first_frame,
-        cmd::get_startup_report,
         cmd::get_capability_states,
         cmd::retry_capability,
         cmd::get_app_conf,

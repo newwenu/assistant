@@ -5,7 +5,7 @@ use std::sync::OnceLock;
 use tauri::{command, AppHandle, Manager};
 
 use crate::boot::{BootClock, StartupReport};
-use crate::protocol::dto::{CapabilityStateDto, StartupReportDto};
+use crate::protocol::dto::CapabilityStateDto;
 
 /// Idle pass 一次性触发开关：首帧之后预热一次，之后不再重复。
 static IDLE_STARTED: OnceLock<()> = OnceLock::new();
@@ -51,12 +51,6 @@ pub fn report_first_frame(
         });
     }
     Ok(())
-}
-
-#[command]
-pub fn get_startup_report(app: AppHandle) -> StartupReportDto {
-    let clock = app.state::<BootClock>();
-    app.state::<StartupReport>().snapshot(clock.inner())
 }
 
 /// 能力状态水合（I75 §4.4 C4 / C5）：前端首帧后拉一次全表快照，

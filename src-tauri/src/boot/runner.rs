@@ -9,7 +9,7 @@ use crate::boot::ctx::{BootClock, Outcome, StartupCtx, StartupReport};
 use crate::boot::registry::Registry;
 use crate::boot::resources::{severity, Lane, Res, Severity, RESOURCES};
 
-/// `Boot` 泳道：按表序执行，每项一个 `PhaseRecord`，失败语义由集合成员派生。
+/// `Boot` 泳道：按表序执行，每项一条阶段行，失败语义由集合成员派生。
 pub fn run_boot(app: &AppHandle, dirs: AppDirs) -> Result<(), Box<dyn std::error::Error>> {
     let clock = app.state::<BootClock>();
     let report = app.state::<StartupReport>();
@@ -20,8 +20,6 @@ pub fn run_boot(app: &AppHandle, dirs: AppDirs) -> Result<(), Box<dyn std::error
     for res in RESOURCES.iter().filter(|res| res.lane == Lane::Boot) {
         run_one(&ctx, res)?;
     }
-    #[cfg(not(debug_assertions))]
-    report.summarize_lane(&clock, Lane::Boot);
     log::info!("Assistant started");
     Ok(())
 }
@@ -35,33 +33,26 @@ pub fn run_idle(ctx: &StartupCtx<'_>) {
         run_one(ctx, res).ok();
         std::thread::yield_now();
     }
-    #[cfg(not(debug_assertions))]
-    ctx.report.summarize_lane(ctx.clock, Lane::Idle);
 }
 
 fn run_one(ctx: &StartupCtx<'_>, res: &'static Res) -> Result<(), Box<dyn std::error::Error>> {
     match severity(res.id) {
         Severity::Fatal => {
-            ctx.report.stage(
-                ctx.clock,
-                res.id,
-                res.lane,
-                res.budget_ms,
-                Outcome::Fatal,
-                || ctx.build(res).map(|_| ()),
-            )?;
+            ctx.report
+                .stage(ctx.clock, res.id, res.lane, Outcome::Fatal, || {
+                    ctx.build(res).map(|_| ())
+                })?;
         }
         Severity::Degraded => {
-            // 降档已由 `Registry::build` 统一写入报告并记日志：boot / idle / `ensure` /
+            // 降档已由 `Registry::build` 统一记一次 warn：boot / idle / `ensure` /
             // 重试四条路径共用同一处，这里只负责阶段行，不重复记同一失败。
-            ctx.report
-                .stage_ignored(ctx.clock, res.id, res.lane, res.budget_ms, || {
-                    ctx.build(res).map(|_| ()).map_err(|e| e.to_string())
-                });
+            ctx.report.stage_ignored(ctx.clock, res.id, res.lane, || {
+                ctx.build(res).map(|_| ()).map_err(|e| e.to_string())
+            });
         }
         Severity::Ignore => {
             ctx.report
-                .stage_best_effort(ctx.clock, res.id, res.lane, res.budget_ms, || {
+                .stage_best_effort(ctx.clock, res.id, res.lane, || {
                     ctx.build(res).map(|_| ()).map_err(|e| e.to_string())
                 });
         }

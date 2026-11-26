@@ -23,15 +23,6 @@ impl Lane {
             Lane::OnDemand => "on-demand",
         }
     }
-
-    pub fn dto(self) -> assistant_protocol::startup::LaneDto {
-        use assistant_protocol::startup::LaneDto;
-        match self {
-            Lane::Boot => LaneDto::Boot,
-            Lane::Idle => LaneDto::Idle,
-            Lane::OnDemand => LaneDto::OnDemand,
-        }
-    }
 }
 
 /// 装配产物。类型擦除只为放进同一个槽，访问侧一律经 `access::*` 还原。
@@ -95,8 +86,6 @@ pub struct Res {
     pub id: &'static str,
     pub lane: Lane,
     pub needs: &'static [&'static str],
-    /// 0 = 未测量；非零项由 G8 断言 p95。
-    pub budget_ms: u32,
     pub build: BuildFn,
 }
 
@@ -106,105 +95,90 @@ pub static RESOURCES: &[Res] = &[
         id: "dirs",
         lane: Lane::Boot,
         needs: &[],
-        budget_ms: 0,
         build: crate::boot::build::dirs::build,
     },
     Res {
         id: "boot_conf",
         lane: Lane::Boot,
         needs: &["dirs"],
-        budget_ms: 0,
         build: crate::boot::build::conf::build,
     },
     Res {
         id: "i18n",
         lane: Lane::Boot,
         needs: &["boot_conf"],
-        budget_ms: 0,
         build: crate::boot::build::state::build_i18n,
     },
     Res {
         id: "feature_on_setup",
         lane: Lane::Boot,
         needs: &["dirs", "boot_conf"],
-        budget_ms: 0,
         build: crate::boot::build::state::build_feature_on_setup,
     },
     Res {
         id: "storage",
         lane: Lane::Boot,
         needs: &["dirs", "boot_conf"],
-        budget_ms: 0,
         build: crate::boot::build::storage::build,
     },
     Res {
         id: "attachment_store",
         lane: Lane::Boot,
         needs: &["dirs"],
-        budget_ms: 0,
         build: crate::boot::build::attachments::build,
     },
     Res {
         id: "runtime_state",
         lane: Lane::Boot,
         needs: &["storage"],
-        budget_ms: 0,
         build: crate::boot::build::state::build_runtime_state,
     },
     Res {
         id: "tool_runtime",
         lane: Lane::Idle,
         needs: &["dirs", "boot_conf"],
-        budget_ms: 0,
         build: crate::boot::build::tools::build,
     },
     Res {
         id: "tray",
         lane: Lane::Boot,
         needs: &["boot_conf", "i18n"],
-        budget_ms: 0,
         build: crate::boot::build::shell::build_tray,
     },
     Res {
         id: "orb_shell",
         lane: Lane::Boot,
         needs: &["dirs", "boot_conf"],
-        budget_ms: 0,
         build: crate::boot::build::windows::build_orb_shell,
     },
     Res {
         id: "screen_inspection",
         lane: Lane::Boot,
         needs: &[],
-        budget_ms: 0,
         build: crate::boot::build::shell::build_screen_inspection,
     },
     Res {
         id: "shortcuts",
         lane: Lane::Boot,
         needs: &["boot_conf"],
-        budget_ms: 0,
         build: crate::boot::build::shell::build_shortcuts,
     },
     Res {
         id: "window_main",
         lane: Lane::Idle,
         needs: &["dirs", "boot_conf"],
-        budget_ms: 0,
         build: crate::boot::build::windows::build_window_main,
     },
     Res {
         id: "storage_maintenance",
         lane: Lane::Idle,
         needs: &["dirs", "storage", "attachment_store", "boot_conf"],
-        budget_ms: 0,
         build: crate::boot::build::maintenance::build,
     },
     Res {
         id: "mcp_start",
         lane: Lane::Idle,
         needs: &["tool_runtime"],
-        budget_ms: 0,
         build: crate::boot::build::mcp::build,
     },
 ];
