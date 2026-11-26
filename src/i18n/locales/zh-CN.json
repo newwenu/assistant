@@ -423,7 +423,7 @@
       "title": "存储管理器",
       "toolbar": {
         "refresh": "刷新",
-        "sampled_at": "统计时间：{{time}}",
+        "sampled_at": "快照于 {{time}}",
         "byte_basis": "统计方式：按文件大小",
         "refresh_failed": "刷新失败，以下显示上次的数据"
       },
@@ -495,7 +495,7 @@
           "unreadable": "无法读取",
           "unavailable": "暂时不可用",
           "notImplemented": "暂不支持",
-          "noReportYet": "暂无统计",
+          "noReportYet": "统计中",
           "staleReport": "数据已过期"
         },
         "eligibility": {
@@ -550,6 +550,7 @@
           "layer": "所在位置",
           "oldest": "最早 {{time}}",
           "newest": "最近 {{time}}",
+          "observed_at": "统计于 {{time}}",
           "reclaimable": "可清理 {{count}} 项 / {{size}}",
           "effective_since": "规则生效于 {{time}}",
           "mutable": "可手动修改",

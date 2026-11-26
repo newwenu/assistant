@@ -168,6 +168,12 @@ function timeRangeText(entry: StorageEntryDto): string {
   return parts.length === 0 ? bytesOrDash(null) : parts.join(" · ");
 }
 
+function observedAtText(entry: StorageEntryDto): string {
+  return translateKey("settings.storage.entries.facts.observed_at", {
+    time: timeText(entry.observedAt),
+  });
+}
+
 function policyText(entry: StorageEntryDto): string {
   const policy = entry.reclaim.policy;
   const parts: string[] = [policyChips(policy, false)[0]];
@@ -208,6 +214,19 @@ export function entryDetailView(entry: StorageEntryDto): EntryDetailView {
       value: timeRangeText(entry),
       mono: false,
     },
+  ];
+
+  // `Deferred` 条目的数字可能来自缓存：`observedAt` 是**这一条**的观测时刻，
+  // 与响应时刻 `sampledAt` 不同源（I79 §7.1）。尚未算完（`null`）时不显示该行。
+  if (entry.observedAt !== null) {
+    items.push({
+      label: null,
+      value: observedAtText(entry),
+      mono: false,
+    });
+  }
+
+  items.push(
     {
       label: null,
       value: reclaimableText(entry),
@@ -218,7 +237,7 @@ export function entryDetailView(entry: StorageEntryDto): EntryDetailView {
       value: policyText(entry),
       mono: false,
     },
-  ];
+  );
 
   const chips: string[] = [];
   if (entry.includesDerived) {

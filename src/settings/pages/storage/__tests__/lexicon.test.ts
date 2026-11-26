@@ -62,6 +62,18 @@ function localeHas(locale: unknown, key: string): boolean {
   return typeof node === "string" && node.length > 0;
 }
 
+function localeString(locale: unknown, key: string): string {
+  let node: unknown = locale;
+  for (const segment of key.split(".")) {
+    if (typeof node !== "object" || node === null) {
+      throw new Error(`缺少文案键 ${key}`);
+    }
+    node = (node as Record<string, unknown>)[segment];
+  }
+  if (typeof node !== "string") throw new Error(`缺少文案键 ${key}`);
+  return node;
+}
+
 afterEach(() => {
   vi.restoreAllMocks();
 });
@@ -149,5 +161,40 @@ describe("存储词表", () => {
     expect(policyChips(makePolicy({ retentionDays: 0 }), false)[1]).not.toBe(
       policyChips(makePolicy({ retentionDays: 30 }), false)[1],
     );
+  });
+});
+
+describe("存储条目统计文案", () => {
+  it("noReportYet 表达「统计中」，与 staleReport「已过期」区分", () => {
+    expect(
+      localeHas(zhCN, "settings.storage.entries.availability.noReportYet"),
+    ).toBe(true);
+    expect(
+      localeHas(enUS, "settings.storage.entries.availability.noReportYet"),
+    ).toBe(true);
+
+    expect(availabilityText("noReportYet")).toContain("统计中");
+    expect(availabilityText("staleReport")).toContain("过期");
+    expect(availabilityText("noReportYet")).not.toBe(
+      availabilityText("staleReport"),
+    );
+  });
+
+  it("sampledAt 与 observedAt 用不同措辞，避免两个时间口径混淆", () => {
+    const sampled = localeString(zhCN, "settings.storage.toolbar.sampled_at");
+    const observed = localeString(
+      zhCN,
+      "settings.storage.entries.facts.observed_at",
+    );
+    expect(sampled).toContain("快照于");
+    expect(observed).toContain("统计于");
+    expect(sampled).not.toBe(observed);
+
+    expect(localeString(enUS, "settings.storage.toolbar.sampled_at")).toContain(
+      "Snapshot",
+    );
+    expect(
+      localeString(enUS, "settings.storage.entries.facts.observed_at"),
+    ).toContain("Measured");
   });
 });

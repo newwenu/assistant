@@ -444,7 +444,7 @@
       "title": "Storage Manager",
       "toolbar": {
         "refresh": "Refresh",
-        "sampled_at": "Measured at {{time}}",
+        "sampled_at": "Snapshot at {{time}}",
         "byte_basis": "Measured as file size",
         "refresh_failed": "Refresh failed; showing the previous data"
       },
@@ -516,7 +516,7 @@
           "unreadable": "Cannot read",
           "unavailable": "Temporarily unavailable",
           "notImplemented": "Not supported yet",
-          "noReportYet": "No measurement yet",
+          "noReportYet": "Measuring…",
           "staleReport": "Data is out of date"
         },
         "eligibility": {
@@ -571,6 +571,7 @@
           "layer": "Location",
           "oldest": "Oldest {{time}}",
           "newest": "Newest {{time}}",
+          "observed_at": "Measured at {{time}}",
           "reclaimable": "Cleanable: {{count}} items / {{size}}",
           "effective_since": "Rule active since {{time}}",
           "mutable": "Can be changed",

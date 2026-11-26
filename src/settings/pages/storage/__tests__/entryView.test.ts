@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { formatBytes } from "@/utils/formatBytes";
+import { translateKey } from "@/i18n";
 import { entryDetailView, entryRowView } from "../entryView";
+import { timeText } from "../format";
 import { availabilityText, reasonText } from "../lexicon";
 import { makeEntry, makePolicy, makeReclaim } from "./fixtures";
 
@@ -155,6 +157,25 @@ describe("条目行视图模型", () => {
     expect(notImplemented.availabilityBadge?.tone).toBe("neutral");
   });
 
+  it("统计中与过期报告都有角标且文案互不相同", () => {
+    const measuring = entryRowView(
+      makeEntry({ availability: "noReportYet", bytes: null, count: null }),
+    );
+    expect(measuring.availabilityBadge?.tone).toBe("neutral");
+    expect(measuring.availabilityBadge?.reason).toBe(
+      availabilityText("noReportYet"),
+    );
+
+    const stale = entryRowView(makeEntry({ availability: "staleReport" }));
+    expect(stale.availabilityBadge?.tone).toBe("warning");
+    expect(stale.availabilityBadge?.reason).toBe(
+      availabilityText("staleReport"),
+    );
+    expect(availabilityText("noReportYet")).not.toBe(
+      availabilityText("staleReport"),
+    );
+  });
+
   it("策略 chip 不因保留策略禁用而误显示天数", () => {
     const view = entryRowView(
       makeEntry({
@@ -169,16 +190,31 @@ describe("条目行视图模型", () => {
 });
 
 describe("条目详情视图模型", () => {
-  it("详情固定六项，首项为 key 原文", () => {
-    const detail = entryDetailView(makeEntry({ key: "tool-results" }));
-    expect(detail.items).toHaveLength(6);
-    expect(detail.items[0].value).toBe("tool-results");
-    expect(detail.items[0].mono).toBe(true);
+  it("详情首项为 key 原文，且按观测时刻存在与否增删一行", () => {
+    const observed = entryDetailView(makeEntry({ key: "tool-results" }));
+    expect(observed.items).toHaveLength(7);
+    expect(observed.items[0].value).toBe("tool-results");
+    expect(observed.items[0].mono).toBe(true);
+
+    const pending = entryDetailView(
+      makeEntry({ key: "tool-results", observedAt: null }),
+    );
+    expect(pending.items).toHaveLength(6);
+  });
+
+  it("observedAt 非空时统计时刻行与 sampledAt 口径分开表述", () => {
+    const detail = entryDetailView(makeEntry({ observedAt: 100 }));
+    const texts = detail.items.map((item) => item.value);
+    expect(texts).toContain(
+      translateKey("settings.storage.entries.facts.observed_at", {
+        time: timeText(100),
+      }),
+    );
   });
 
   it("时间与可清理为空时显示占位符", () => {
     const detail = entryDetailView(
-      makeEntry({ oldestAt: null, newestAt: null }),
+      makeEntry({ oldestAt: null, newestAt: null, observedAt: null }),
     );
     expect(detail.items[3].value).toBe("—");
     expect(detail.items[4].value).toBe("—");
