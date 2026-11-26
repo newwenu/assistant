@@ -3,7 +3,7 @@
 //! 条数不再固定：core 条目恒在，可选分区条目随已挂载分区出现，因此装配以
 //! [`EntryView`] 清单为准，清单里没有的条目不会凭空生成占位行（X15 / §3.10）。
 
-use crate::app_dirs::registry::{CoreEntry, RootScope};
+use crate::app_dirs::registry::{RootScope, StatsMode};
 use crate::protocol::dto::{
     ReclaimViewDto, StorageAvailabilityDto, StorageBreakdownDto, StorageByteBasisDto,
     StorageEligibilityDto, StorageEntryDto, StorageInventoryDto, StorageLayerDto,
@@ -39,6 +39,7 @@ fn build_entry(view: &EntryView, sample: &EntrySample) -> StorageEntryDto {
         availability: sample.availability,
         includes_derived: false,
         counts_self_logs: view.counts_self_logs,
+        observed_at: sample.observed_at,
         reclaim: ReclaimViewDto {
             action: view.action,
             eligibility,
@@ -94,11 +95,10 @@ pub fn assemble_breakdown(
         .zip(samples.iter())
         .map(|(view, sample)| build_entry(view, sample))
         .collect();
+    // `complete` 只表达「同步档全部有结论」（I79 §7.2）：`Deferred` 条目的年龄由各条
+    // `availability` / `observedAt` 表达，不参与本判据（此前对 `E12` / `E14` 的枚举特判即此意）。
     let complete = views.iter().zip(samples.iter()).all(|(view, sample)| {
-        // `E12` 日志 / `E14` WebView profile 在采样期间持续写入，数字必然滞后，
-        // 判 `complete` 时必须排除（§6.1 / §13.3.6）。
-        // 用 core 枚举比较而不是 `E` 字面量：登记表顺序调整时不会静默排除错行。
-        matches!(view.core, Some(CoreEntry::Logs | CoreEntry::WebViewProfile))
+        view.stats_mode == StatsMode::Deferred
             || matches!(
                 sample.availability,
                 StorageAvailabilityDto::Available | StorageAvailabilityDto::Missing
@@ -122,7 +122,7 @@ pub fn assemble_breakdown(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app_dirs::registry::RootCoverage;
+    use crate::app_dirs::registry::{RootCoverage, StatsMode};
     use crate::cmd::storage::entries::set_sample;
     use crate::cmd::storage::entries::views;
     use crate::cmd::storage::section::RiskTier;
@@ -153,6 +153,7 @@ mod tests {
             coverage: RootCoverage::RecursiveTree,
             owner: "SecurityDb",
             inventory: true,
+            stats_mode: StatsMode::Deferred,
             action,
             eligibility,
             reason,
@@ -486,8 +487,12 @@ mod tests {
         );
     }
 
+    /// V11：`complete` 只由 `Inline` 条目决定。
+    ///
+    /// `Deferred` 条目即使降级（`E3` 是异步档）也不影响 `complete`；
+    /// 只有 `Inline` 条目（`E6`）取不到数才让 `complete = false`。
     #[test]
-    fn complete_excludes_only_logs_entry() {
+    fn complete_is_decided_by_inline_entries_only() {
         let views = test_views();
         let dto = assemble(&views, &samples(&views));
         assert!(dto.complete, "除 E12 外全部 available 时应为 true");
@@ -500,7 +505,38 @@ mod tests {
             EntrySample::degraded(StorageAvailabilityDto::Unreadable),
         );
         let dto = assemble(&views, &degraded);
-        assert!(!dto.complete, "任一条目 unreadable 时 complete = false");
+        assert!(dto.complete, "Deferred 条目（E3）取不到数不得影响 complete");
+
+        let mut degraded = samples(&views);
+        set_sample(
+            &views,
+            &mut degraded,
+            "E6",
+            EntrySample::degraded(StorageAvailabilityDto::Unreadable),
+        );
+        let dto = assemble(&views, &degraded);
+        assert!(
+            !dto.complete,
+            "Inline 条目（E6）unreadable 时 complete = false"
+        );
+    }
+
+    /// V11：`Deferred` 条目首次读取全 `noReportYet` 时，`complete` 仍可为 `true`。
+    #[test]
+    fn deferred_no_report_yet_keeps_complete_true() {
+        let views = test_views();
+        let samples: Vec<EntrySample> = views
+            .iter()
+            .map(|view| {
+                if view.stats_mode == StatsMode::Deferred {
+                    EntrySample::degraded(StorageAvailabilityDto::NoReportYet)
+                } else {
+                    observed()
+                }
+            })
+            .collect();
+        let dto = assemble(&views, &samples);
+        assert!(dto.complete, "异步档尚未算完不阻塞同步档结论");
     }
 
     #[test]

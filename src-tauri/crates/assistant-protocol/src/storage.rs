@@ -100,7 +100,7 @@ pub enum StorageByteBasisDto {
     FileLength,
 }
 
-/// 条目可用性；封闭词表跨 tab 共用（I54 §2.4），存储条目只用前六个值。
+/// 条目可用性；封闭词表跨 tab 共用（I54 §2.4），八个取值全部在用（I79 §7.3）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub enum StorageAvailabilityDto {
@@ -258,6 +258,9 @@ pub struct StorageEntryDto {
     pub availability: StorageAvailabilityDto,
     pub includes_derived: bool,
     pub counts_self_logs: bool,
+    /// 该条数字的观测时刻（秒，I79 §7.1）：`Inline` = 本次响应的 `sampledAt`；
+    /// `Deferred` 首次尚未算完时为 `null`。键恒在、值可为 `null`。
+    pub observed_at: Option<i64>,
     pub reclaim: ReclaimViewDto,
 }
 

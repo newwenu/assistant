@@ -568,7 +568,12 @@ complete: boolean, };
 export type StorageByteBasisDto = "fileLength";
 export type StorageConfirmLevelDto = "none" | "confirm" | "strongConfirm";
 export type StorageEligibilityDto = "eligible" | "notEligible" | "locked" | "ownerManaged" | "notImplemented";
-export type StorageEntryDto = { key: string, layer: StorageLayerDto, owner: string, bytes: number | null, count: number | null, oldestAt: number | null, newestAt: number | null, availability: StorageAvailabilityDto, includesDerived: boolean, countsSelfLogs: boolean, reclaim: ReclaimViewDto, };
+export type StorageEntryDto = { key: string, layer: StorageLayerDto, owner: string, bytes: number | null, count: number | null, oldestAt: number | null, newestAt: number | null, availability: StorageAvailabilityDto, includesDerived: boolean, countsSelfLogs: boolean, 
+/**
+ * 该条数字的观测时刻（秒，I79 §7.1）：`Inline` = 本次响应的 `sampledAt`；
+ * `Deferred` 首次尚未算完时为 `null`。键恒在、值可为 `null`。
+ */
+observedAt: number | null, reclaim: ReclaimViewDto, };
 export type StorageInventoryClassDto = "declared" | "optionalNotMounted" | "companion" | "ignored" | "unregistered";
 export type StorageInventoryDto = { status: StorageInventoryStatusDto, scannedAt: number | null, failedAt: number | null, nodes: Array<StorageInventoryNodeDto>, unregisteredBytes: number | null, unregisteredCount: number | null, partial: boolean, truncatedNodes: Array<string>, 
 /**

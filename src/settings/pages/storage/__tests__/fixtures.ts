@@ -58,6 +58,7 @@ export function makeEntry(
     availability: "available",
     includesDerived: false,
     countsSelfLogs: false,
+    observedAt: 100,
     reclaim: makeReclaim(),
     ...overrides,
   };

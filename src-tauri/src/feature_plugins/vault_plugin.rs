@@ -8,7 +8,7 @@ mod mounted {
 
     use tauri::Manager;
 
-    use crate::app_dirs::registry::{RootCoverage, RootScope};
+    use crate::app_dirs::registry::{RootCoverage, RootScope, StatsMode};
     use crate::app_dirs::AppDirs;
     use crate::cmd::storage::section::{
         EntryDecl, SectionEntry, SectionError, SectionReclaimReport, SectionRegistry,
@@ -165,6 +165,8 @@ mod mounted {
             coverage: map_coverage(entry.coverage),
             owner: entry.owner,
             inventory: entry.inventory,
+            // 分区条目恒 `Deferred`（I79 §3.3）：规模由功能侧数据决定，且带锁语义。
+            stats_mode: StatsMode::Deferred,
             decl: EntryDecl {
                 action: map_action(entry.decl.action),
                 eligibility: map_eligibility(entry.decl.eligibility),

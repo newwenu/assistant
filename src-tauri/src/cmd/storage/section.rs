@@ -9,7 +9,7 @@
 
 use std::sync::{Arc, Mutex, MutexGuard};
 
-use crate::app_dirs::registry::{self, RootCoverage, RootScope};
+use crate::app_dirs::registry::{self, RootCoverage, RootScope, StatsMode};
 use crate::protocol::dto::{
     ReclaimPolicyDto, StorageAvailabilityDto, StorageEligibilityDto, StoragePolicySourceDto,
     StorageReclaimActionDto, StorageReclaimReasonDto,
@@ -104,6 +104,8 @@ pub struct SectionEntry {
     pub owner: &'static str,
     /// 该 scope 是否参与余量对账。
     pub inventory: bool,
+    /// 采样档（I79 §4.2）：由分区自述，core 不识别任何分区 `key`。
+    pub stats_mode: StatsMode,
     pub decl: EntryDecl,
 }
 
@@ -400,6 +402,7 @@ mod tests {
             coverage: RootCoverage::RecursiveTree,
             owner: "FakeOwner",
             inventory: true,
+            stats_mode: StatsMode::Deferred,
             decl: decl(),
         }
     }

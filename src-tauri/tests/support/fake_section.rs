@@ -6,7 +6,7 @@
 
 use std::sync::Arc;
 
-use assistant_app::app_dirs::registry::{self, RootCoverage, RootScope};
+use assistant_app::app_dirs::registry::{self, RootCoverage, RootScope, StatsMode};
 use assistant_app::cmd::storage::section::{
     EntryDecl, RiskTier, SectionEntry, SectionError, SectionReclaimReport, SectionStats,
     StorageSection, StorageSectionHandle,
@@ -56,6 +56,7 @@ pub fn entry(id: &'static str, child: &'static str, decl: EntryDecl) -> SectionE
         coverage: RootCoverage::RecursiveTree,
         owner: "FakeOwner",
         inventory: true,
+        stats_mode: StatsMode::Deferred,
         decl,
     }
 }
@@ -211,6 +212,7 @@ pub fn foreign_handle() -> StorageSectionHandle {
         coverage: RootCoverage::RecursiveTree,
         owner: "FakeOwner",
         inventory: true,
+        stats_mode: StatsMode::Deferred,
         decl: decl(
             StorageReclaimActionDto::None,
             StorageEligibilityDto::NotEligible,

@@ -65,7 +65,7 @@ pub(super) fn layer_of(scope: RootScope) -> StorageLayerDto {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app_dirs::registry::RootCoverage;
+    use crate::app_dirs::registry::{RootCoverage, StatsMode};
     use crate::cmd::storage::entries::views;
     use crate::cmd::storage::section::RiskTier;
     use crate::protocol::dto::{
@@ -92,6 +92,7 @@ mod tests {
             coverage: RootCoverage::SingleFile,
             owner: "SecurityDbState",
             inventory: true,
+            stats_mode: StatsMode::Deferred,
             action: StorageReclaimActionDto::None,
             eligibility: StorageEligibilityDto::NotEligible,
             reason: StorageReclaimReasonDto::BusinessData,

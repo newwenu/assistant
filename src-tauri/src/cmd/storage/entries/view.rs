@@ -3,7 +3,7 @@
 //! 装配、采样、对账、回收都只认这一种视图，不各自重建「core 行 / 分区行」两套结构
 //! （X15）。`section` 只在回收路由时用（按 `key` 找到声明它的分区），core 条目为 `None`。
 
-use crate::app_dirs::registry::{self, CoreEntry, ManagedRoot, RootCoverage, RootScope};
+use crate::app_dirs::registry::{self, CoreEntry, ManagedRoot, RootCoverage, RootScope, StatsMode};
 use crate::cmd::storage::section::{RiskTier, SectionEntry, StorageSectionHandle};
 use crate::protocol::dto::{
     ReclaimPolicyDto, StorageEligibilityDto, StorageReclaimActionDto, StorageReclaimReasonDto,
@@ -27,6 +27,8 @@ pub struct EntryView {
     pub owner: &'static str,
     /// 该 scope 是否参与余量对账。
     pub inventory: bool,
+    /// 采样档（I79 §4.2）：core 取登记表、分区取自述；采样与装配只认这一份清单。
+    pub stats_mode: StatsMode,
     pub action: StorageReclaimActionDto,
     /// 不随观测态变化的那一档资格；动态部分在 `EntrySample::eligibility`。
     pub eligibility: StorageEligibilityDto,
@@ -52,6 +54,7 @@ fn core_view(root: &ManagedRoot) -> EntryView {
         coverage: root.coverage,
         owner: root.owner,
         inventory: root.inventory,
+        stats_mode: root.stats_mode,
         action: static_part.action,
         eligibility: static_part.eligibility,
         reason: static_part.reason,
@@ -74,6 +77,7 @@ fn section_view(index: usize, entry: &SectionEntry) -> EntryView {
         coverage: entry.coverage,
         owner: entry.owner,
         inventory: entry.inventory,
+        stats_mode: entry.stats_mode,
         action: entry.decl.action,
         eligibility: entry.decl.eligibility,
         reason: entry.decl.reason,

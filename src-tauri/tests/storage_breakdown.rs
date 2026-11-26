@@ -237,14 +237,14 @@ fn unmounted_sections_leave_no_rows() {
     );
 }
 
-/// `E12` 有真实占用，但仍不参与 `complete`：日志在采样期间持续写入，
-/// 数字必然滞后于真实值，无法与其他条目承诺同一时刻的快照（§6.1）。
+/// `Deferred` 条目（`E12`）有真实占用，但仍不参与 `complete`：异步档的数字由各条
+/// `availability` / `observedAt` 表达，`complete` 只承诺「同步档全部有结论」（I79 §7.2）。
 #[test]
-fn complete_ignores_only_logs_entry() {
+fn complete_ignores_deferred_entries() {
     let views = core_views();
     let samples = available(&views);
     let dto = assemble(&views, &samples);
-    assert!(dto.complete, "除 E12 外全部 available 时应为 true");
+    assert!(dto.complete, "全部 available 时应为 true");
 
     let mut samples = available(&views);
     set_sample(
@@ -254,7 +254,10 @@ fn complete_ignores_only_logs_entry() {
         EntrySample::degraded(StorageAvailabilityDto::Unreadable),
     );
     let dto = assemble(&views, &samples);
-    assert!(dto.complete, "E12 的不可用不计入 complete 判定");
+    assert!(
+        dto.complete,
+        "Deferred 条目 E12 的不可用不计入 complete 判定"
+    );
 
     let mut samples = available(&views);
     set_sample(
@@ -264,7 +267,10 @@ fn complete_ignores_only_logs_entry() {
         EntrySample::degraded(StorageAvailabilityDto::Unavailable),
     );
     let dto = assemble(&views, &samples);
-    assert!(!dto.complete, "E5 超时降级后 complete 必须为 false");
+    assert!(
+        !dto.complete,
+        "Inline 条目 E5 超时降级后 complete 必须为 false"
+    );
 }
 
 /// `E13` 观测验收：诊断目录只认三类产物（`panic_*.log` / `crash_*.dmp` / `crash_*.log`），

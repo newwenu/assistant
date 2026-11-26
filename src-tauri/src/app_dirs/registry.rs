@@ -29,6 +29,18 @@ pub enum RootCoverage {
     RecursiveTree,
 }
 
+/// 采样档：回答「这条在不在响应内算」，不回答「这条大概多慢」（I79 §4.1）。
+///
+/// 判据是计算形状（结构性上界 + 无重复遍历成本），不是实测耗时估计：
+/// 耗时随机器与数据量漂移，无法在登记表里诚实声明。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StatsMode {
+    /// 在响应内计算；`SAMPLE_TIMEOUT` 是它的预算，超时即「声明说谎」（I79 §4.4）。
+    Inline,
+    /// 不在响应内计算：读缓存，缺失 / 过期由后台补算（I79 §5、§6）。
+    Deferred,
+}
+
 /// core 条目身份（§4.3）：`E*` 的单点定义。
 ///
 /// 登记表与所有「按条目分支」都以本枚举为准，`id()` 是仓库里唯一写出 `E` 字面量的地方
@@ -113,6 +125,10 @@ pub struct ManagedRoot {
     pub segments: &'static [&'static str],
     pub coverage: RootCoverage,
     pub owner: &'static str,
+    /// 采样档（I79 §4.2）：`Inline` 在响应内算，`Deferred` 读缓存 + 后台补算。
+    ///
+    /// 与 `coverage` / `inventory` 同层的登记事实，不属于「能不能回收」的静态声明表。
+    pub stats_mode: StatsMode,
     /// 风险档（§3.6 硬约束 5–6）：core 只据此派生 `confirmation`，不进 wire。
     pub risk: RiskTier,
     /// 该 scope 是否参与余量对账（`false` = 只分类、不遍历子树，见 OQ11）。
@@ -131,6 +147,8 @@ pub const MANAGED_ROOTS: &[ManagedRoot] = &[
         segments: &[dir_name::ATTACHMENTS],
         coverage: RootCoverage::SelfFilesOnly,
         owner: "AttachmentStore",
+        // `E1` 恒 `Inline`（INV1）：账本来源，必须与顶层字段同源；`list_all` 已在命令层付过一次。
+        stats_mode: StatsMode::Inline,
         risk: RiskTier::High,
         inventory: true,
     },
@@ -141,6 +159,9 @@ pub const MANAGED_ROOTS: &[ManagedRoot] = &[
         segments: &[dir_name::ATTACHMENTS, "derived"],
         coverage: RootCoverage::RecursiveTree,
         owner: "AttachmentStore",
+        // `list_derived` 内部会再枚举一次附件目录（即 `E1` 已付的遍历再付一遍），
+        // 条数由附件数驱动、无结构上界。
+        stats_mode: StatsMode::Deferred,
         risk: RiskTier::Low,
         inventory: true,
     },
@@ -151,6 +172,8 @@ pub const MANAGED_ROOTS: &[ManagedRoot] = &[
         segments: &[dir_name::TOOL_RESULTS],
         coverage: RootCoverage::RecursiveTree,
         owner: "FileToolResultStorage",
+        // 递归整树 + `collect_expired` 二次遍历；规模由会话与工具调用量决定。
+        stats_mode: StatsMode::Deferred,
         risk: RiskTier::Medium,
         inventory: true,
     },
@@ -161,6 +184,9 @@ pub const MANAGED_ROOTS: &[ManagedRoot] = &[
         segments: &[dir_name::TOOL_INDEX],
         coverage: RootCoverage::SelfFilesOnly,
         owner: "SuperIndex",
+        // `index_stats` 是**递归**遍历（不是单层枚举）；索引文件数 = 被工具读写过的
+        // 源文件数 × 修订数，由用户行为驱动、无结构上界。
+        stats_mode: StatsMode::Deferred,
         risk: RiskTier::Low,
         inventory: true,
     },
@@ -171,6 +197,8 @@ pub const MANAGED_ROOTS: &[ManagedRoot] = &[
         segments: &[dir_name::MASCOT_ASSETS],
         coverage: RootCoverage::RecursiveTree,
         owner: "MascotAssets",
+        // 素材类型是封闭枚举、单文件有 `MAX_ASSET_BYTES` 上限，递归但结构性有界。
+        stats_mode: StatsMode::Inline,
         risk: RiskTier::High,
         inventory: true,
     },
@@ -181,6 +209,8 @@ pub const MANAGED_ROOTS: &[ManagedRoot] = &[
         segments: &[dir_name::DATABASE],
         coverage: RootCoverage::SingleFile,
         owner: "DbState",
+        // 单文件 `metadata`。
+        stats_mode: StatsMode::Inline,
         risk: RiskTier::Forbidden,
         inventory: true,
     },
@@ -191,6 +221,8 @@ pub const MANAGED_ROOTS: &[ManagedRoot] = &[
         segments: &[dir_name::LOGS],
         coverage: RootCoverage::RecursiveTree,
         owner: "tauri-plugin-log",
+        // 递归整树 + 外部插件持续写入。
+        stats_mode: StatsMode::Deferred,
         risk: RiskTier::Forbidden,
         inventory: false,
     },
@@ -201,6 +233,8 @@ pub const MANAGED_ROOTS: &[ManagedRoot] = &[
         segments: &[dir_name::CRASHES],
         coverage: RootCoverage::RecursiveTree,
         owner: "assistant-crash",
+        // 递归但条数按崩溃事件增长，量级极小（弱上界；实测超预算即改档，OQ5）。
+        stats_mode: StatsMode::Inline,
         risk: RiskTier::Low,
         inventory: true,
     },
@@ -211,10 +245,13 @@ pub const MANAGED_ROOTS: &[ManagedRoot] = &[
         segments: &[dir_name::WEBVIEW_PROFILE],
         coverage: RootCoverage::RecursiveTree,
         owner: "WebView2",
+        // 整棵树由 WebView2 接管，规模无上界且持续写入。
+        stats_mode: StatsMode::Deferred,
         risk: RiskTier::Medium,
         inventory: true,
     },
     // 配置文件（T6）：`E15` / `E17` / `E18` 的首段直接写 owner 常量（零字面量复制）。
+    // 三条都是单文件 `metadata`，故恒 `Inline`。
     ManagedRoot {
         entry: CoreEntry::Config,
         key: "config.json",
@@ -222,6 +259,7 @@ pub const MANAGED_ROOTS: &[ManagedRoot] = &[
         segments: &[<AppConf as ConfGroup>::FILE_NAME],
         coverage: RootCoverage::SingleFile,
         owner: "AppConf",
+        stats_mode: StatsMode::Inline,
         risk: RiskTier::Forbidden,
         inventory: true,
     },
@@ -232,6 +270,7 @@ pub const MANAGED_ROOTS: &[ManagedRoot] = &[
         segments: &[<OrbConf as ConfGroup>::FILE_NAME],
         coverage: RootCoverage::SingleFile,
         owner: "OrbConf",
+        stats_mode: StatsMode::Inline,
         risk: RiskTier::Forbidden,
         inventory: true,
     },
@@ -242,6 +281,7 @@ pub const MANAGED_ROOTS: &[ManagedRoot] = &[
         segments: &[<MascotConf as ConfGroup>::FILE_NAME],
         coverage: RootCoverage::SingleFile,
         owner: "MascotConf",
+        stats_mode: StatsMode::Inline,
         risk: RiskTier::Forbidden,
         inventory: true,
     },
@@ -255,6 +295,8 @@ pub const MANAGED_ROOTS: &[ManagedRoot] = &[
         segments: &[dir_name::TOOL_SCRATCH],
         coverage: RootCoverage::RecursiveTree,
         owner: "ToolScratchStore",
+        // 会话段 + `shared` 段整根，规模无上界（I77）。
+        stats_mode: StatsMode::Deferred,
         risk: RiskTier::Low,
         inventory: false,
     },
@@ -408,6 +450,24 @@ mod tests {
         roots[1].key = roots[0].key;
         roots[1].segments = roots[0].segments;
         assert!(validate_registry(&roots, dir_name::ALL).is_err());
+    }
+
+    /// V1 / V26：`E1` 恒 `Inline`（账本来源必须与顶层字段同源），`E2` / `E4` 恒 `Deferred`。
+    ///
+    /// 改档即测试红：`E1` 转异步会破坏 `total = once + shared + orphan` 的闭合，
+    /// `E2` / `E4` 转同步则会在响应内重付一遍已有遍历。
+    #[test]
+    fn stats_mode_keeps_ledger_inline_and_derived_index_deferred() {
+        let mode = |entry: CoreEntry| {
+            MANAGED_ROOTS
+                .iter()
+                .find(|root| root.entry == entry)
+                .expect("registered entry")
+                .stats_mode
+        };
+        assert_eq!(mode(CoreEntry::Attachments), StatsMode::Inline);
+        assert_eq!(mode(CoreEntry::AttachmentsDerived), StatsMode::Deferred);
+        assert_eq!(mode(CoreEntry::ToolIndex), StatsMode::Deferred);
     }
 
     #[test]

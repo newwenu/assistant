@@ -35,6 +35,9 @@ pub struct EntrySample {
     pub eligibility: Option<(StorageEligibilityDto, StorageReclaimReasonDto)>,
     /// 只对 `eligible` 条目有意义；分区条目本期恒 `None`。
     pub reclaimable: Option<(u64, u64)>,
+    /// `None` = 本次响应内实测（`Inline` 或计划强制采样）；
+    /// `Some(t)` = 该条目最近一次观测 / 尝试的时刻（秒），来自缓存（I79 §4.3）。
+    pub observed_at: Option<i64>,
 }
 
 impl EntrySample {
@@ -59,6 +62,7 @@ impl EntrySample {
             policy: None,
             eligibility: None,
             reclaimable: None,
+            observed_at: None,
         }
     }
 
@@ -78,6 +82,7 @@ impl EntrySample {
             policy: None,
             eligibility: None,
             reclaimable: None,
+            observed_at: None,
         }
     }
 
