@@ -54,10 +54,10 @@ describe("存储快照事件订阅", () => {
     const handlers: Array<() => void> = [];
     const unlisten = vi.fn();
     const listen = vi.fn(
-      async (event: string, handler: () => void): Promise<UnlistenFn> => {
+      (event: string, handler: () => void): Promise<UnlistenFn> => {
         subscribed.push(event);
         handlers.push(handler);
-        return unlisten;
+        return Promise.resolve(unlisten);
       },
     );
     return { listen, subscribed, handlers, unlisten };
