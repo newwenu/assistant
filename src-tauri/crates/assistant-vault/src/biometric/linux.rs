@@ -19,6 +19,11 @@ struct SecretSchema {
     _account: CString,
 }
 
+// SAFETY: schema 只在 `get_schema` 里构造一次，之后不再修改；裸指针只指向结构体自身
+// 持有的 `CString` 缓冲，libsecret 只把它当作 const schema 读取，因此跨线程共享安全。
+unsafe impl Send for SecretSchema {}
+unsafe impl Sync for SecretSchema {}
+
 #[repr(C)]
 struct SecretSchemaAttribute {
     name: *const c_char,
@@ -31,6 +36,7 @@ const SECRET_COLLECTION_DEFAULT: *const c_char = ptr::null();
 const SECRET_SERVICE_NONE: c_int = 0;
 const SECRET_ERROR_NO_SUCH_OBJECT: c_int = 2;
 
+#[link(name = "secret-1")]
 extern "C" {
     fn secret_password_store_sync(
         schema: *const SecretSchema,
@@ -86,10 +92,12 @@ fn get_schema() -> &'static SecretSchema {
             name: c_name.as_ptr(),
             flags: SECRET_SCHEMA_DONT_MATCH_NAME,
             attributes: {
-                let mut attrs = [SecretSchemaAttribute {
-                    name: ptr::null(),
-                    r#type: 0,
-                }; 32];
+                // 数组元素不是 `Copy`：用 `from_fn` 逐个构造，避免数组重复初始化要求。
+                let mut attrs: [SecretSchemaAttribute; 32] =
+                    std::array::from_fn(|_| SecretSchemaAttribute {
+                        name: ptr::null(),
+                        r#type: 0,
+                    });
                 attrs[0].name = c_account.as_ptr();
                 attrs[0].r#type = SECRET_SCHEMA_ATTRIBUTE_STRING;
                 attrs
@@ -146,11 +154,11 @@ impl BiometricKeyStore for LibsecretKeyStore {
                 SECRET_COLLECTION_DEFAULT,
                 c_label.as_ptr(),
                 c_password.as_ptr(),
-                ptr::null(),
+                ptr::null::<c_char>(),
                 &mut error,
                 c_account_key.as_ptr(),
                 c_account_val.as_ptr(),
-                ptr::null(),
+                ptr::null::<c_char>(),
             );
 
             if !error.is_null() {
@@ -196,7 +204,7 @@ impl BiometricKeyStore for LibsecretKeyStore {
                 &mut error,
                 c_account_key.as_ptr(),
                 c_account_val.as_ptr(),
-                ptr::null(),
+                ptr::null::<c_char>(),
             );
 
             if !error.is_null() {
@@ -244,7 +252,7 @@ impl BiometricKeyStore for LibsecretKeyStore {
                 &mut error,
                 c_account_key.as_ptr(),
                 c_account_val.as_ptr(),
-                ptr::null(),
+                ptr::null::<c_char>(),
             );
 
             if !error.is_null() {
@@ -281,7 +289,7 @@ impl BiometricKeyStore for LibsecretKeyStore {
                 &mut error,
                 c_account_key.as_ptr(),
                 c_account_val.as_ptr(),
-                ptr::null(),
+                ptr::null::<c_char>(),
             );
 
             if !error.is_null() {
