@@ -484,7 +484,8 @@ mod mounted {
         /// G17(b) / V24：适配器源码不出现可选条目路径与条目 id 字面量。
         #[test]
         fn adapter_source_has_no_entry_literals() {
-            let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/vault_plugin.rs");
+            let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("src/feature_plugins/vault_plugin.rs");
             let source = std::fs::read_to_string(&path).expect("读适配器源码");
             let optional_path = ["security", "/"].concat();
             assert!(

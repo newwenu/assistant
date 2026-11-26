@@ -15,15 +15,15 @@ pub(crate) struct FeatureMount {
 const MOUNTS: &[FeatureMount] = &[
     FeatureMount {
         id: "vault",
-        plugin: crate::vault_plugin::init,
-        on_setup: crate::vault_plugin::on_setup,
-        on_exit: crate::vault_plugin::on_exit,
+        plugin: crate::feature_plugins::vault_plugin::init,
+        on_setup: crate::feature_plugins::vault_plugin::on_setup,
+        on_exit: crate::feature_plugins::vault_plugin::on_exit,
     },
     FeatureMount {
         id: "timekeeper",
-        plugin: crate::timekeeper_plugin::init,
-        on_setup: crate::timekeeper_plugin::on_setup,
-        on_exit: crate::timekeeper_plugin::on_exit,
+        plugin: crate::feature_plugins::timekeeper_plugin::init,
+        on_setup: crate::feature_plugins::timekeeper_plugin::on_setup,
+        on_exit: crate::feature_plugins::timekeeper_plugin::on_exit,
     },
 ];
 

@@ -4,16 +4,21 @@ use std::fs;
 use std::path::Path;
 
 const SRC_DIR: &str = "src";
+const PLUGIN_DIR: &str = "src/feature_plugins";
 const PLUGIN_SUFFIX: &str = "_plugin.rs";
 const HANDLER_OPEN: &str = "generate_handler![";
 const COMMAND_PREFIX_TEMPLATE: &str = "crate::cmd::{}::";
 
 fn main() {
     println!("cargo:rerun-if-changed={}", SRC_DIR);
+    println!("cargo:rerun-if-changed={}", PLUGIN_DIR);
 
     let mut attributes = tauri_build::Attributes::new();
     for id in plugin_ids() {
-        println!("cargo:rerun-if-changed={}/{}{}", SRC_DIR, id, PLUGIN_SUFFIX);
+        println!(
+            "cargo:rerun-if-changed={}/{}{}",
+            PLUGIN_DIR, id, PLUGIN_SUFFIX
+        );
 
         let commands: &'static [&'static str] = Box::leak(
             plugin_commands(&id)
@@ -23,7 +28,7 @@ fn main() {
                 .into_boxed_slice(),
         );
 
-        let plugin_name: &'static str = Box::leak(id.into_boxed_str());
+        let plugin_name: &'static str = acl_plugin_name(&id);
         attributes = attributes.plugin(
             plugin_name,
             tauri_build::InlinedPlugin::new()
@@ -35,8 +40,15 @@ fn main() {
     tauri_build::try_build(attributes).expect("failed to run tauri-build");
 }
 
+/// ACL 标识符只允许小写 ASCII 与连字符，下划线非法（`tauri-utils` 的 `Identifier` 校验），
+/// 所以插件名里的 `_` 一律转 `-`：运行时 `plugin::Builder::new()`、`capabilities/*.json`
+/// 的权限前缀必须用同一个连字符名，而模块路径与文件名仍用下划线。
+fn acl_plugin_name(id: &str) -> &'static str {
+    Box::leak(id.replace('_', "-").into_boxed_str())
+}
+
 fn plugin_ids() -> Vec<String> {
-    let entries = fs::read_dir(SRC_DIR).expect("源码目录可读");
+    let entries = fs::read_dir(PLUGIN_DIR).expect("插件目录可读");
     let mut ids: Vec<String> = entries
         .map(|entry| entry.expect("源码条目可读").path())
         .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some("rs"))
@@ -52,7 +64,7 @@ fn plugin_ids() -> Vec<String> {
 }
 
 fn plugin_commands(id: &str) -> Vec<String> {
-    let relative = format!("{}/{}{}", SRC_DIR, id, PLUGIN_SUFFIX);
+    let relative = format!("{}/{}{}", PLUGIN_DIR, id, PLUGIN_SUFFIX);
     let prefix = COMMAND_PREFIX_TEMPLATE.replace("{}", id);
     let text = fs::read_to_string(Path::new(&relative))
         .unwrap_or_else(|e| panic!("无法读取命令真源 {}: {}", relative, e));

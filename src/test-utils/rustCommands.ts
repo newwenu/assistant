@@ -3,6 +3,7 @@ import path from "node:path";
 import { repoPath } from "./paths";
 
 const TAURI_SRC = repoPath("src-tauri/src");
+const PLUGIN_DIR = "feature_plugins";
 const HANDLER_OPEN = "generate_handler![";
 const PLUGIN_SUFFIX = "_plugin.rs";
 
@@ -71,14 +72,14 @@ export function coreCommands(): string[] {
 
 export function pluginFeatures(): string[] {
   return fs
-    .readdirSync(TAURI_SRC)
+    .readdirSync(path.join(TAURI_SRC, PLUGIN_DIR))
     .filter((file) => file.endsWith(PLUGIN_SUFFIX))
     .map((file) => file.slice(0, -PLUGIN_SUFFIX.length))
     .sort();
 }
 
 export function pluginCommands(feature: string): string[] {
-  return registeredNames(`${feature}${PLUGIN_SUFFIX}`);
+  return registeredNames(path.join(PLUGIN_DIR, `${feature}${PLUGIN_SUFFIX}`));
 }
 
 export function commandGroups(): Record<string, string[]> {

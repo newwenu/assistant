@@ -6,6 +6,7 @@ import { commandGroups } from "@/test-utils/rustCommands";
 import { readRepoFile, repoFileExists, repoPath } from "@/test-utils/paths";
 
 const TAURI_ROOT = repoPath("src-tauri");
+const PLUGIN_DIR = "src-tauri/src/feature_plugins";
 
 const ASSEMBLY_POINTS = [
   "config/features.json",
@@ -14,6 +15,7 @@ const ASSEMBLY_POINTS = [
   "src-tauri/Cargo.toml",
   "src-tauri/src/feature_mounts.rs",
   "src-tauri/src/lib.rs",
+  "src-tauri/src/feature_plugins/mod.rs",
 ];
 
 const TRAVERSAL_FILES = [
@@ -162,7 +164,7 @@ function isFeatureBody(relative: string, feature: string): boolean {
   ];
   const files = [
     `src/features/${feature}.ts`,
-    `src-tauri/src/${feature}_plugin.rs`,
+    `${PLUGIN_DIR}/${feature}_plugin.rs`,
     `src-tauri/capabilities/${feature}.json`,
   ];
   return (
@@ -284,6 +286,7 @@ describe("特性扩展边界（新增特性改动 core 文件数 = 0）", () => 
       const entry = features[name];
       const env = featureEnv(name);
       const cargoFeature = featureCargo(name, entry);
+      const aclName = name.replace(/_/g, "-");
       if (entry.env !== undefined && entry.env !== env) {
         problems.push(`${name}: 显式 env 必须逐字等于 ${env}`);
       }
@@ -306,8 +309,14 @@ describe("特性扩展边界（新增特性改动 core 文件数 = 0）", () => 
       ) {
         problems.push(`${name}: Cargo.toml default 集合未包含该特性`);
       }
-      if (!libRs.includes(`mod ${name}_plugin`)) {
-        problems.push(`${name}: lib.rs 未声明 mod ${name}_plugin`);
+      if (!libRs.includes("mod feature_plugins")) {
+        problems.push(`${name}: lib.rs 未声明 mod feature_plugins`);
+      }
+      const pluginModRs = read(`${PLUGIN_DIR}/mod.rs`);
+      if (!pluginModRs.includes(`mod ${name}_plugin`)) {
+        problems.push(
+          `${name}: ${PLUGIN_DIR}/mod.rs 未声明 mod ${name}_plugin`,
+        );
       }
       if (!libRs.includes(`mod feature_mounts`)) {
         problems.push(`${name}: lib.rs 未声明 mod feature_mounts`);
@@ -322,17 +331,17 @@ describe("特性扩展边界（新增特性改动 core 文件数 = 0）", () => 
       const capability = `src-tauri/capabilities/${name}.json`;
       if (!exists(capability)) {
         problems.push(`${name}: 缺少特性能力文件 ${capability}`);
-      } else if (!read(capability).includes(`"${name}:default"`)) {
+      } else if (!read(capability).includes(`"${aclName}:default"`)) {
         problems.push(
-          `${name}: ${capability} 的 permissions 缺少 ${name}:default`,
+          `${name}: ${capability} 的 permissions 缺少 ${aclName}:default`,
         );
       }
-      if (capabilities.includes(`"${name}:default"`)) {
+      if (capabilities.includes(`"${aclName}:default"`)) {
         problems.push(
-          `${name}: capabilities/default.json 仍授予 ${name}:default，特性权限未拆分`,
+          `${name}: capabilities/default.json 仍授予 ${aclName}:default，特性权限未拆分`,
         );
       }
-      const plugin = `src-tauri/src/${name}_plugin.rs`;
+      const plugin = `${PLUGIN_DIR}/${name}_plugin.rs`;
       if (!exists(plugin)) {
         problems.push(`${name}: 缺少后端插件 ${plugin}`);
       } else if (!read(plugin).includes(`feature = "${name}"`)) {
@@ -356,7 +365,7 @@ describe("特性扩展边界（新增特性改动 core 文件数 = 0）", () => 
     }
 
     const pluginStems = fs
-      .readdirSync(path.join(TAURI_ROOT, "src"))
+      .readdirSync(path.join(TAURI_ROOT, "src", "feature_plugins"))
       .filter((file) => file.endsWith("_plugin.rs"))
       .map((file) => file.slice(0, -"_plugin.rs".length))
       .sort();

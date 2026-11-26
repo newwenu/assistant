@@ -7,6 +7,7 @@ pub mod boot;
 pub mod cmd;
 pub mod db_state;
 mod feature_mounts;
+mod feature_plugins;
 mod ipc;
 mod lifecycle;
 #[doc(hidden)]
@@ -16,10 +17,8 @@ mod plugins;
 pub mod protocol;
 mod screenshot;
 mod shortcuts;
-mod timekeeper_plugin;
 mod tool_setup;
 mod tray;
-mod vault_plugin;
 mod window;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

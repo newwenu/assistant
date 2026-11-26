@@ -599,7 +599,7 @@ Rust 侧沿用 `src-tauri/tests/assembly_contract.rs` 的「读源码 + 断言�
 | `src-tauri/tauri.conf.json` | `app.windows` 置空数组 |
 | `src-tauri/src/tool_setup.rs` | 装配主体与沙箱探测迁入 `boot/build/tools.rs`（不直接 `manage`，交由 registry）；删除内部 `AppDirs::resolve()`；保留运行期纯函数（超时现读、`resolve_workspace`、`validate_workspace_root`） |
 | `src-tauri/src/feature_mounts.rs` | `SetupHook` 改为 `fn(&StartupCtx) -> Result<(), String>` |
-| `src-tauri/src/vault_plugin.rs`、`timekeeper_plugin.rs` | `on_setup` 改收 `&StartupCtx`，dirs 从 `ctx.dirs()` 取 |
+| `src-tauri/src/feature_plugins/vault_plugin.rs`、`feature_plugins/timekeeper_plugin.rs` | `on_setup` 改收 `&StartupCtx`，dirs 从 `ctx.dirs()` 取 |
 | `src-tauri/src/cmd/agent/mod.rs`（`ToolRegistry` ×2、`PipelineToolExecution` ×1）、`adapters/runner.rs`（`PipelineToolExecution` ×1）、`cmd/storage/mod.rs`（`try_state::<Arc<PipelineToolExecution>>` ×1） | 改为 `access::*` 取用。P1 的 `access.rs` 只登记 `tools` / `tool_exec` 两项；`DbState`、`AttachmentStore`、`McpServerManager`（`cmd/mcp.rs`）、`SectionRegistry`（非启动资源）随 P3 分批并入，不在 P1 的 G5 清单内 |
 | `src-tauri/src/ipc.rs` | `generate_handler!` 增 `report_first_frame`（N16） |
 | `src-tauri/crates/assistant-protocol/src/lib.rs` | 增 `pub mod startup;`（N16） |

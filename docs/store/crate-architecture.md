@@ -101,7 +101,7 @@ default = ["vault"]
 vault = ["dep:assistant-vault", "dep:assistant-sync", "dep:assistant-security"]
 ```
 
-代码侧对应门控：`src/vault_plugin.rs` 有 `#[cfg(feature = "vault")]` / `#[cfg(not(feature = "vault"))]` 两个分支，`src/cmd/mod.rs` 的 `mod vault` 声明带 `#[cfg(feature = "vault")]`。
+代码侧对应门控：`src/feature_plugins/vault_plugin.rs` 有 `#[cfg(feature = "vault")]` / `#[cfg(not(feature = "vault"))]` 两个分支，`src/cmd/mod.rs` 的 `mod vault` 声明带 `#[cfg(feature = "vault")]`。
 
 因此 **vault / sync / security 已构成一个可整体关闭的编译单元**：`--no-default-features` 一次移除三者，不需要额外处理声明与使用的分离问题（旧文档 §4.1 所述缺口已由该 feature 消解）。
 
@@ -359,7 +359,7 @@ vault 的安全外围：剪贴板守卫、防截屏、锁屏/休眠监听、SSH 
 
 | 位置 | 行数 | 作用 |
 |---|---|---|
-| `build.rs`（app） | 100 | 扫描 `src/*_plugin.rs` 派生命令清单并注册内联插件，再调 `tauri_build::try_build` |
+| `build.rs`（app） | 100 | 扫描 `src/feature_plugins/*_plugin.rs` 派生命令清单并注册内联插件，再调 `tauri_build::try_build` |
 | `crates/assistant-i18n/build.rs` | 16 | 生成语言目录 revision |
 | `crates/assistant-storage/build.rs` | 8 | Windows 链接 `crypt32` `advapi32` `ws2_32` `user32` |
 | `crates/assistant-vault/build.rs` | 9 | 同上 |

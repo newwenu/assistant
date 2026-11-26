@@ -25,6 +25,7 @@ const CONF_GROUP_DECL: &str = "GROUP: &'static str = \"";
 const MOUNT_ID_MARKER: &str = "id: \"";
 const MOUNT_TABLE_TYPE: &str = "&[FeatureMount]";
 const MOUNT_ACCESSOR: &str = "fn mounts(";
+const PLUGIN_DIR: &str = "feature_plugins";
 const PLUGIN_FILE_SUFFIX: &str = "_plugin.rs";
 const PLUGIN_DISCOVERY_MARKER: &str = "read_dir";
 const CAPABILITIES_DIR: &str = "capabilities";
@@ -46,7 +47,7 @@ const CALLER_FILES: [&str; 8] = [
 
 fn plugin_registry_files() -> Vec<PathBuf> {
     let mut files = Vec::new();
-    let entries = fs::read_dir(src_root()).expect("source root is readable");
+    let entries = fs::read_dir(src_root().join(PLUGIN_DIR)).expect("plugin dir is readable");
     for entry in entries {
         let path = entry.expect("source entry is readable").path();
         let is_rust = path.extension().and_then(|ext| ext.to_str()) == Some("rs");
@@ -71,6 +72,16 @@ fn plugin_registry_names() -> Result<Vec<String>, String> {
         names.extend(registered_names(&text)?);
     }
     Ok(names)
+}
+
+/// 插件真源相对 `src/` 的路径：`feature_plugins/<feature>_plugin.rs`。
+fn plugin_source(feature: &str) -> String {
+    format!(
+        "{}/{}{}",
+        PLUGIN_DIR,
+        feature.replace('-', "_"),
+        PLUGIN_FILE_SUFFIX
+    )
 }
 
 fn registration_bodies(text: &str) -> Vec<String> {
@@ -158,6 +169,12 @@ fn string_literals(text: &str) -> Vec<String> {
 
 fn command_to_permission(name: &str) -> String {
     format!("{}{}", ACL_ALLOW_PREFIX, name.replace('_', "-"))
+}
+
+/// ACL 标识符禁止下划线（`tauri-utils` 的 `Identifier` 校验），插件名统一把 `_` 转 `-`；
+/// 模块路径与文件名仍是特性 id 原样。`build.rs` 的 `acl_plugin_name()` 是唯一真源。
+fn acl_plugin_name(feature: &str) -> String {
+    feature.replace('_', "-")
 }
 
 fn permission_to_command(permission: &str) -> Option<String> {
@@ -349,7 +366,7 @@ fn acl_command_names(feature: &str) -> Result<BTreeSet<String>, String> {
     let value: serde_json::Value =
         serde_json::from_str(&text).expect("acl-manifests.json 是合法 JSON");
     let permissions = value
-        .get(feature)
+        .get(&acl_plugin_name(feature))
         .and_then(|v| v.get("permissions"))
         .and_then(|v| v.as_object())
         .ok_or_else(|| format!("acl-manifests.json 缺少 {} 的 permissions 对象", feature))?;
@@ -524,8 +541,8 @@ fn cfg_location_allowed(feature: &str, relative: &str) -> bool {
     if relative == CFG_ALLOWED_IN {
         return true;
     }
-    let expected = format!("{}_plugin.rs", feature.replace('-', "_"));
-    relative.rsplit('/').next() == Some(expected.as_str())
+    let expected = format!("{}/{}_plugin.rs", PLUGIN_DIR, feature.replace('-', "_"));
+    relative == expected
 }
 
 #[test]
@@ -559,8 +576,9 @@ fn a2_feature_cfg_only_in_boundary_files() {
 
     assert!(
         offenders.is_empty(),
-        "特性 #[cfg] 只能出现在 {} 或与特性同名的 *_plugin.rs，越界: {:?}",
+        "特性 #[cfg] 只能出现在 {} 或 {}/<特性>_plugin.rs，越界: {:?}",
         CFG_ALLOWED_IN,
+        PLUGIN_DIR,
         offenders
     );
 }
@@ -624,7 +642,7 @@ fn a5_parser_floor() {
     let problems: Vec<String> = plugin_feature_names()
         .into_iter()
         .filter_map(|feature| {
-            let plugin_file = format!("{}{}", feature.replace('-', "_"), PLUGIN_FILE_SUFFIX);
+            let plugin_file = plugin_source(&feature);
             let names = registered_names(&read(&plugin_file))
                 .unwrap_or_else(|e| panic!("{} 注册表可解析: {}", plugin_file, e));
             if names.is_empty() {
@@ -691,7 +709,7 @@ fn a7_plugin_command_list_matches_build_acl() {
     let mut problems = Vec::new();
     let mut registered_total = 0usize;
     for feature in &features {
-        let plugin_file = format!("{}{}", feature.replace('-', "_"), PLUGIN_FILE_SUFFIX);
+        let plugin_file = plugin_source(feature);
 
         let registered: BTreeSet<String> = registered_names(&read(&plugin_file))
             .unwrap_or_else(|e| panic!("{} 注册表可解析: {}", plugin_file, e))
@@ -811,7 +829,7 @@ fn b2_feature_drift() {
     let mut problems = Vec::new();
     for (label, ids) in [
         ("feature_mounts MOUNTS", &mounts),
-        ("src/*_plugin.rs", &plugins),
+        ("src/feature_plugins/*_plugin.rs", &plugins),
     ] {
         if ids.join("|") != manifest.join("|") {
             problems.push(format!(
@@ -1036,7 +1054,7 @@ fn b4_feature_cfg_budget_and_mutual_blocks() {
 
     let mut problems = Vec::new();
     for feature in &features {
-        let plugin_file = format!("{}{}", feature.replace('-', "_"), PLUGIN_FILE_SUFFIX);
+        let plugin_file = plugin_source(feature);
         let text = strip_rust_comments(&read(&plugin_file));
         if !text.contains(&enabled_block_marker(feature)) {
             problems.push(format!(
@@ -1067,7 +1085,7 @@ fn b5_disabled_block_mirrors_enabled_signatures() {
     let mut problems = Vec::new();
 
     for feature in manifest_feature_ids() {
-        let plugin_file = format!("{}{}", feature.replace('-', "_"), PLUGIN_FILE_SUFFIX);
+        let plugin_file = plugin_source(&feature);
         let text = strip_rust_comments(&read(&plugin_file));
         let marker = negated_block_marker(&feature);
         let Some(split) = text.find(&marker) else {
@@ -1163,7 +1181,7 @@ fn b8_capabilities_split_per_feature() {
         .collect();
 
     for feature in &features {
-        let expected = format!("{}:default", feature);
+        let expected = format!("{}:default", acl_plugin_name(feature));
         let path = manifest_dir()
             .join(CAPABILITIES_DIR)
             .join(format!("{}.json", feature));
@@ -1208,7 +1226,7 @@ fn b8_capabilities_split_per_feature() {
 fn b9_single_handler_block_per_plugin() {
     let mut problems = Vec::new();
     for feature in manifest_feature_ids() {
-        let plugin_file = format!("{}{}", feature.replace('-', "_"), PLUGIN_FILE_SUFFIX);
+        let plugin_file = plugin_source(&feature);
         let text = strip_rust_comments(&read(&plugin_file));
         let count = text.matches(REGISTRATION_OPEN).count();
         if count != 1 {
@@ -1359,7 +1377,7 @@ fn b10_feature_capabilities_are_minimal() {
                 path.display()
             ));
         }
-        let own_prefix = format!("{}:", feature);
+        let own_prefix = format!("{}:", acl_plugin_name(feature));
         for item in &permissions {
             let Some(permission) = item.as_str() else {
                 problems.push(format!(
@@ -1498,7 +1516,7 @@ fn b12_plugin_commands_use_feature_prefix() {
 
     let mut problems = Vec::new();
     for feature in &features {
-        let plugin_file = format!("{}{}", feature.replace('-', "_"), PLUGIN_FILE_SUFFIX);
+        let plugin_file = plugin_source(feature);
         let entries = registration_entries(&read(&plugin_file))
             .unwrap_or_else(|e| panic!("{} 注册表可解析: {}", plugin_file, e));
         if entries.is_empty() {

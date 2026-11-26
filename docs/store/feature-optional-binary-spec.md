@@ -86,13 +86,15 @@
 | 特性清单 | 仅 `vault` 一条，条目只写 `default: true`；`cargoFeature` / `env` 由 `id` 派生（显式写出须逐字相等） | `config/features.json` |
 | Cargo 镜像 | `default = ["vault"]`；`vault = ["dep:assistant-vault", "dep:assistant-sync", "dep:assistant-security"]` | `src-tauri/Cargo.toml` `[features]` |
 | 挂载表 | 1 张 `MOUNTS`、1 个 `mounts()` 读入口；表项含 `id` + `plugin` + `on_setup` + `on_exit` | `src-tauri/src/feature_mounts.rs` |
-| 插件边界 | `vault_plugin.rs` 一对互斥 cfg 块；启用块含 1 个 `generate_handler!` 注册块，关闭块为无命令空插件 | `src-tauri/src/vault_plugin.rs` |
+| 插件边界 | `feature_plugins/vault_plugin.rs` 一对互斥 cfg 块；启用块含 1 个 `generate_handler!` 注册块，关闭块为无命令空插件；模块声明收敛在 `feature_plugins/mod.rs` | `src-tauri/src/feature_plugins/vault_plugin.rs` |
 | 后端 cfg | 全后端 3 行：`vault_plugin.rs` 2 + `cmd/mod.rs` 1，恰为 `FEATURE_CFG_LIMIT = 3` | `src-tauri/tests/assembly_contract.rs` |
-| 装配点 | 6 条：清单、`vite-env.d.ts`、`registry.ts`、`Cargo.toml`、`feature_mounts.rs`、`lib.rs` | `src/features/__tests__/coreBoundary.test.ts` |
+| 装配点 | 7 条：清单、`vite-env.d.ts`、`registry.ts`、`Cargo.toml`、`feature_mounts.rs`、`lib.rs`、`feature_plugins/mod.rs` | `src/features/__tests__/coreBoundary.test.ts` |
 | 遍历化调用方 | 12 条：`build.rs`、`capabilities/default.json`、`plugins.rs`、`lifecycle.rs`、`setup.rs`、`ipc.rs`、`window.rs`、`tray.rs`、`cmd/config.rs`、`tauri.conf.json`、`App.tsx`、`AppShell.tsx`；断言文本内不出现特性名 | 同上 `TRAVERSAL_FILES` |
 | 足迹豁免 | 2 条：`src-tauri/src/cmd/mod.rs`、`src-tauri/src/protocol/events.rs` | 同上 `FEATURE_FOOTPRINT_ALLOWLIST` |
 | 前端 loader | `registry.ts` 3 行守卫 + `vite-env.d.ts` 1 行 declare | `src/features/registry.ts`、`src/vite-env.d.ts` |
 
+> 2026-11-26 变更（插件声明收敛）：插件边界文件迁入 `src-tauri/src/feature_plugins/`，`lib.rs` 的逐特性 `mod` 行收敛为该目录 `mod.rs` 里的声明（`lib.rs` 只留 `mod feature_plugins;`），装配点因此 6 → 7；`build.rs` 与门禁的插件真源目录同步改为 `feature_plugins/`。
+>
 > 命令条数是时点快照，不是契约。本规格与门禁**不得**把具体命令条数写成断言；只允许「集合相等」「至少 1 条」「解析总数不低于下限」这类结构判据。
 
 ### 2.2 静态声明与 D2/D3 阻塞点
@@ -172,7 +174,7 @@
 | 把插件装配整体搬进特性 crate | **否决（当前）** | cfg 只是换文件，core 仍需一行 `mod` 与表项；N≥2 或插件文件超过单文件职责时再评估 |
 | 挂载表降为 2 字段 | **否决** | 启动顺序与退出清理退化为框架隐式语义，表不再自解释 |
 | `cmd/<id>/` 迁到 `src/<id>/` 以归零 `cmd/mod.rs` | **否决（当前）** | 为 2 行收益改 4 处路径解析口径；路径稳定优先 |
-| A2 允许 `src/<id>_plugin/` 目录内 cfg | **暂缓** | 当前插件是单文件；若插件拆成目录，cfg 仍应集中在根插件文件，子模块只被启用块引用 |
+| A2 允许 `feature_plugins/<id>_plugin/` 目录内 cfg | **暂缓** | 当前插件是单文件；若插件拆成目录，cfg 仍应集中在根插件文件，子模块只被启用块引用 |
 | build.rs 按 `CARGO_FEATURE_*` 门控插件声明 | **否决** | 关闭态 capability 引用的 `<id>:default` 会解析失败 |
 | 在 `build.rs` 生成 `capabilities/*.json` | **否决** | 自修改源码树，构建顺序脆弱，生成物脱离 review |
 | `OUT_DIR` + `include!` 生成 `mod` 块 | **否决** | A2 源码扫描覆盖不到，cfg 逃逸门禁；IDE 不可导航 |
@@ -234,7 +236,7 @@
 | 编号 | 规则 | 理由 |
 |---|---|---|
 | R7 | `<id>_plugin.rs` 的每条注册命令必须以 `crate::cmd::<id>::` 开头 | `build.rs` 只按该前缀派生 ACL；前缀不符会「运行期注册了、ACL 没声明」 |
-| R8 | 特性 cfg 只允许出现在 `cmd/mod.rs` 与 `src/` 根下的 `<id>_plugin.rs`；`cmd/<id>/**`、`ipc.rs`、`window.rs`、`tray.rs`、`setup.rs`、`lifecycle.rs`、`plugins.rs`、`cmd/config.rs` 一律不得出现清单内特性 cfg | 保持 A2 白名单的可读性；关闭态差异只落在插件边界；插件文件固定在 `src/` 根，避免同名文件藏进子目录 |
+| R8 | 特性 cfg 只允许出现在 `cmd/mod.rs` 与 `src/feature_plugins/<id>_plugin.rs`；`cmd/<id>/**`、`ipc.rs`、`window.rs`、`tray.rs`、`setup.rs`、`lifecycle.rs`、`plugins.rs`、`cmd/config.rs` 一律不得出现清单内特性 cfg | 保持 A2 白名单的可读性；关闭态差异只落在插件边界；插件文件固定在 `feature_plugins/` 单层目录，路径逐字断言，同名文件藏进其它目录即失败 |
 | R9 | 关闭块不得引用任何 `assistant_<id>` / 特性 crate 符号 | 否则关闭态仍编译该 crate，G2 失效 |
 | R10 | `register_conf_applier("<id>", ...)` 只能出现在启用块内 | A8 要求已注册分组 == 配置模块集合；core 不得知道特性分组 |
 | R11 | `build.rs` 不读 `CARGO_FEATURE_*` 决定是否声明 `InlinedPlugin` | 关闭态 capability 仍引用 `<id>:default`，门控会导致构建失败 |
@@ -415,9 +417,9 @@ CI 必须两种都跑；不能只跑默认态。
 |---|---|---|
 | 1 | `config/features.json` +1 条目（只写 `default`） | B2/F1 |
 | 2 | `src-tauri/Cargo.toml` +1 feature + `dep:` / `optional = true` | B2 |
-| 3 | 新建 `src-tauri/src/<id>_plugin.rs`：启用/关闭两套实现，命令前缀 `crate::cmd::<id>::` | A2/B4/B5/B12 |
+| 3 | 新建 `src-tauri/src/feature_plugins/<id>_plugin.rs`：启用/关闭两套实现，命令前缀 `crate::cmd::<id>::`；`feature_plugins/mod.rs` +1 行 `pub(crate) mod <id>_plugin;` | A2/B4/B5/B12 |
 | 4 | `cmd/<id>/` 命令目录；`cmd/mod.rs` +1 行 cfg `mod` | B6 |
-| 5 | `lib.rs` +1 行 `mod <id>_plugin;`；`feature_mounts.rs` +4 行表项 | F1/B2/B7 |
+| 5 | `feature_mounts.rs` +4 行表项（`crate::feature_plugins::<id>_plugin::*`）；`lib.rs` 不新增行 | F1/B2/B7 |
 | 6 | 新建 `capabilities/<id>.json`（只授 `<id>:default`，`windows` ⊆ 已声明窗口） | B8/B10 |
 | 7 | 前端 `src/features/<id>/module.ts`；`registry.ts` +3 行守卫；`vite-env.d.ts` +1 行 | F1/F4 |
 | 8 | 跑 `full` 与 `slim` 两态、`assembly_contract`、`npm run test`、`contract:check` | AC |
@@ -428,8 +430,8 @@ CI 必须两种都跑；不能只跑默认态。
 
 | 步骤 | 动作 | 检查 |
 |---|---|---|
-| 1 | 删除 `src/features/<id>/**`、`src-tauri/src/<id>_plugin.rs`、`cmd/<id>/**`、`capabilities/<id>.json`、特性契约类型 | 无残留引用 |
-| 2 | 删除清单条目、Cargo feature、`dep:` / `optional = true`、挂载表表项、`lib.rs` mod、`cmd/mod.rs` cfg mod、前端守卫/declare | B2/B6/F1 |
+| 1 | 删除 `src/features/<id>/**`、`src-tauri/src/feature_plugins/<id>_plugin.rs`、`cmd/<id>/**`、`capabilities/<id>.json`、特性契约类型 | 无残留引用 |
+| 2 | 删除清单条目、Cargo feature、`dep:` / `optional = true`、挂载表表项、`feature_plugins/mod.rs` 的 mod 行、`cmd/mod.rs` cfg mod、前端守卫/declare | B2/B6/F1 |
 | 3 | 清理特性事件名/配置分组/前端 i18n 命名空间 | 足迹 allowlist 只减不增 |
 | 4 | 跑 `full` 与 `slim` 两态 + 依赖断开 | AC |
 

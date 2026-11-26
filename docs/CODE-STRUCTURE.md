@@ -188,7 +188,7 @@ config/features.json (vault)
   ├─ Cargo.toml: default = ["vault"]
   │    └─ vault feature = dep:assistant-vault + dep:assistant-sync + dep:assistant-security
   ├─ lib.rs / plugins.rs: feature_mounts::mounts() 遍历 → 挂载 vault 插件
-  ├─ vault_plugin.rs: cfg(feature = "vault") 内注册命令与 conf applier
+  ├─ feature_plugins/mod.rs → feature_plugins/vault_plugin.rs: cfg(feature = "vault") 内注册命令与 conf applier
   └─ capabilities/vault.json: vault 插件命令权限（作用于 main / orb 窗口）
 ```
 

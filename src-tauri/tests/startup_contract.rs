@@ -34,8 +34,8 @@ const STARTUP_PATH_FILES: [&str; 5] = [
     "main.rs",
     "plugins.rs",
     "tool_setup.rs",
-    "vault_plugin.rs",
-    "timekeeper_plugin.rs",
+    "feature_plugins/vault_plugin.rs",
+    "feature_plugins/timekeeper_plugin.rs",
 ];
 const STARTUP_PATH_DIRS: [&str; 2] = [BOOT_DIR, "window"];
 const APP_DIRS_OWNER: &str = "main.rs";
