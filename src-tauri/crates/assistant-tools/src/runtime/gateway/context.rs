@@ -418,8 +418,12 @@ mod tests {
     fn path_actions_are_judged_against_the_workspace_boundary() {
         let dir = tempfile::tempdir().unwrap();
         let other = tempfile::tempdir().unwrap();
-        let context = context_with_root(dir.path());
-        let inside = dir.path().join("a.txt");
+        // 入参按契约必须已归一，且必须与 `ensure_within_root` 用同一个归一函数：
+        // `std::fs::canonicalize` 在 Windows 会带 `\\?\` 前缀、macOS 的 `/var` 是指向
+        // `/private/var` 的符号链接，两种形态都会与根比较不上而被误判成「区外」。
+        let root = crate::os::path::canonicalize_lenient(dir.path()).expect("canonical root");
+        let context = context_with_root(&root);
+        let inside = root.join("a.txt");
         std::fs::write(&inside, b"x").unwrap();
         let outside = other.path().join("b.txt");
 

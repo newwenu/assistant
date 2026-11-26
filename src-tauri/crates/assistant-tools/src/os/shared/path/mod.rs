@@ -761,15 +761,20 @@ mod tests {
         }
 
         // 无 scheme 的 verbatim 串不是引用，仍按原规则解析成功。
-        let dir = tempfile::tempdir().expect("tempdir");
-        let file = dir.path().join("ok.txt");
-        std::fs::write(&file, b"x").expect("write file");
-        let ctx = context_with_root(dir.path());
-        let verbatim = format!("\\\\?\\{}", file.display());
-        assert!(parse_ref(&verbatim).is_ok(), "非引用串必须原样通过");
-        assert_eq!(
-            resolve(&verbatim, &ctx).expect("verbatim 串必须可解析"),
-            canonicalize_lenient(&file).expect("canonical")
-        );
+        // verbatim 前缀是 Windows 专有路径语法：Unix 上 `\\?\` 只是普通的相对路径段，
+        // 解析结果与目标文件无关，因此只在 Windows 上断言「原样可解析」。
+        #[cfg(windows)]
+        {
+            let dir = tempfile::tempdir().expect("tempdir");
+            let file = dir.path().join("ok.txt");
+            std::fs::write(&file, b"x").expect("write file");
+            let ctx = context_with_root(dir.path());
+            let verbatim = format!("\\\\?\\{}", file.display());
+            assert!(parse_ref(&verbatim).is_ok(), "非引用串必须原样通过");
+            assert_eq!(
+                resolve(&verbatim, &ctx).expect("verbatim 串必须可解析"),
+                canonicalize_lenient(&file).expect("canonical")
+            );
+        }
     }
 }
