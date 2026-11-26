@@ -58,7 +58,7 @@
       "emptyPage": true
     },
     {
-      "id": "storage",
+      "id": "resource",
       "categoryId": "general",
       "order": 60,
       "visibility": "sidebar",

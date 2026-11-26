@@ -210,6 +210,8 @@ export type ConversationToolConfigDto = { maxToolTier: ToolTierDto, approvalLeve
  */
 approvalRules: Array<ApprovalRuleDto>, };
 export type ConversationUnlockedPayloadDto = { conversationId: string, };
+export type CoverageDto = "subtreeOnly";
+export type CpuBasisDto = "singleCorePercent";
 export type DocAnchorDto = { path: string, ranges: Array<DocLineRangeDto>, };
 export type DocLineRangeDto = { start: number, end: number, };
 export type FileAttachmentRefDto = { attachmentId: string, name: string, bytes: number, };
@@ -235,6 +237,7 @@ envKeys: Array<string>, callTimeoutMs: number | null,
 configError: string | null, createdAt: number, updatedAt: number, };
 export type McpServerStatusDto = "stopped" | "starting" | "ready" | "error";
 export type McpServerUpdateDto = { id: string, name?: string | null, launch?: McpLaunchInputDto | null, };
+export type MemoryBasisDto = "workingSet" | "privateWorkingSet" | "physFootprint";
 export type MessageChangeKindDto = "branch_created" | "branch_switched" | "branch_forked" | "message_deleted" | "messages_compacted" | "stream_finished";
 export type MessageDto = { id: string, conversationId: string, role: string, content: string, tokens: number | null, timestamp: number, parentId: string | null, isPinned: boolean, reasoning: string | null, siblingIndex: number, siblingCount: number | null, providerId: string | null, modelId: string | null, 
 /**
@@ -324,6 +327,70 @@ export type PersistDetailDto = { rows: number, messageIds: Array<string>, };
 export type PersistedResultDto = { path: string, bytes: number | null, };
 export type PipelineDetailDto = { stage: PipelineStageDto | null, index: number | null, total: number | null, toolName: string | null, toolCallId: string | null, };
 export type PipelineStageDto = "find" | "validate" | "gateway" | "execute" | "persist";
+export type ProcessEntryDto = { pid: number, 
+/**
+ * 原值；前端不据此重建树（树序由后端出）。
+ */
+parentPid: number, role: ProcessRoleDto, 
+/**
+ * 开放集合，前端兜底不窄化；不含命令行全文。
+ */
+exeName: string, cpuPercent: number | null, memoryBytes: number | null, 
+/**
+ * 进程创建时刻；PID 复用校验与建父子链的必需字段，必须随附。
+ */
+startTime: number, };
+export type ProcessGroupDto = { pidCount: number, 
+/**
+ * 按 `cpu_basis` 求和；首拍 `null`，禁止填 `0`。
+ */
+cpuPercent: number | null, 
+/**
+ * 按 `memory_basis` 求和；取不到为 `null`，禁止填 `0`。
+ */
+memoryBytes: number | null, 
+/**
+ * 只取 `available` / `unavailable`。
+ */
+memoryAvailability: ResourceAvailabilityDto, 
+/**
+ * `unavailable` 时必须非空。
+ */
+memoryReason: string | null, };
+export type ProcessRoleDto = "host" | "webviewBrowser" | "webviewRenderer" | "webviewGpu" | "webviewUtility" | "webviewUnknown" | "otherChild";
+export type ProcessSnapshotDto = { 
+/**
+ * 顶层状态；非 `available` 时 `entries` 为空、两个组数字为 `null`。
+ */
+availability: ResourceAvailabilityDto, reason: string | null, 
+/**
+ * 一次遍历一个时刻；非 `available` 时为 `null`（不填 `0`）。
+ */
+sampledAt: number | null, 
+/**
+ * 采样根 = 宿主 PID，由命令层注入。
+ */
+rootPid: number, memoryBasis: MemoryBasisDto, 
+/**
+ * 内存指标是否可求和（I76 §2.4）。
+ */
+memoryAdditive: boolean, 
+/**
+ * 内存合计是否≈物理占用（I76 §2.4）；与 `memory_additive` 相互独立，禁止合并。
+ */
+memoryEqualsFootprint: boolean, cpuBasis: CpuBasisDto, coverage: CoverageDto, 
+/**
+ * 本平台 WebView 进程由系统托管、不属本应用子树（本期仅 macOS 为 `true`）。
+ */
+webviewDetached: boolean, truncated: boolean, 
+/**
+ * 仅宿主；取不到为 `null`，禁止填 `0`（I76 §5.3）。
+ */
+hostThreadCount: number | null, selfGroup: ProcessGroupDto, subtreeGroup: ProcessGroupDto, 
+/**
+ * 树序、一行一进程、`pid` 不重复。
+ */
+entries: Array<ProcessEntryDto>, };
 export type ProjectPermissionStatusDto = { 
 /**
  * `permissions.json` 的绝对路径；仅展示，前端不据此读写。
@@ -356,6 +423,18 @@ efforts: Array<string>, };
 export type ReclaimPolicyDto = { source: StoragePolicySourceDto, retentionDays: number | null, keepCount: number | null, maxBytes: number | null, effectiveSince: number | null, mutable: boolean, failClosed: boolean, };
 export type ReclaimViewDto = { action: StorageReclaimActionDto, eligibility: StorageEligibilityDto, reason: StorageReclaimReasonDto | null, policy: ReclaimPolicyDto, reclaimableBytes: number | null, reclaimableCount: number | null, confirmation: StorageConfirmLevelDto, autoActive: boolean, note: string | null, };
 export type ResolvedThemeDto = "light" | "dark";
+export type ResourceAvailabilityDto = "available" | "unavailable" | "notImplemented" | "unreadable";
+export type ResourceCapabilitiesDto = { 
+/**
+ * 平铺数组而非 map：前端按 `tab` 取值遍历，不猜键名。
+ */
+tabs: Array<ResourceTabCapabilityDto>, };
+export type ResourceTabCapabilityDto = { tab: ResourceTabDto, availability: ResourceAvailabilityDto, 
+/**
+ * 键恒在；`available` 时为 `null`。
+ */
+reason: string | null, };
+export type ResourceTabDto = "storage" | "processTree";
 export type RetryNotificationDto = { attempt: number, maxAttempts: number, delayMs: number, message: string, errorCode: CommandErrorCodeDto | null, };
 export type RiveManifestDto = { stateMachine?: string | null, properties?: RiveManifestPropertiesDto | null, 
 /**

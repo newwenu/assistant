@@ -7,7 +7,7 @@
       "providers": { "title": "Provider Management" },
       "agents": { "title": "Agent Modes" },
       "mcp": { "title": "MCP Servers" },
-      "storage": { "title": "Storage Manager" },
+      "resource": { "title": "Resource Monitor" },
       "about": { "title": "About" },
       "vault": "Password Vault",
       "vault_settings": { "title": "Vault Settings" },
@@ -392,6 +392,38 @@
     },
     "entity_list": {
       "search_placeholder": "Search {{title}}"
+    },
+    "resource": {
+      "tab": {
+        "storage": "Storage",
+        "processTree": "Process Tree"
+      },
+      "column": {
+        "process": "Process",
+        "role": "Role",
+        "cpu": "CPU",
+        "memory": "Memory"
+      },
+      "summary": {
+        "self": "Self",
+        "subtree": "Whole tree",
+        "hostThreads": "Host threads"
+      },
+      "status": {
+        "notImplemented": "Process resource monitoring is not available on this platform",
+        "unreadable": "Failed to read process information",
+        "memoryUnavailable": "No additive memory basis on this platform",
+        "truncated": "This scan is incomplete (depth or entry limit reached)",
+        "cpuFirstSample": "No baseline in this sample",
+        "coverageSubtreeOnly": "Covers this process subtree only; processes that left the parent chain are invisible",
+        "coveragePlatformManaged": "WebView child processes are managed by the system and are not in this app's subtree",
+        "capabilitiesLoadFailed": "Failed to read capability declarations; process data is not shown"
+      },
+      "caliber": {
+        "winPrivate": "Private working set",
+        "linuxWorkingSet": "Working set (shared pages counted more than once)",
+        "macFootprint": "Physical footprint"
+      }
     },
     "storage": {
       "title": "Storage Manager",

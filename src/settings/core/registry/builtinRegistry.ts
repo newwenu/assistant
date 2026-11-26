@@ -134,11 +134,25 @@ const about = definePage({
     })),
 });
 
-const storage = definePage({
-  id: "storage",
+const resource = definePage({
+  id: "resource",
   categoryId: "general",
-  label: "common.navigation.storage.title",
-  keywords: ["storage", "attachment", "orphan", "disk", "存储", "附件", "孤儿"],
+  label: "common.navigation.resource.title",
+  keywords: [
+    "storage",
+    "attachment",
+    "orphan",
+    "disk",
+    "存储",
+    "附件",
+    "孤儿",
+    "resource",
+    "process",
+    "cpu",
+    "memory",
+    "资源",
+    "进程",
+  ],
   icon: DatabaseOutlined,
   order: 60,
   emptyPage: true,
@@ -155,7 +169,7 @@ const builtinPages: readonly SettingsPageManifest[] = [
   providers,
   agents,
   mcpServers,
-  storage,
+  resource,
   about,
 ];
 

@@ -16,7 +16,7 @@
 >
 > **范围**：设置页「资源监视器」的**页面容器**与其中的**进程树 tab**。存储 tab 已完成，其内容**不在本文范围内**（以既有实现为准，本文不改动其行为），本文只为其保留挂载位（§3.4）。
 
-**编号约定**：`P1–P6` 指标方向、`V1–V26` 验收判据、`R0` / `R1a` / `R1b` / `R1c` / `R2` 实施批次、`OQ1–OQ9` 开放问题。前缀互不重叠，正文内引用不再歧义。本文中的「必须 / 禁止」为可验收约束。
+**编号约定**：`P1–P6` 指标方向、`V1–V27` 验收判据、`R0` / `R1a` / `R1b` / `R1c` / `R2` 实施批次、`OQ1–OQ9` 开放问题。前缀互不重叠，正文内引用不再歧义。本文中的「必须 / 禁止」为可验收约束。
 
 **进度表**：`docs/store/I76-process-resource-monitor-tasklist.md` 只记「改哪里、改没改」，语义一律以本文为准。
 
@@ -43,6 +43,7 @@
 | 0.13 | **R0 / R2 是原子批次**：R0 内含 11 个 DTO + 契约生成 + 两条命令骨架（返回 `notImplemented`），R2 一次性交付表 + 两个合计 + 宿主线程数 + 口径分支 + 全部状态展示 | 批次若留中间态，合入后必然出现「invoke 到不存在的命令」或「有表无合计」，都属半成品；命令骨架要返回类型化响应，因此 DTO 必须在 R0 而非 R1a（§10.1） |
 | 0.14 | `notImplemented` **保留**，语义收窄为「非目标 OS 构建 / 该平台后端未定案」 | 三平台交付后若删除该取值，§2.7「四个取值全部被使用」即自相矛盾；保留并明确产出条件（§2.7、§10.2 V25） |
 | 0.15 | OS 层 `SnapshotSource` trait + mock 实现**计入交付物** | V8 / V10 / V11 / V12 都要注入假快照；不列为交付物，这四条判据无法落地（§7.1） |
+| 0.16 | 三平台后端统一走 `sysinfo 0.40`（`default-features = false`、`features = ["system"]`）：Windows 私有工作集借 `virtual_memory()`、Linux 工作集用 `memory()`、macOS `phys_footprint` 用 `libc::proc_pid_rusage` 补取 | 单次遍历实测已覆盖六项必需字段（315 进程首次 13.6ms / 二次 8.1ms），且三平台内存口径各有确定来源；纯逻辑层不依赖 `sysinfo`（§2.4、§6.4、§12 OQ1） |
 
 ---
 
@@ -106,18 +107,24 @@
 
 | # | 约束 |
 |---|---|
-| 1 | **每拍只做一轮全量枚举**：每个进程在**一轮**里最多取一次基础字段，**禁止**按字段分次枚举（先取一遍 pid、再取一遍内存……），也**禁止**按子树分组重复枚举。Windows 用 `NtQuerySystemInformation(SystemProcessInformation)` 一轮拿全；Linux 遍历 `/proc` 每进程读 `stat` / `statm`（属同一轮，不是「第二次快照」）；macOS `proc_listpids` 一轮列出 PID 后 `proc_pidinfo` 每进程取一次。三者的「一轮」等价，判据是**每拍的总枚举次数为 1**，不是「系统调用次数为 1」 |
+| 1 | **每拍只做一轮全量枚举**：每个进程在**一轮**里最多取一次基础字段，**禁止**按字段分次枚举（先取一遍 pid、再取一遍内存……），也**禁止**按子树分组重复枚举。Windows 一轮 = 一次 `CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS)` + `Process32NextW` 遍历**同一快照**并逐进程补计数器（`sysinfo` 的 Windows 后端即此实现；手写路径的 `NtQuerySystemInformation(SystemProcessInformation)` 与之等价）；Linux 一轮 = 遍历 `/proc` 并每进程读 `stat` / `statm`（属同一轮，不是「第二次快照」）；macOS 一轮 = `proc_listpids` 列出 PID 后 `proc_pidinfo` 每进程取一次。三者的「一轮」等价，判据是**每拍的总枚举次数为 1**，不是「系统调用次数为 1」 |
 | 2 | 一次快照必须能拿到：`pid` / `parentPid` / `startTime` / 内存 / CPU 时间（可选 `threadCount`）。拿不到的字段输出 `null`，**禁止**为它补发第二次全系统快照 |
 | 3 | **镜像名只能作粗筛**，**禁止**用它判定归属。`msedgewebview2.exe` 是全机器共享的名字，按名字收进程必然把别的应用的进程算进来 |
 | 4 | 建父子链后**必须**做 PID 复用校验：`child.startTime >= parent.startTime` 且父 PID 在快照内。不通过则排除该进程并标注，**禁止**静默并入子树 |
 
 **子树边界**：只观测本进程的后代。主动 `detach` / `daemonize` 的子进程会脱离父子链，从而永久不可见——这是这类进程的设计意图，不是采样失败。此边界必须写在 UI 上（§5.5）。
 
+**线程条目（Linux 必做）**：Linux 的进程表会把 `/proc/<pid>/task/*` 作为**独立条目**并入快照（`sysinfo` 中以 `thread_kind()` 非空标记，`parentPid` = 所属进程）。建父子表前**必须**过滤掉这些条目，否则线程会被当成宿主的子进程进入 DFS，表里出现成批同名「进程」且合计失真。过滤属纯逻辑层职责（可单测），与「一次快照」不冲突——这些条目本来就是同一次遍历的副产物；过滤掉的条目数即宿主线程数的来源（§5.3）。
+
 ### 2.3 角色判定（三层，取数成本递增）
 
 把三层压成一层（「命令行含 `--type=` 就是 WebView」）是本规格最容易犯的错：命令行不在系统快照里，逐进程读命令行会让 §2.2 的「一次快照」失效，并让「读不到命令行」变成一个**错误结论**而不是**未知**。
 
-**唯一的例外**：第 ③ 层对**已确认在子树内且家族命中**的进程读命令行，是 §2.2 约束 1 允许的有界例外——范围被 ①② 层收窄到极小集合，不是第二次全量枚举。命令行走不到时不重试、不降级归属，只落 `webviewUnknown`。
+**唯一的例外**：第 ③ 层需要命令行。定案实现（§12 OQ1）中它由 `sysinfo` 在**同一轮**刷新内随进程一并取（`with_cmd(UpdateKind::Always)`：Windows 逐进程读 PEB、Linux 读 `/proc/<pid>/cmdline`、macOS 走 `sysctl(KERN_PROCARGS2)`），因此**不是**第二次全量枚举，属 §2.2 约束 1 允许的范围；但**禁止**为补读命令行再起一轮枚举，也**禁止**逐进程重试。命令行走不到时不重试、不降级归属，只落 `webviewUnknown`。
+
+**命令行必须显式请求（已实测）**：`sysinfo` 的 `refresh_processes()` **默认刷新项不含命令行**，Windows 实测该路径下 `cmd` 恒为空数组；必须改用 `refresh_processes_specifics(..., ProcessRefreshKind::nothing().with_memory().with_cpu().with_cmd(UpdateKind::Always))`。实测同一时刻 315 个进程中只有 123 个能读到非空命令行——这正是 `webviewUnknown` 存在的理由，不是实现缺陷。
+
+刷新项按平台收窄（`tasks` 必须区别对待）：Windows / macOS 追加 `.without_tasks()`（两者 `tasks()` 恒 `None`，开着只是白做）；**Linux 必须保留默认的 `with_tasks(UpdateKind::Always)`**——关掉后 `tasks()` 为 `None`，宿主线程数取不到（§5.3）；代价是线程条目会并入进程表，由 §2.2「线程条目」在建父子表前过滤掉，**过滤掉的条目数**（或 `tasks()` 的长度）即宿主线程数。
 
 | 层 | 判据 | 取数 | 作用 |
 |---|---|---|---|
@@ -125,7 +132,7 @@
 | ② 家族 | `exeName` ∈ 本平台 WebView 家族：Windows `msedgewebview2.exe` / `msedge.exe` / `chrome.exe`；Linux `WebKitWebProcess` / `WebKitNetworkProcess`；macOS `com.apple.WebKit.WebContent` / `com.apple.WebKit.Networking` / `com.apple.WebKit.GPU` | 一次快照内 | 决定「是不是 WebView 系」 |
 | ③ 细分 | 命令行 `--type=renderer` / `--type=gpu-process` / 其余 | 逐进程额外读取（仅对已确认在子树内且家族命中的进程） | 决定「是哪一类 WebView 进程」 |
 
-第 ② 层用镜像名不违反 §2.2 约束 3：那里禁止的是用镜像名**判定归属**，归属已由第 ① 层定死；镜像名只在**已确定的子树内**分家族。
+第 ② 层用镜像名不违反 §2.2 约束 3：那里禁止的是用镜像名**判定归属**，归属已由第 ① 层定死；镜像名只在**已确定的子树内**分家族。镜像名取 `Process::name()`（Windows 上由基础枚举的 `PROCESSENTRY32W.szExeFile` 给出，与刷新项无关）；**禁止**改用 `Process::exe()`（完整路径，需 `with_exe`，精简刷新下恒 `None`，已实测）。
 
 | 角色 | 判据 | 归入哪个合计 |
 |---|---|---|
@@ -161,6 +168,20 @@
 - `memoryAdditive == false` 时，**禁止**把子项求和当总量，也**禁止**在合计位显示数字（§5.4）；
 - 两个标志是**指标属性**，挂在快照顶层，**禁止**下放到组或行——否则两个组的口径可被独立改写；
 - 列名必须带口径（「工作集」/「私有工作集」/「物理占用」），**不靠脚注**。
+
+**取数映射（R1a 已实测定案，依据 §12 OQ1）**
+
+| 平台 | 逐行内存取数 | `memoryBasis` | `memoryAdditive` | `memoryEqualsFootprint` |
+|---|---|---|---|---|
+| Windows | `PROCESS_MEMORY_COUNTERS_EX.PrivateUsage`，经 `sysinfo` 的 `virtual_memory()` 取 | `privateWorkingSet` | `true` | `false` |
+| Linux | `/proc/<pid>/statm` 的 resident，经 `sysinfo` 的 `memory()` 取 | `workingSet` | `false` | `false` |
+| macOS | `libc::proc_pid_rusage(pid, RUSAGE_INFO_V2)` 的 `ri_phys_footprint`（`sysinfo` 的 `memory()` 是 `pti_resident_size`，**不可用**） | `physFootprint` | `true` | `true` |
+
+三条取数约束：
+
+1. **Windows 的私有工作集借 `virtual_memory()` 取**：`sysinfo` 未单独暴露 `PrivateUsage`，其 Windows 后端把 `WorkingSetSize` 填进 `memory()`、把 `PrivateUsage` 填进 `virtual_memory()`；而 Linux / macOS 的 `virtual_memory()` 是虚拟地址空间大小。**跨平台语义不一致**，因此**禁止**把 `virtual_memory()` 当通用字段，只允许在 `#[cfg(target_os = "windows")]` 分支出现，并由 §10.2 V27 的实机断言钉住该等价关系。
+2. **macOS 的 `phys_footprint` 不由 `sysinfo` 提供**：其 macOS 后端把 `PROC_PIDTASKINFO.pti_resident_size`（RSS）填进 `memory()`，属工作集口径；必须用 `libc::proc_pid_rusage` 单独取 `ri_phys_footprint`。`libc 0.2` 已在工作区依赖内，**不新增依赖**。
+3. **两个标志是平台常量，不做运行时推断**：`memoryAdditive` / `memoryEqualsFootprint` 由 `cfg` 常量给出，**禁止**按采样结果、进程数或可用性动态推断。
 
 ### 2.5 CPU 口径
 
@@ -313,7 +334,9 @@
 |---|---|
 | DTO 落点 | 快照顶层 `hostThreadCount`（`u32 \| null`），**不进** `ProcessEntryDto` |
 | UI 落点 | 合计头部的宿主摘要（`host · pid 1234 · 42 线程`），**不做**表格列 |
+| 取数（分平台） | Windows：`sysinfo` 不暴露 `PROCESSENTRY32W.cntThreads`（`tasks()` 恒 `None`）→ `null`；Linux：宿主 `tasks()` 的长度（等于 §2.2「线程条目」中被过滤掉的条目数，故刷新项必须保留 `with_tasks`）；macOS：`libc::proc_pidinfo(PROC_PIDTASKINFO)` 的 `pti_threadnum` |
 | 取不到 | `null`，**禁止**填 `0` |
+| Windows 升级路径（未过审前不做） | 单次 `CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD)` 定向数宿主线程（约 2–4ms，一次**定向**调用，不构成第二次全系统快照）。需在采样 crate 显式声明 `Win32_System_Diagnostics_ToolHelp`，属「新增 feature 单独过审」（§7.1 第 8 条）。未过审则保持 `null` |
 | 不做 | 线程语义归属（哪个子系统 / 哪个任务）、线程管理（Rust 无安全取消）。线程数多通常是正常的；真正的并发压力指标是 tokio task 数 / 阻塞池排队深度，需另立 metrics 导出项 |
 
 ### 5.4 内存口径分支（唯一规则）
@@ -456,8 +479,8 @@
 | 层 | 落点 | 职责边界 |
 |---|---|---|
 | 命令层 | `src-tauri/src/cmd/resource.rs`（新增） | 只做能力声明与快照转发，**不实现采样**、不承载其它 tab 明细；注入 `std::process::id()` 作为根 PID，持有 `OnceLock<Mutex<CpuDiffCache>>`（§2.6） |
-| 采样 crate | `src-tauri/crates/assistant-resource-probe`（新增） | 只依赖 OS API 与 `assistant-protocol`；**禁止**反向引用应用层（路径、根 PID 由调用方注入）。内部结构：`lib.rs`（导出面）/ `source.rs`（`SnapshotSource` trait 与 `RawProcess` 快照行）/ `win.rs`·`linux.rs`·`macos.rs`（`#[cfg(target_os = ...)]` 三平台后端）/ `classify.rs`（§2.3 三层角色判定）/ `tree.rs`（建父子表、DFS、PID 复用校验）/ `cpu.rs`（`CpuDiffCache`）/ `mock.rs`（测试用假快照） |
-| 平台依赖 | 该 crate 的 `Cargo.toml` | 需要 `[target.'cfg(target_os = "linux")'.dependencies]` 与 `[target.'cfg(target_os = "macos")'.dependencies]` 两个段；Unix 侧共用项用 `cfg(any(target_os = "linux", target_os = "macos"))` 段。Windows 侧复用工作区 `windows` 依赖（根 manifest 已有该段，Linux / macOS 依赖一律下沉到各自 crate，不改根 manifest 的平台段） |
+| 采样 crate | `src-tauri/crates/assistant-resource-probe`（新增） | 只依赖 OS API 与 `assistant-protocol`；**禁止**反向引用应用层（路径、根 PID 由调用方注入）。内部结构：`lib.rs`（导出面）/ `source.rs`（`SnapshotSource` trait 与 `RawProcess` 快照行）/ `win.rs`·`linux.rs`·`macos.rs`（`#[cfg(target_os = ...)]` 三平台后端）/ `classify.rs`（§2.3 三层角色判定）/ `tree.rs`（建父子表、DFS、PID 复用校验）/ `cpu.rs`（`CpuDiffCache`）/ `mock.rs`（测试用假快照）。**`sysinfo` 只允许出现在 `win.rs` / `linux.rs` / `macos.rs`**；`classify.rs` / `tree.rs` / `cpu.rs` / `mock.rs` **禁止**依赖它——否则纯逻辑单测要依赖真实系统状态 |
+| 平台依赖 | 该 crate 的 `Cargo.toml` | 三平台后端统一走 `sysinfo 0.40`（`default-features = false`、`features = ["system"]`；关闭 `component` / `disk` / `gpu` / `network` / `user`，避免引入 WMI / DXGI / `objc2-open-directory`），**新增依赖须单独过审**（§7.1 第 8 条）。它连带 `windows >=0.62,<0.63`（与工作区 `windows 0.62.2` **同版本，不重复编译**）、`ntapi`、`memchr`；macOS 侧另带 `objc2-core-foundation` / `objc2-io-kit`。`sysinfo 0.40` 的 MSRV 为 1.95，CI 钉的 `RUST_TOOLCHAIN = 1.100.0` 满足。Unix 侧仍需 `[target.'cfg(target_os = "linux")'.dependencies]` 与 `[target.'cfg(target_os = "macos")'.dependencies]` 两个段（macOS 段放 `libc`，用于 `proc_pid_rusage` 与 `proc_pidinfo`）；Windows 侧复用工作区 `windows` 依赖（根 manifest 已有该段，Linux / macOS 依赖一律下沉到各自 crate，不改根 manifest 的平台段） |
 | DTO | `assistant-protocol/src/resource.rs`（新增） | 纯类型，不依赖任何内部 crate |
 | 前端服务 | `src/services/desktop/resourceService.ts`（新增） | 与 `storageService.ts` **分开文件、互不引用** |
 | 前端 UI | `src/settings/pages/resource/ProcessTreeTab.tsx`（新增） | 只消费 `get_process_snapshot` 与能力声明 |
@@ -477,7 +500,7 @@
 | 5 | `src-tauri/src/ipc.rs` | `generate_handler![...]` 内加 `cmd::get_resource_capabilities, cmd::get_process_snapshot` |
 | 6 | `src-tauri/crates/assistant-resource-probe/src/**` | 内部结构见 §6.4：`source.rs` 的 `SnapshotSource` trait + `RawProcess`、三平台 `win.rs` / `linux.rs` / `macos.rs`、纯逻辑 `classify.rs` / `tree.rs` / `cpu.rs`、测试用 `mock.rs`。**trait + mock 是交付物**，V8 / V10 / V11 / V12 依赖它 |
 | 7 | `src-tauri/crates/assistant-resource-probe/Cargo.toml` | 按 §6.4「平台依赖」加 `[target.'cfg(target_os = "linux")']` / `[target.'cfg(target_os = "macos")']` 两个依赖段；Windows 复用工作区 `windows` |
-| 8 | `src-tauri/Cargo.toml` 的 `windows` feature 清单 | 若某平台后端走手写（OQ1 未选 `sysinfo`），Windows 侧需追加进程枚举 feature（`Win32_System_ProcessStatus`、`Win32_System_Diagnostics_ToolHelp`）；新增 feature / 新增依赖一律**单独过审**后再改 |
+| 8 | `src-tauri/Cargo.toml` 的 `windows` feature 清单 | OQ1 已定案三平台走 `sysinfo`（§12 OQ1），**根 manifest 的 `windows` feature 清单不需要为采样追加项**：`sysinfo` 的 `system` feature 已传递启用 `Win32_System_ProcessStatus` / `Win32_System_Diagnostics_ToolHelp` / `Win32_System_Threading` 等。只有两种情况需要显式声明：① 在采样 crate 内写 §10.2 V27 的 Windows 实机断言——该 crate 的 `[target.'cfg(windows)'.dependencies]` 显式加 `windows` 的 `Win32_System_ProcessStatus` + `Win32_System_Threading`（传递启用不等于显式声明，显式声明可防上游改 feature 后静默失配）；② 将来启用 §5.3「Windows 升级路径」的定向线程枚举（需 `Win32_System_Diagnostics_ToolHelp`）。新增 feature / 新增依赖一律**单独过审**后再改 |
 
 **批次归属**：第 2 / 3 / 4 / 5 处随 **R0** 交付（命令骨架必须返回类型化响应，前端能力声明也要读生成类型）；第 1 / 6 / 7 / 8 处随 **R1a** 交付（crate 与平台后端）。
 
@@ -583,7 +606,7 @@ type CapabilitiesView = ResourceCapabilitiesDto & { loadFailed?: boolean };
 | 批次 | 内容 | 依赖 |
 |---|---|---|
 | **R0** 容器与契约（原子） | 页面登记（id / label 键 / keywords）、i18n（含 `settings.resource.*` 最小键表）、`Tabs` 壳、`StorageContent` 去壳、滚动记忆、**11 个 DTO + §7.1 第 2/3/4/5 处装配 + `contract:gen`**、**两条命令骨架（`cmd/resource.rs` 返回 `notImplemented` + 装配进 `ipc.rs`）**、能力声明读取接入、进程树 tab 按 §5.5 的 `notImplemented` 分支渲染（非空占位） | 无（可立即开工） |
-| **R1a** 采样 crate 与 Windows 后端 | 新 crate（`SnapshotSource` trait + mock + `classify` / `tree` / `cpu` 纯逻辑）+ `win.rs` + §7.1 第 1/6/7/8 处装配 + 两条命令骨架换成真实调用 + V5–V12 单测 | R0 的 DTO 与命令骨架；Windows 后端选型（§12 OQ1） |
+| **R1a** 采样 crate 与 Windows 后端 | 新 crate（`SnapshotSource` trait + mock + `classify` / `tree` / `cpu` 纯逻辑）+ `win.rs` + §7.1 第 1/6/7/8 处装配 + 两条命令骨架换成真实调用 + V5–V12 单测 + V27 实机断言 | R0 的 DTO 与命令骨架；Windows 后端选型（§12 OQ1 **已定案**：`sysinfo 0.40` + 开发机实机断言） |
 | **R1b** Linux 后端 | `linux.rs` + Linux 段依赖 + `memoryAdditive == false` 路径的单测与真机验证（V14） | R1a 的 trait 定型（DTO 已在 R0） |
 | **R1c** macOS 后端 | `macos.rs` + macOS 段依赖 + `phys_footprint` 口径单测与真机验证 | R1a 的 trait 定型（DTO 已在 R0） |
 | **R2** 实时树 UI（原子） | 表 + 两个合计 + 宿主线程数 + 口径分支 + §5.5 全部状态展示，**一次性齐备** | R0 的 DTO 与命令骨架 |
@@ -628,10 +651,11 @@ R1b / R1c 可与 R2 并行；R2 不等 R1b / R1c，但要求能力声明在未�
 | V20 | 平台后端未定案时，`processTree` 能力为 `notImplemented` 且 tab 显示原因而非空表 | 单测 + 手工 |
 | V21 | **R0 原子性**：R0 合入后单独启动应用，进程树 tab 不报「命令不存在」，而是按 §5.5 渲染 `notImplemented` 文案 + `reason`；`get_resource_capabilities` / `get_process_snapshot` 均在 `ipc.rs` 注册 | 手工 + 代码审查 |
 | V22 | **三平台可编译**：Linux / macOS 由既有 CI 矩阵（`ubuntu-latest` / `macos-latest`）的 `cargo test --workspace --all-targets` 覆盖；Windows 由开发机 `cargo check` + `cargo test` 覆盖。本文**不新增**交叉编译 job | 命令（CI + 开发机） |
-| V23 | **三平台口径各一**：Windows 私有工作集、Linux 工作集（`memoryAdditive == false`）、macOS `phys_footprint` 各取一次真机快照，`memoryBasis` / `memoryAdditive` 与 §2.4 一致。执行位置按 §10.1「平台验证分工」：Linux / macOS 走 CI 真机（可用 `#[cfg]` 门控的实机用例），Windows 走开发机。macOS 还需确认 WebView 进程不在子树内时如实展示平台托管说明（§2.3） | 手工 / 实机用例 |
+| V23 | **三平台口径各一**：Windows 私有工作集、Linux 工作集（`memoryAdditive == false`）、macOS `phys_footprint` 各取一次真机快照，`memoryBasis` / `memoryAdditive` / `memoryEqualsFootprint` 与 §2.4「取数映射」逐项一致。执行位置按 §10.1「平台验证分工」：Linux / macOS 走 CI 真机（可用 `#[cfg]` 门控的实机用例），Windows 走开发机（含 V27）。macOS 还需确认 WebView 进程不在子树内时如实展示平台托管说明（§2.3） | 手工 / 实机用例 |
 | V24 | **滚动记忆不改壳**：实现后 `AppShell` 无 diff、无新增内层滚动容器，表头吸顶位置与 R0 前一致 | 代码审查 + 手工 |
 | V25 | **`notImplemented` 产出条件收窄**：仅在非三平台目标构建或该平台后端未定案时出现；三平台齐备后，正常构建中该取值不出现在 `processTree` 能力上 | 单测 + 代码审查 |
 | V26 | **`webviewDetached` 按平台确定**：macOS 为 `true`、Windows / Linux 为 `false`；为 `true` 时 UI 必现平台托管说明，且 WebView 家族进程**不**因镜像名被收进 `entries` | 单测 + 手工 |
+| V27 | **Windows 私有工作集等价关系被钉住**：`#[cfg(target_os = "windows")]` 实机用例断言 `sysinfo` 的 `virtual_memory()` 与 `GetProcessMemoryInfo(PROCESS_MEMORY_COUNTERS_EX).PrivateUsage` 逐字节相等（不相等即说明该行内存口径已静默变成「虚拟内存」）。**断言对象必须是静止进程**（如自建并阻塞的子进程）：两次读数不可能真正同刻，实测对采样器自身取数时 `memory == WorkingSetSize` 与 `virtual_memory == PrivateUsage` 均为 no（读之间继续分配），对其余进程为 yes——拿自身当断言对象必然假红。**探针已实测（2026-11-26，`cmd /c ping` 静止子进程，5/5 次两个等式均逐字节相等）**，本项剩余工作只是把它移植为 crate 实机用例。不进 CI（Windows 由开发机跑，§10.1）。理由：`virtual_memory()` 在 Linux / macOS 是虚拟地址空间大小，Windows 上却是 `PrivateUsage`，属**未文档化的语义挪用**（§2.4 取数约束 1） | 实机用例（开发机） |
 
 ---
 
@@ -677,12 +701,12 @@ R1b / R1c 可与 R2 并行；R2 不等 R1b / R1c，但要求能力声明在未�
 
 ## 12 开放问题
 
-只列**不影响本期闭环**的问题：每条都给出「未定案时的确定行为」，因此不阻塞开工。
+只列**不影响本期闭环**的问题：已定案的保留原位并标注「已定案」，未定案的给出「未定案时的确定行为」，因此不阻塞开工。
 
-| # | 问题 | 未定案时的确定行为 |
+| # | 问题 | 结论 / 未定案时的确定行为 |
 |---|---|---|
-| OQ1 | 平台后端选 `sysinfo` 还是手写 API（**三平台各自独立定案**） | **仓库当前没有 `sysinfo`**（`Cargo.lock` 里的 `procfs-core` 是 `minidump-writer` 的传递依赖，不可直接当采样后端）。优先 `sysinfo`（一套代码覆盖三平台），前置条件：单次遍历即能同时给出 `pid` / `parentPid` / `startTime` / 内存 / CPU 累计时间 / `threadCount`，且新增依赖过审。不满足则该平台改手写：Windows `NtQuerySystemInformation`（需补 `Win32_System_ProcessStatus`、`Win32_System_Diagnostics_ToolHelp` feature，现有 feature 清单无进程枚举项）、Linux 遍历 `/proc`（可复用现有 `libc`）、macOS `sysctl` + `proc_pidinfo`。某平台未定案时，该平台的 `processTree` 能力报 `notImplemented`，tab 显示原因（§2.7、§10.2 V25）。新增依赖 / 新增 feature 一律单独过审 |
-| OQ2 | 角色分类的数据源细节 | 判据已定（§2.3 三层），来源随 OQ1：Windows 读命令行、Linux 读 `/proc/<pid>/cmdline`、macOS 需 `sysctl`。**必须**有「读不到命令行」的降级角色 `webviewUnknown` 并仍计入自身 |
+| OQ1 | 平台后端选 `sysinfo` 还是手写 API（**三平台各自独立定案**） | **已定案（2026-11-26，开发机实测 + 上游源码核对）**：三平台统一走 `sysinfo 0.40`（`default-features = false`、`features = ["system"]`），仅两处口径修正——Windows 私有工作集借 `virtual_memory()`、macOS `phys_footprint` 用 `libc::proc_pid_rusage` 补取（§2.4「取数映射」）。实测依据（Windows，315 进程）：单次 `CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS)` + `Process32NextW` 一轮拿全，首次 13.6ms / 二次 8.1ms（默认刷新与精简刷新同量级），满足 §2.2 约束 1；`memory()` 与 `PROCESS_MEMORY_COUNTERS_EX.WorkingSetSize`、`virtual_memory()` 与 `PrivateUsage` **逐字节相等**；`parentPid` / `startTime` / CPU 累计时间全部可用。源码核对：Linux `memory()` 是 `/proc/<pid>/statm` 的 resident（正好是 `memoryAdditive == false` 的工作集口径）；macOS `memory()` 是 `pti_resident_size`（RSS），**不是** `phys_footprint`，故必须用 `libc` 补取（`libc 0.2` 已含 `proc_pid_rusage`、`rusage_info_v2.ri_phys_footprint`、`proc_taskinfo.pti_threadnum`）。已知缺口：`sysinfo` 不暴露 `PROCESSENTRY32W.cntThreads`（Windows `tasks()` 恒 `None`），Windows `hostThreadCount` 落 `null`（升级路径见 §5.3）；默认刷新项不含命令行，必须显式 `with_cmd(UpdateKind::Always)`（§2.3）。**仍须单独过审**：新增依赖只有 `sysinfo` 一个，连带 `windows >=0.62,<0.63`（与工作区 `windows 0.62.2` 同版本，不重复编译）、`ntapi`、`memchr`、macOS 的 `objc2-core-foundation` / `objc2-io-kit`。过审不通过则回退手写：Windows `NtQuerySystemInformation`（需补 `Win32_System_ProcessStatus`、`Win32_System_Diagnostics_ToolHelp` feature）、Linux 遍历 `/proc`（可复用现有 `libc`）、macOS `sysctl` + `proc_pidinfo`。某平台未定案时，该平台的 `processTree` 能力报 `notImplemented`，tab 显示原因（§2.7、§10.2 V25）。新增依赖 / 新增 feature 一律单独过审 |
+| OQ2 | 角色分类的数据源细节 | 判据已定（§2.3 三层），来源随 OQ1（**已定案 `sysinfo`**）：三平台统一由 `sysinfo` 的 `cmd` 提供——Windows 经 `NtQueryInformationProcess` 读目标进程 PEB 的 `RTL_USER_PROCESS_PARAMETERS`（含 32 / 64 位分支）、Linux 读 `/proc/<pid>/cmdline`、macOS 走 `sysctl(KERN_PROCARGS2)`，均由上游封装，crate 侧**不另写系统调用**。**必须**显式 `with_cmd(UpdateKind::Always)`，否则默认刷新下 `cmd` 恒空（§2.3 已实测）。实测同一时刻 315 个进程中 123 个可读，其余一律落 `webviewUnknown` 并仍计入自身 |
 | OQ3 | 将来是否扩展为「全机视图」 | 本期不做。若扩展，必须重新引入**按需指标机制**（原位掩码）与隐私边界（会看到其他应用的进程名）；只有出现**第二个消费者**时才引入按需指标，单 tab 单消费者下它只增加复杂度 |
 | OQ4 | 采样 crate 的平台相关单测是否进 CI | 跨平台单测只覆盖纯逻辑（建父子表、DFS、角色分类、PID 复用校验）；OS 调用层用 trait 隔离，CI 跑 mock 实现。CI 矩阵已含 `ubuntu-latest` + `macos-latest`（`cargo test --workspace --all-targets`），新增 crate 自动纳入，无需另加 job；Windows 由开发机验证（§10.1、§10.2 V22） |
 | OQ5 | 是否与「工具运行面板」共享组件 | 不共享。工具运行态已在聊天卡片侧交付，两者行模型不同（任务 vs 进程）；强行共用会把 `Task` 语义漏进本 tab |

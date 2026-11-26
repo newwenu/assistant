@@ -19,10 +19,23 @@
   --storage-sticky-top: 40px;
 }
 
-.storage-toolbar-wrap {
+.resource-tabs .ant-tabs-nav {
   position: sticky;
   top: 0;
   z-index: 3;
+  height: var(--storage-sticky-top);
+  margin: 0 calc(var(--settings-page-pad) * -1) 12px;
+  padding: 0 var(--settings-page-pad);
+  background: var(--color-bg);
+  border-bottom: 1px solid var(--color-border-secondary);
+}
+
+.resource-tabs .ant-tabs-tab {
+  padding-block: 0;
+  font-size: 13px;
+}
+
+.storage-toolbar-wrap {
   margin: 0 calc(var(--settings-page-pad) * -1) 12px;
   padding: 8px var(--settings-page-pad);
   background: var(--color-bg);

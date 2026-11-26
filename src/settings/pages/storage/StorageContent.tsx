@@ -1,7 +1,6 @@
 import React from "react";
 import { Button, Empty, Spin } from "antd";
 import { useTranslation } from "react-i18next";
-import { SettingsPageShell } from "../../shared/layout/SettingsPageShell";
 import { AttachmentBlock } from "./AttachmentBlock";
 import { EntryBlock } from "./EntryBlock";
 import { ResidualSection } from "./ResidualSection";
@@ -16,7 +15,7 @@ export const StorageContent: React.FC = () => {
 
   if (breakdown === null) {
     return (
-      <SettingsPageShell wide>
+      <>
         {phase === "initial" && error === null ? (
           <div className="storage-loading">
             <Spin />
@@ -38,12 +37,12 @@ export const StorageContent: React.FC = () => {
             </Button>
           </Empty>
         )}
-      </SettingsPageShell>
+      </>
     );
   }
 
   return (
-    <SettingsPageShell wide>
+    <>
       <SnapshotToolbar
         sampledAt={breakdown.sampledAt}
         refreshing={phase === "refreshing"}
@@ -62,6 +61,6 @@ export const StorageContent: React.FC = () => {
         inventory={breakdown.inventory}
         onScan={snapshot.scanInventory}
       />
-    </SettingsPageShell>
+    </>
   );
 };

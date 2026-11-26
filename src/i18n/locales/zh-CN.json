@@ -7,7 +7,7 @@
       "providers": { "title": "Provider 管理" },
       "agents": { "title": "Agent 模式" },
       "mcp": { "title": "MCP 服务" },
-      "storage": { "title": "存储管理器" },
+      "resource": { "title": "资源监视器" },
       "about": { "title": "关于" },
       "vault": "密码保险库",
       "vault_settings": { "title": "密码保险库设置" },
@@ -371,6 +371,38 @@
     },
     "entity_list": {
       "search_placeholder": "搜索{{title}}"
+    },
+    "resource": {
+      "tab": {
+        "storage": "存储",
+        "processTree": "进程树"
+      },
+      "column": {
+        "process": "进程",
+        "role": "角色",
+        "cpu": "CPU",
+        "memory": "内存"
+      },
+      "summary": {
+        "self": "自身",
+        "subtree": "全树",
+        "hostThreads": "宿主线程"
+      },
+      "status": {
+        "notImplemented": "当前平台暂不支持进程资源监视",
+        "unreadable": "读取进程信息失败",
+        "memoryUnavailable": "本平台无可求和内存口径",
+        "truncated": "本次扫描不完整（已达深度/条数上限）",
+        "cpuFirstSample": "本拍无基准",
+        "coverageSubtreeOnly": "只覆盖本进程子树；主动脱离父子链的进程不可见",
+        "coveragePlatformManaged": "WebView 子进程由系统托管，不在本应用子树内",
+        "capabilitiesLoadFailed": "能力声明读取失败，暂不显示进程数据"
+      },
+      "caliber": {
+        "winPrivate": "私有工作集",
+        "linuxWorkingSet": "工作集（含共享页重复计数）",
+        "macFootprint": "物理占用"
+      }
     },
     "storage": {
       "title": "存储管理器",

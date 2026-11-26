@@ -103,6 +103,8 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         cmd::import_attachment,
         cmd::get_asset_dirs,
         cmd::get_attachment_limits,
+        cmd::get_resource_capabilities,
+        cmd::get_process_snapshot,
         cmd::start_screenshot,
         cmd::get_screenshot_session,
         cmd::crop_screenshot,
