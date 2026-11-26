@@ -5,8 +5,9 @@
 | 状态 | 待实施（观测层规格：资源监视器页面容器 + **进程树** tab） |
 | 日期 | 2026-11-25 |
 | 类型 | 设计规格（取数模型、契约、UI、验收） |
-| 关联 | **无外部依赖**：正文所需的定义、词表、字段、装配点全部写在本文件内，不引用任何其它文档，也不存在「见某文档」的悬空引用。唯一被提及的其它文件是 `I54-resource-monitor-spec.md`，仅作**历史参考**，非权威，已被本文取代 |
-| 影响范围 | 前端：`src/settings/pages/StorageSettings.tsx`（改为容器）、`src/settings/pages/storage/StorageContent.tsx`（去壳）、`src/settings/core/registry/builtinRegistry.ts`（label 值与 keywords）、`src/settings/pages/resource/ProcessTreeTab.tsx`（新增）、`src/services/desktop/resourceService.ts`（新增）、i18n 两份 locale。后端：`src-tauri/src/cmd/resource.rs`（新增）、`src-tauri/src/cmd/mod.rs`、`src-tauri/src/ipc.rs`、`src-tauri/Cargo.toml`、`src-tauri/crates/assistant-resource-probe/`（新增）、`src-tauri/crates/assistant-protocol/src/resource.rs`（新增）与其 `lib.rs` / `tests/protocol_bindings.rs`、`src/types/protocol.contract.ts`（生成）。**不改**任何 golden fixture |
+| 关联 | **无外部依赖**：正文所需的定义、词表、字段、装配点全部写在本文件内，不引用任何其它文档，也不存在「见某文档」的悬空引用。正文提及的其它文件只有两份，且均非权威：`I54-resource-monitor-spec.md`（**历史参考**，已被本文取代）、`I61 存储管理器规格`（**已归档**，仅用于说明存储 tab 的挂载位，其内容不属本文） |
+| 平台 | **三平台全交付（代码与能力层）**：Windows / Linux / macOS。仓库既有三平台后端范式（沙箱、生物识别、解锁对话框、屏幕锁定、崩溃转储均各有 `cfg` 分模块实现），本文沿用同一范式；非目标 OS 构建落 `notImplemented`（§2.7）。Linux / macOS 由 CI 真机验证、Windows 由开发机验证（§10.1）。三平台安装包不属本期（打包发布为 `ARCHITECTURE.md` I8，未开始） |
+| 影响范围 | 前端：`src/settings/pages/StorageSettings.tsx`（改为容器）、`src/settings/pages/storage/StorageContent.tsx`（去壳）、`src/settings/core/registry/builtinRegistry.ts`（label 值与 keywords）、`src/settings/pages/resource/ProcessTreeTab.tsx`（新增）、`src/services/desktop/resourceService.ts`（新增）、i18n 两份 locale。后端：`src-tauri/src/cmd/resource.rs`（新增）、`src-tauri/src/cmd/mod.rs`、`src-tauri/src/ipc.rs`、`src-tauri/Cargo.toml`、`src-tauri/crates/assistant-resource-probe/`（新增，含三平台后端与 mock）、`src-tauri/crates/assistant-protocol/src/resource.rs`（新增）与其 `lib.rs` / `tests/protocol_bindings.rs`、`src/types/protocol.contract.ts`（生成）。golden fixture 只允许 `snapshot.full.json` / `snapshot.vaultless.json` 的 `pages[].id` 一行变化，由 `vitest -u` 重生成；`snapshot.diff.json` 不变（§10.2 V4） |
 | 一句话 | 用一次全系统快照 + 父子链过滤 + DFS 子树，把「本应用自己这一棵进程树」摊成一张表，表头给「自身」与「全树」两个合计；采样是纯拉取 + CPU 差分缓存，不常驻、不预热、不登记进启动分层 |
 
 > **本文取代 `I54-resource-monitor-spec.md`。I54 只作历史参考，不再作为权威来源**：两者冲突时以本文为准，实施一律不参照 I54，也不要求 I54 与本文保持同步。
@@ -15,7 +16,9 @@
 >
 > **范围**：设置页「资源监视器」的**页面容器**与其中的**进程树 tab**。存储 tab 已完成，其内容**不在本文范围内**（以既有实现为准，本文不改动其行为），本文只为其保留挂载位（§3.4）。
 
-**编号约定**：`P1–P6` 指标方向、`V1–V20` 验收判据、`R0–R2` 实施批次、`OQ1–OQ7` 开放问题。前缀互不重叠，正文内引用不再歧义。本文中的「必须 / 禁止」为可验收约束。
+**编号约定**：`P1–P6` 指标方向、`V1–V26` 验收判据、`R0` / `R1a` / `R1b` / `R1c` / `R2` 实施批次、`OQ1–OQ9` 开放问题。前缀互不重叠，正文内引用不再歧义。本文中的「必须 / 禁止」为可验收约束。
+
+**进度表**：`docs/store/I76-process-resource-monitor-tasklist.md` 只记「改哪里、改没改」，语义一律以本文为准。
 
 ---
 
@@ -35,6 +38,11 @@
 | 0.8 | **峰值本期不交付**，且不留任何占位 UI | 证据自指：进程内采样在 OOM / 卡死时必然丢失最后数据（§5.6、§11.1） |
 | 0.9 | 命令只有**两条**，能力声明独立成命令、不含任何数字 | 能力与数字同响应必然需要跨 tab 聚合响应（§6.1） |
 | 0.10 | 推迟项（峰值 / 停止 / 任务归因）全部登记在 §11，正文不留待补章节 | 悬空引用使文档无法闭环（§11） |
+| 0.11 | 本期**三平台全交付**（代码与能力层：Windows / Linux / macOS），不按平台裁剪 | 仓库既有三平台后端范式（沙箱 / 生物识别 / 解锁对话框 / 屏幕锁定 / 崩溃转储），CI 已在 `ubuntu-latest` + `macos-latest` 真机跑全工作区测试；§2.4 的三种内存口径各需对应实现与证据（§2.4、§10.1、§10.2 V14） |
+| 0.12 | 平台后端**按平台分批**（R1a → R1b → R1c），每批单独可编译、可合入 | 三平台一次性合入会把三套编译差异压进同一次 `contract:gen` + 装配，回滚粒度过大（§10.1） |
+| 0.13 | **R0 / R2 是原子批次**：R0 内含 11 个 DTO + 契约生成 + 两条命令骨架（返回 `notImplemented`），R2 一次性交付表 + 两个合计 + 宿主线程数 + 口径分支 + 全部状态展示 | 批次若留中间态，合入后必然出现「invoke 到不存在的命令」或「有表无合计」，都属半成品；命令骨架要返回类型化响应，因此 DTO 必须在 R0 而非 R1a（§10.1） |
+| 0.14 | `notImplemented` **保留**，语义收窄为「非目标 OS 构建 / 该平台后端未定案」 | 三平台交付后若删除该取值，§2.7「四个取值全部被使用」即自相矛盾；保留并明确产出条件（§2.7、§10.2 V25） |
+| 0.15 | OS 层 `SnapshotSource` trait + mock 实现**计入交付物** | V8 / V10 / V11 / V12 都要注入假快照；不列为交付物，这四条判据无法落地（§7.1） |
 
 ---
 
@@ -47,7 +55,9 @@
 | 页面容器 | 一个页面（id `resource`，路由 `/settings/resource`）、页内两个 tab（存储 / 进程树）、统一 sticky 基准 |
 | 进程树 tab | 一张实时表 + 两个合计 + 宿主线程数 + 口径与降级展示 |
 | 契约 | 两条命令（§6.1）、11 个 DTO（§6.2）、生成后的 `src/types/protocol.contract.ts` |
-| 采样 | 新 crate `assistant-resource-probe`（§6.4） |
+| 采样 | 新 crate `assistant-resource-probe`（§6.4）：OS 层 `SnapshotSource` trait + 三平台后端（`win.rs` / `linux.rs` / `macos.rs`）+ 纯逻辑层（建父子表 / DFS / 角色分类 / PID 复用校验）+ mock 实现 |
+| 平台覆盖 | Windows / Linux / macOS 三平台 `processTree` 均为 `available`；非目标 OS 构建为 `notImplemented`（§2.7） |
+| 验证覆盖 | Linux / macOS 走 CI 真机，Windows 走开发机（§10.1「平台验证分工」）；不新增交叉编译 job |
 
 ### 1.2 本期明确不交付
 
@@ -56,7 +66,9 @@
 | 峰值区（峰值内存 / 峰值 CPU / 热点） | 进程内采样无法在 OOM / 卡死时保留最后数据；写端必须是独立进程，且受「单 package 单产物」约束不能进 bundle，分发路径未定 | §11 |
 | 停止能力（行级停止按钮） | 句柄已具备，缺「MCP 纳入统一回收抽象」与「句柄暴露成标识」；属范围选择，不是被任何登记表阻塞 | §11 |
 | 任务级归因（任务名列） | 需进程登记表 + 身份代际 | §11 |
+| 三平台安装包 / 分发 | 打包发布是独立立项（`ARCHITECTURE.md` I8，当前未开始）；本文只交付代码与能力层 | §10.1「交付边界」 |
 | 全机视图（全系统进程表） | 不同产品形态，涉及隐私边界与按需指标机制 | §12 OQ3 |
+| 非目标 OS（Android / iOS / BSD 等） | 本期只承诺三平台；其它目标构建一律 `notImplemented`，不做「部分可用」 | §2.7 |
 
 **不交付项一律不出现占位 UI**：不放灰色按钮、不放「暂无数据」空块、不建永空的读取器。能力声明（§6.1）必须能让前端知道该 tab 处于 `notImplemented`。
 
@@ -94,7 +106,7 @@
 
 | # | 约束 |
 |---|---|
-| 1 | **禁止**对每个 PID 各查一次系统接口。那是 O(N) 次系统调用，N 随子树增长，开销随时序恶化 |
+| 1 | **每拍只做一轮全量枚举**：每个进程在**一轮**里最多取一次基础字段，**禁止**按字段分次枚举（先取一遍 pid、再取一遍内存……），也**禁止**按子树分组重复枚举。Windows 用 `NtQuerySystemInformation(SystemProcessInformation)` 一轮拿全；Linux 遍历 `/proc` 每进程读 `stat` / `statm`（属同一轮，不是「第二次快照」）；macOS `proc_listpids` 一轮列出 PID 后 `proc_pidinfo` 每进程取一次。三者的「一轮」等价，判据是**每拍的总枚举次数为 1**，不是「系统调用次数为 1」 |
 | 2 | 一次快照必须能拿到：`pid` / `parentPid` / `startTime` / 内存 / CPU 时间（可选 `threadCount`）。拿不到的字段输出 `null`，**禁止**为它补发第二次全系统快照 |
 | 3 | **镜像名只能作粗筛**，**禁止**用它判定归属。`msedgewebview2.exe` 是全机器共享的名字，按名字收进程必然把别的应用的进程算进来 |
 | 4 | 建父子链后**必须**做 PID 复用校验：`child.startTime >= parent.startTime` 且父 PID 在快照内。不通过则排除该进程并标注，**禁止**静默并入子树 |
@@ -105,10 +117,12 @@
 
 把三层压成一层（「命令行含 `--type=` 就是 WebView」）是本规格最容易犯的错：命令行不在系统快照里，逐进程读命令行会让 §2.2 的「一次快照」失效，并让「读不到命令行」变成一个**错误结论**而不是**未知**。
 
+**唯一的例外**：第 ③ 层对**已确认在子树内且家族命中**的进程读命令行，是 §2.2 约束 1 允许的有界例外——范围被 ①② 层收窄到极小集合，不是第二次全量枚举。命令行走不到时不重试、不降级归属，只落 `webviewUnknown`。
+
 | 层 | 判据 | 取数 | 作用 |
 |---|---|---|---|
 | ① 归属 | 从 root 沿 `parentPid` 链可达 | 一次快照内 | 决定「在不在本应用子树」 |
-| ② 家族 | `exeName` ∈ WebView 家族（`msedgewebview2.exe` / `msedge.exe` / `chrome.exe`，按平台配置） | 一次快照内 | 决定「是不是 WebView 系」 |
+| ② 家族 | `exeName` ∈ 本平台 WebView 家族：Windows `msedgewebview2.exe` / `msedge.exe` / `chrome.exe`；Linux `WebKitWebProcess` / `WebKitNetworkProcess`；macOS `com.apple.WebKit.WebContent` / `com.apple.WebKit.Networking` / `com.apple.WebKit.GPU` | 一次快照内 | 决定「是不是 WebView 系」 |
 | ③ 细分 | 命令行 `--type=renderer` / `--type=gpu-process` / 其余 | 逐进程额外读取（仅对已确认在子树内且家族命中的进程） | 决定「是哪一类 WebView 进程」 |
 
 第 ② 层用镜像名不违反 §2.2 约束 3：那里禁止的是用镜像名**判定归属**，归属已由第 ① 层定死；镜像名只在**已确定的子树内**分家族。
@@ -127,6 +141,8 @@
 
 1. **`webviewUnknown` 必须计入自身合计**。若把「命令行读不到」降级成 `otherChild`，一次读取失败就会把整棵 WebView 子树踢出「自身」合计——而「本应用占多少」正是本 tab 要回答的核心问题，那会是一次静默错误，比少细分一档严重得多。读不到命令行只影响第 ③ 层，**永远不得影响 ① ② 层**。
 2. **DFS 必须覆盖任意深度**。WebView2 的 renderer / GPU / utility 是 `msedgewebview2.exe` 根进程的子进程，即宿主的**孙进程**；只取直接子进程会漏掉真正吃内存的那几个。
+
+**平台可达性差异（三平台必读）**：Windows 与 Linux 的 WebView 进程是宿主的后代（`msedgewebview2.exe` 根进程由宿主创建、`WebKitWebProcess` 由宿主 fork），① 层可达，角色细分成立。macOS 的 WKWebView 内容进程由系统 `launchd` / XPC 托管，**通常不是宿主的后代**，① 层会判为不可达——此时表内不含 WebView 行、`selfGroup` 只含宿主，必须在 UI 用 `coverage` 说明「WebView 子进程由系统托管、不在本应用子树内」；**禁止**用镜像名绕过 ① 层把它们收进来（§2.2 约束 3）。是否改用 XPC 归属辅助见 §12 OQ9。
 
 `host` 行的 `parentPid` 是宿主的父进程（如 `explorer.exe`），不在 `entries` 内，只作诊断信息，**禁止**前端据此查父行（树序由后端出，§5.1）。
 
@@ -160,9 +176,9 @@
 | 项 | 规则 |
 |---|---|
 | 驱动 | **纯拉取**：每次 `get_process_snapshot` 调用都读一次快照 + 差分缓存 |
-| 缓存 | 只缓存上一拍的**逐 PID CPU 累计时间**，用于算差分；超时即整体丢弃 |
+| 缓存 | 只缓存上一拍的**逐 PID CPU 累计时间**，用于算差分；超时即整体丢弃。缓存**类型**定义在 `assistant-resource-probe`（纯逻辑，可单测）；缓存**实例**是 `cmd/resource.rs` 内的 `OnceLock<Mutex<CpuDiffCache>>`，首次命令调用时才初始化——**禁止**用 `AppHandle::state` 持有、**禁止**挂到 `boot::access.rs` 的访问器、**禁止**成为 `boot::RESOURCES` 的表项，否则违反「页面未打开时不执行采样代码」 |
 | 空闲 | 超过 `CPU_CACHE_IDLE_TIMEOUT_MS` 无调用 → 缓存失效，下一次调用重新从首拍开始（CPU 为 `null`） |
-| 禁止 | **禁止**启动预热采样；**禁止**后台常驻采样线程；**禁止**把采样登记为任何**启动期资源项**（本文对「启动期资源项」的定义：在应用启动阶段按序构建、供后续按名取用的资源表条目；判定方式：页面未打开时，采样相关代码不得执行）；**禁止**为「开始 / 停止采样」增设命令 |
+| 禁止 | **禁止**启动预热采样；**禁止**后台常驻采样线程；**禁止**把采样登记为**启动分层资源项**——该禁令覆盖两个入口：`boot::RESOURCES` 中 `Lane::Boot` 的项（由 `boot::run_boot` 在启动期按序 `ensure`），以及 `Lane::Idle` 的项（由 `boot::runner::run_idle` 在启动完成后惰性 `ensure`）；判定方式统一为「页面未打开时，采样相关代码不得执行」；**禁止**为「开始 / 停止采样」增设命令 |
 | 常量 | `SAMPLE_INTERVAL_MS = 1000`（前端拉取间隔）、`CPU_CACHE_IDLE_TIMEOUT_MS = 3000`、`MIN_CPU_DELTA_MS = 500`（同一 PID 两次读数最小间隔，不足则沿用缓存并输出 `null`）、`MAX_ENTRIES = 512`、`MAX_DEPTH = 16`。全部为命名常量，禁止魔法数字；`CPU_CACHE_IDLE_TIMEOUT_MS` 必须落在 `SAMPLE_INTERVAL_MS` 的 2–3 倍区间 |
 
 「停表」不是一条命令，而是**没有调用**这一事实本身：没有常驻线程、没有单例，因此不存在泄漏路径。
@@ -175,7 +191,7 @@
 |---|---|---|
 | `available` | 有数字，可直接展示 | 能力声明、快照顶层、组的 `memoryAvailability` |
 | `unavailable` | 本平台无该口径 / 该指标不可得（如 Linux 无可求和内存口径） | 快照顶层、组的 `memoryAvailability` |
-| `notImplemented` | 本期未实现（平台后端未定案、推迟项） | 能力声明、快照顶层 |
+| `notImplemented` | 未实现：**非目标 OS 构建**（本期三平台之外）或该平台后端尚未定案 | 能力声明、快照顶层 |
 | `unreadable` | 读到了但读取 / 解析失败 | 快照顶层 |
 
 约束：
@@ -215,7 +231,7 @@
 |---|---|---|
 | 1 | **壳只能有一个** | 现在 `StorageContent` 自己在「加载/失败」与「正常」两个返回分支里各渲染一次 `SettingsPageShell wide`。容器化后由 `StorageSettings.tsx` 渲染**唯一一次** `SettingsPageShell wide`，`StorageContent` 改为**只渲染 body**（去掉自带壳）。否则会出现壳套壳：padding 双算、`--storage-sticky-top` 作用域嵌套、页面标题重复 |
 | 2 | **tab 栏与表头共用 sticky 基准** | 复用既有 CSS 变量 `--storage-sticky-top`（定义在 `.settings-page-shell` 上，当前值 40px）。**禁止**为第二个 tab 引入第二个偏移常量 |
-| 3 | **切换不重建壳** | `Tabs` 用 `activeKey` + `items`，与 `VaultSettings.tsx` 同形；切 tab 只换 `children`，壳与滚动容器保持。滚动位置按 tab 独立记忆（各 tab 自己保存 `scrollTop`，壳不重置） |
+| 3 | **切换不重建壳** | `Tabs` 用受控写法（`activeKey` + `onChange` + `items`），切 tab 只换 `children`，壳与滚动容器保持。滚动位置按 tab 独立记忆：由**容器层**（`StorageSettings`）通过页面根节点的 `ref` 向上取第一个可滚动祖先（即 `AppShell` 的 `Layout.Content`），按 `activeKey` 保存 / 恢复 `scrollTop`；**禁止**为 tab 新建内层滚动容器（会改变 sticky 基准，破坏 §3.3 第 2 条），也**禁止**为此修改 `AppShell`（§7.2） |
 
 ### 3.4 存储 tab 挂载位
 
@@ -319,12 +335,13 @@
 
 | 情形 | UI |
 |---|---|
-| 快照顶层 `notImplemented` | 整个 tab 显示「本平台后端未定案」+ `reason`，不显示空表 |
+| 快照顶层 `notImplemented` | 整个 tab 显示「本平台后端未定案 / 非目标平台」+ `reason`，不显示空表 |
 | 快照顶层 `unreadable` | 显示读取失败 + `reason`，保留上一次成功快照并标注其 `sampledAt` |
 | 组 `memoryAvailability == unavailable` | 见 §5.4 第二行 |
 | `truncated == true` | 表上方横幅「本次扫描不完整（已达深度/条数上限）」 |
 | CPU `null` | 单元格显示「本拍无基准」，**禁止**进错误态、**禁止**提示「数据加载失败」。首帧必然如此（§2.6 纯拉取，每次打开 tab 都是首拍） |
 | `coverage == subtreeOnly` | 常驻一行说明「只覆盖本进程子树；主动脱离父子链的进程不可见」 |
+| `webviewDetached == true`（本期即 macOS） | 常驻一行说明「WebView 子进程由系统托管，不在本应用子树内」（§2.3 平台可达性差异） |
 | 能力声明读取失败 | **本地**横幅 + 保留上次渲染；**禁止**默认判为可用，**禁止**改 wire（§2.7 约束 3） |
 
 ### 5.6 峰值：本期不交付
@@ -350,6 +367,8 @@
 | `get_process_snapshot` | 一次采样的全部结果：顶层口径 + 两个合计 + 树序 `entries` + 宿主线程数 | **取数失败不抛命令错误**，返回 `availability = unreadable` + `reason`（可解释失败比异常更好用） |
 
 两条命令**无输入参数**，因此本期**不存在输入 DTO**，不涉及 `deny_unknown_fields` / `ts(optional = nullable)`。
+
+**根 PID 由命令层注入**：`cmd/resource.rs` 调用采样时传 `std::process::id()`，作为 `rootPid` 与 DFS 起点。`assistant-resource-probe` **不自行读取宿主身份**（§6.4），保证 crate 可被单测注入任意根。
 
 三条设计理由（写死，防止后续被拆）：
 
@@ -385,6 +404,7 @@
 | | `memoryEqualsFootprint` | `bool` | 内存合计是否≈物理占用（§2.4）；与上者**相互独立**，禁止合并 |
 | | `cpuBasis` | `CpuBasisDto` | `singleCorePercent` |
 | | `coverage` | `CoverageDto` | `subtreeOnly`：明确「只覆盖本进程子树」，不是采样失败 |
+| | `webviewDetached` | `bool` | 本平台 WebView 进程由系统托管、不属本应用子树（本期仅 macOS 为 `true`）。前端据此展示 §5.5 的平台托管说明，**不得**自行按平台名推断 |
 | | `truncated` | `bool` | 是否因深度 / 条数上限截断 |
 | | `hostThreadCount` | `u32 \| null` | 仅宿主；取不到为 `null`，禁止填 `0`（§5.3） |
 | | `selfGroup` | `ProcessGroupDto` | 自身合计 |
@@ -435,8 +455,9 @@
 
 | 层 | 落点 | 职责边界 |
 |---|---|---|
-| 命令层 | `src-tauri/src/cmd/resource.rs`（新增） | 只做能力声明与快照转发，**不实现采样**、不承载其它 tab 明细 |
-| 采样 crate | `src-tauri/crates/assistant-resource-probe`（新增） | 只依赖 OS API 与 `assistant-protocol`；**禁止**反向引用应用层（路径、根 PID 由调用方注入） |
+| 命令层 | `src-tauri/src/cmd/resource.rs`（新增） | 只做能力声明与快照转发，**不实现采样**、不承载其它 tab 明细；注入 `std::process::id()` 作为根 PID，持有 `OnceLock<Mutex<CpuDiffCache>>`（§2.6） |
+| 采样 crate | `src-tauri/crates/assistant-resource-probe`（新增） | 只依赖 OS API 与 `assistant-protocol`；**禁止**反向引用应用层（路径、根 PID 由调用方注入）。内部结构：`lib.rs`（导出面）/ `source.rs`（`SnapshotSource` trait 与 `RawProcess` 快照行）/ `win.rs`·`linux.rs`·`macos.rs`（`#[cfg(target_os = ...)]` 三平台后端）/ `classify.rs`（§2.3 三层角色判定）/ `tree.rs`（建父子表、DFS、PID 复用校验）/ `cpu.rs`（`CpuDiffCache`）/ `mock.rs`（测试用假快照） |
+| 平台依赖 | 该 crate 的 `Cargo.toml` | 需要 `[target.'cfg(target_os = "linux")'.dependencies]` 与 `[target.'cfg(target_os = "macos")'.dependencies]` 两个段；Unix 侧共用项用 `cfg(any(target_os = "linux", target_os = "macos"))` 段。Windows 侧复用工作区 `windows` 依赖（根 manifest 已有该段，Linux / macOS 依赖一律下沉到各自 crate，不改根 manifest 的平台段） |
 | DTO | `assistant-protocol/src/resource.rs`（新增） | 纯类型，不依赖任何内部 crate |
 | 前端服务 | `src/services/desktop/resourceService.ts`（新增） | 与 `storageService.ts` **分开文件、互不引用** |
 | 前端 UI | `src/settings/pages/resource/ProcessTreeTab.tsx`（新增） | 只消费 `get_process_snapshot` 与能力声明 |
@@ -445,30 +466,47 @@
 
 ## 7 装配点与前端落点
 
-### 7.1 Rust 侧（五处，缺一即构建或契约失败）
+### 7.1 Rust 侧（八处，缺一即构建或契约失败）
 
 | # | 文件 | 变更 |
 |---|---|---|
 | 1 | `src-tauri/Cargo.toml` | `[workspace] members` 加 `"crates/assistant-resource-probe"`（当前 14 个成员）；`[workspace.dependencies]` 加 `assistant-resource-probe = { path = "crates/assistant-resource-probe" }`；`[dependencies]` 加 `assistant-resource-probe = { workspace = true }` |
-| 2 | `src-tauri/crates/assistant-protocol/src/lib.rs` | 加 `pub mod resource;` 与 `pub use resource::*;`（与现有模块同形） |
+| 2 | `src-tauri/crates/assistant-protocol/src/lib.rs` | 加 `pub mod resource;` 与 `pub use resource::*;`，两处各一次：该文件 `pub mod` 组与 `pub use` 组分开且均为字母序，落点都是 `provider` 之后、`screenshot` 之前 |
 | 3 | `src-tauri/crates/assistant-protocol/tests/protocol_bindings.rs` | **两处各加一次**：`use assistant_protocol::{...}` 导入清单、`export_protocol_contract` 的 `declarations` 数组。该测试会断言「源码中 `#[derive(TS)]` 的类型名集合」与「导入清单」一致，漏加会直接失败 |
-| 4 | `src-tauri/src/cmd/mod.rs` | 加 `pub mod resource;` 与 `pub use resource::*;`（与 `storage` 同形） |
+| 4 | `src-tauri/src/cmd/mod.rs` | 加 `pub mod resource;` 与 `pub use resource::*;`，两处各一次：`mod` / `pub mod` 混排一组、`pub use` 一组，均为字母序，落点都是 `provider` 之后、`screenshot` 之前 |
 | 5 | `src-tauri/src/ipc.rs` | `generate_handler![...]` 内加 `cmd::get_resource_capabilities, cmd::get_process_snapshot` |
+| 6 | `src-tauri/crates/assistant-resource-probe/src/**` | 内部结构见 §6.4：`source.rs` 的 `SnapshotSource` trait + `RawProcess`、三平台 `win.rs` / `linux.rs` / `macos.rs`、纯逻辑 `classify.rs` / `tree.rs` / `cpu.rs`、测试用 `mock.rs`。**trait + mock 是交付物**，V8 / V10 / V11 / V12 依赖它 |
+| 7 | `src-tauri/crates/assistant-resource-probe/Cargo.toml` | 按 §6.4「平台依赖」加 `[target.'cfg(target_os = "linux")']` / `[target.'cfg(target_os = "macos")']` 两个依赖段；Windows 复用工作区 `windows` |
+| 8 | `src-tauri/Cargo.toml` 的 `windows` feature 清单 | 若某平台后端走手写（OQ1 未选 `sysinfo`），Windows 侧需追加进程枚举 feature（`Win32_System_ProcessStatus`、`Win32_System_Diagnostics_ToolHelp`）；新增 feature / 新增依赖一律**单独过审**后再改 |
 
-随后执行 `npm run contract:gen`（内部即 `contract:gen:protocol`，跑上面第 3 处），产出 `src/types/protocol.contract.ts`；`npm run contract:verify` 必须通过。
+**批次归属**：第 2 / 3 / 4 / 5 处随 **R0** 交付（命令骨架必须返回类型化响应，前端能力声明也要读生成类型）；第 1 / 6 / 7 / 8 处随 **R1a** 交付（crate 与平台后端）。
+
+随后执行 `npm run contract:gen`（其 `contract:gen:protocol` 子命令跑上面第 3 处），产出 `src/types/protocol.contract.ts`；`npm run contract:verify` 必须通过。
 
 **不新增 `[[bin]]`**：峰值推迟（§11），本期没有进程外二进制，因此不涉及「单 package 单产物」约束，也不预设 `src/bin/` 目录。
 
-### 7.2 前端侧（六处）
+### 7.2 前端侧（七处）
 
 | # | 文件 | 变更 |
 |---|---|---|
-| 1 | `src/settings/core/registry/builtinRegistry.ts` | 该页面项：`id` 改为 `resource`、`label` 键改为 `common.navigation.resource.title`、`keywords` 追加资源词（保留原存储词）；**categoryId / order / icon / emptyPage / load 不动** |
-| 2 | `src/i18n/locales/zh-CN.json`、`en-US.json` | `common.navigation.storage.title` **键名改为** `common.navigation.resource.title`，值为「资源监视器」/`Resource Monitor`；新增 `settings.resource.*`（tab 标题、列名、状态与原因文案、口径说明、`coverage` 说明）。**`settings.storage.*` 内容键一律保留** |
-| 3 | `src/settings/pages/StorageSettings.tsx` | 改为容器：`SettingsPageShell wide` 唯一一次 + antd `Tabs`（`activeKey`、两个 `items`），与 `VaultSettings.tsx` 同形 |
+| 1 | `src/settings/core/registry/builtinRegistry.ts` | 该页面项：`id` 改为 `resource`、`label` 键改为 `common.navigation.resource.title`、`keywords` 追加资源词（保留原存储词）；**categoryId / order / icon / emptyPage / load 不动**（icon 是否更换见 §12 OQ8，未定案前保持 `DatabaseOutlined`） |
+| 2 | `src/i18n/locales/zh-CN.json`、`en-US.json` | `common.navigation.storage.title` **键名改为** `common.navigation.resource.title`，值为「资源监视器」/`Resource Monitor`；新增 `settings.resource.*`（键表见下）。**`settings.storage.*` 内容键一律保留** |
+| 3 | `src/settings/pages/StorageSettings.tsx` | 改为容器：`SettingsPageShell wide` 唯一一次 + antd `Tabs`（受控写法：`activeKey` + `onChange` + 两个 `items`）；同时实现 §3.3 第 3 条的滚动记忆（`ref` → 向上取可滚动祖先 → 按 `activeKey` 存取 `scrollTop`） |
 | 4 | `src/settings/pages/storage/StorageContent.tsx` | **去掉自带的 `SettingsPageShell`**（当前「加载/失败」与「正常」两个分支各包一次），改为只渲染 body（§3.3 第 1 条） |
 | 5 | `src/settings/pages/resource/ProcessTreeTab.tsx`（新增） | 实时表 + 两个合计 + 宿主线程数 + 状态展示（§5） |
 | 6 | `src/services/desktop/resourceService.ts`（新增） | `getResourceCapabilities()` / `getProcessSnapshot()`，沿用 `tauriInvoke` 封装 |
+| 7 | `src/settings/__tests__/fixtures/snapshot.full.json`、`snapshot.vaultless.json` | 用 `vitest -u` 重生成；**只允许 `pages[].id` 由 `storage` → `resource` 一行变化**，`snapshot.diff.json` 不变（§10.2 V4） |
+
+**`settings.resource.*` 最小键表**（本期只允许这些键，新增键须回写本节）：
+
+| 键 | 用途 |
+|---|---|
+| `settings.resource.tab.storage` / `settings.resource.tab.processTree` | 两个 tab 标题 |
+| `settings.resource.column.process` / `role` / `cpu` / `memory` | 四列表头 |
+| `settings.resource.summary.self` / `summary.subtree` / `summary.hostThreads` | 两个合计 + 宿主线程数标签 |
+| `settings.resource.status.notImplemented` / `unreadable` / `memoryUnavailable` / `truncated` / `cpuFirstSample` / `coverageSubtreeOnly` / `coveragePlatformManaged` / `capabilitiesLoadFailed` | §5.5 的八种展示状态 |
+| `settings.resource.caliber.winPrivate` / `caliber.linuxWorkingSet` / `caliber.macFootprint` | §5.4 三种口径说明 |
+| `settings.resource.reason.*` | 仅当 `reason` 需要本地化时使用；后端给英文原文时前端直接展示，不建键 |
 
 **前端本地状态类型**（承载 §2.7 约束 3）：
 
@@ -495,6 +533,7 @@ type CapabilitiesView = ResourceCapabilitiesDto & { loadFailed?: boolean };
 | 内存指标不可得 | 平台无该口径 | 组 `memoryAvailability = unavailable` + 非空 `memoryReason`；**禁止**填 `0` |
 | 命令行读不到 | 权限 / 平台不支持 / 读取失败 | 落 `webviewUnknown` 并**仍计入自身合计**；禁止降级成 `otherChild`，禁止丢弃该进程 |
 | 能力声明读取失败 | 新命令异常 | 前端本地横幅 + 保留上次渲染；**禁止**默认判为可用 |
+| 非目标 OS 构建 | 编译目标不在三平台内 | 能力声明与快照顶层均 `notImplemented` + `reason`，tab 显示原因；**禁止**编译期剔除页面、禁止显示空表 |
 
 ---
 
@@ -519,7 +558,7 @@ type CapabilitiesView = ResourceCapabilitiesDto & { loadFailed?: boolean };
 | 在进程内采样自己的峰值 | OOM / 卡死时那次采样必然丢失 | 本期不做峰值；将来只允许外部产物（§5.6） |
 | 为推迟项留空块 / 灰按钮 / 永空读取器 | 用户以为功能坏了，且制造无人维护的死代码 | 不出现任何占位 UI，能力声明报 `notImplemented`（§1.2） |
 | 后台常驻采样 / 启动预热采样 | 监视自身的功能自身成为最大开销，逻辑自相矛盾 | 纯拉取 + 缓存 TTL，过期即丢弃（§2.6） |
-| 把采样器登记进启动分层的 `RESOURCES` 表 | 会被 `ensure` 一次并常驻，违反「无人看即停表」 | 不登记，只留命令层缓存（§2.6） |
+| 把采样器登记进启动分层的 `RESOURCES` 表（`Lane::Boot` 或 `Lane::Idle`） | 会被 `boot::run_boot` 或 `boot::runner::run_idle` 以 `ensure` 建一次并常驻，违反「无人看即停表」 | 不登记，只留命令层缓存（§2.6） |
 | 为「开始 / 停止采样」增设命令 | 停表路径依赖前端自觉，反而更易泄漏 | 停表 = 没有调用；无常驻线程可停（§2.6） |
 | 能力声明与数字塞进同一响应 | 必须引入跨 tab 聚合响应，一个 tab 失败连坐另一个 | 能力声明独立成命令（§6.1） |
 | 把能力声明做成 map | 前端要猜键名，新增 tab 静默不生效 | 平铺数组 + `tab` 判别字段（§6.2） |
@@ -528,6 +567,10 @@ type CapabilitiesView = ResourceCapabilitiesDto & { loadFailed?: boolean };
 | 为旧 id 加 redirect / 别名路由 | `isSettingsPageId()` 只认 manifest id，加别名只能再登记一项，等于多出第二个导航项 | id 直接改名，路由随 id 走，不留兼容层（§3.1） |
 | 页面改名后把文件 / CSS 类 / 日志标签一起改 | 这些指「存储这块内容」，与页面 id 无关；跟着改名扩大改动面且无收益 | 只改 id、label 键、keywords（§3.1） |
 | 前端用字符串兜底匹配可用性 | 新增取值静默走默认分支，错误被吞掉 | 封闭枚举 + 编译期穷尽（§2.7 约束 1） |
+| 为 tab 新建内层滚动容器 | 改变 sticky 基准，表头吸顶位置偏移；且与「壳只有一个」重复 | 复用 `AppShell` 的 `Layout.Content`，在容器层存取 `scrollTop`（§3.3 第 3 条） |
+| 三平台后端一次性合入 | 三套编译差异压在同一个批次，任一处失败拖累全部 | 按平台拆 R1a / R1b / R1c，每批单独可编译（§10.1） |
+| 批次留中间态（有表无合计 / 悬空 invoke） | 合入即半成品，验证不可执行 | R0 内含命令骨架、R2 一次性齐备（§0.13、§10.1） |
+| 用 `AppHandle::state` / `boot::access.rs` 访问器持有 CPU 缓存 | 对象随启动期装配即存在，违反「页面未打开时不执行采样代码」 | `cmd/resource.rs` 内 `OnceLock` 惰性初始化（§2.6） |
 
 ---
 
@@ -535,20 +578,38 @@ type CapabilitiesView = ResourceCapabilitiesDto & { loadFailed?: boolean };
 
 ### 10.1 批次
 
+**批次原子性（硬约束）**：每个批次必须满足「单独合入即可运行、可验证」，不允许留中间态。
+
 | 批次 | 内容 | 依赖 |
 |---|---|---|
-| **R0** 容器 | 页面登记（label 值 + keywords）、i18n、`Tabs` 壳、`StorageContent` 去壳、能力声明读取、进程树 tab 空面板 | 无（可立即开工） |
-| **R1** 契约与采样 | 新 crate + DTO + 两条命令 + §7.1 五处装配 + `contract:gen` | 平台后端需先定案（§12 OQ1）；未定案时命令返回 `notImplemented`，R1 仍可先合入契约与骨架 |
-| **R2** 实时树 UI | 表 + 两个合计 + 宿主线程数 + 口径分支 + 状态展示 | R1 的 DTO 定型 |
+| **R0** 容器与契约（原子） | 页面登记（id / label 键 / keywords）、i18n（含 `settings.resource.*` 最小键表）、`Tabs` 壳、`StorageContent` 去壳、滚动记忆、**11 个 DTO + §7.1 第 2/3/4/5 处装配 + `contract:gen`**、**两条命令骨架（`cmd/resource.rs` 返回 `notImplemented` + 装配进 `ipc.rs`）**、能力声明读取接入、进程树 tab 按 §5.5 的 `notImplemented` 分支渲染（非空占位） | 无（可立即开工） |
+| **R1a** 采样 crate 与 Windows 后端 | 新 crate（`SnapshotSource` trait + mock + `classify` / `tree` / `cpu` 纯逻辑）+ `win.rs` + §7.1 第 1/6/7/8 处装配 + 两条命令骨架换成真实调用 + V5–V12 单测 | R0 的 DTO 与命令骨架；Windows 后端选型（§12 OQ1） |
+| **R1b** Linux 后端 | `linux.rs` + Linux 段依赖 + `memoryAdditive == false` 路径的单测与真机验证（V14） | R1a 的 trait 定型（DTO 已在 R0） |
+| **R1c** macOS 后端 | `macos.rs` + macOS 段依赖 + `phys_footprint` 口径单测与真机验证 | R1a 的 trait 定型（DTO 已在 R0） |
+| **R2** 实时树 UI（原子） | 表 + 两个合计 + 宿主线程数 + 口径分支 + §5.5 全部状态展示，**一次性齐备** | R0 的 DTO 与命令骨架 |
+
+R1b / R1c 可与 R2 并行；R2 不等 R1b / R1c，但要求能力声明在未完成平台上如实报 `notImplemented`（§2.7）。
+
+**平台验证分工（依据仓库现状，不是本文新定）**：
+
+| 平台 | 编译 / 测试在哪跑 | 依据 |
+|---|---|---|
+| Linux | CI 真机（`ubuntu-latest`），跑 `cargo test --workspace --all-targets` | `.github/workflows/ci.yml` 的 rust job 矩阵 |
+| macOS | CI 真机（`macos-latest`），同一 job | 同上 |
+| Windows | **开发机**（`cargo check` + `cargo test`），不进 CI 矩阵 | 同上文件头「开发机只有 Windows」的既定分工 |
+
+因此 R1b / R1c 的编译与纯逻辑单测由既有 CI 天然覆盖，**不需要**在本文另加交叉编译门；Windows 侧的风险点是 `windows` crate 的 feature 缺项（§7.1 第 8 条），在开发机首次编译即暴露。依赖 GUI / 系统弹窗的路径（如 macOS Touch ID、Linux zenity）CI 验不到，但本规格不涉及这类路径。
+
+**交付边界**：本节的「三平台交付」指**代码与能力层**。三平台安装包属打包发布立项（`ARCHITECTURE.md` 的 I8，当前未开始），本文不承诺产物。
 
 ### 10.2 验收判据
 
 | # | 判据 | 类型 |
 |---|---|---|
-| V1 | 页面 label 显示「资源监视器」，页面 id 仍为 `storage`，左侧导航仍是**一项** | 手工 |
-| V2 | 页内两个 tab 可切换；切换**不重建**壳；滚动位置按 tab 独立 | 手工 |
+| V1 | 页面 **id 为 `resource`**、路由 `/settings/resource`，label 显示「资源监视器」，左侧导航仍是**一项** | 手工 |
+| V2 | 页内两个 tab 可切换；切换**不重建**壳；滚动位置按 tab 独立（机制见 §7.2 第 3 条） | 手工 |
 | V3 | tab 栏与表头共用 `--storage-sticky-top`，代码中**不存在**第二个偏移常量 | 代码审查 |
-| V4 | 三份 golden fixture（`snapshot.full.json` / `snapshot.vaultless.json` / `snapshot.diff.json`）**保持不变**。理由：投影只含 `id` / `categoryId` / `order` / `visibility` / `navParent` / `emptyPage`，不含 label 与 keywords；fixture 若变化，说明动到了结构字段，属回归 | 单测（`settingsSnapshot.golden.test.ts`） |
+| V4 | 三份 golden fixture 用 `vitest -u` 重生成后，`snapshot.full.json` / `snapshot.vaultless.json` 相对旧版**只有 `pages[].id` 由 `storage` → `resource` 一行变化**，`snapshot.diff.json` 无变化；diff 需人工核对。理由：投影含 `id`，id 改名必然反映到 fixture；只允许这一处变化，其余变化一律视为结构回归 | 单测（`settingsSnapshot.golden.test.ts`） |
 | V5 | `get_resource_capabilities` 响应**不含任何数字字段** | 契约审查 |
 | V6 | `tabs` 恒含两项、`tab` 不重复，`storage` 恒 `available` | 单测 |
 | V7 | 同一响应内 `selfGroup` / `subtreeGroup` / `entries` 与 `sampledAt` 同源（一次采样只产一个时间戳） | 单测 |
@@ -565,6 +626,12 @@ type CapabilitiesView = ResourceCapabilitiesDto & { loadFailed?: boolean };
 | V18 | `npm run contract:gen` 产出含全部 11 个新类型；`npm run contract:verify` 通过 | 命令 |
 | V19 | 能力声明读取失败时：wire 不变、无新增枚举取值、保留上次渲染、仅本地横幅 | 单测 + 代码审查 |
 | V20 | 平台后端未定案时，`processTree` 能力为 `notImplemented` 且 tab 显示原因而非空表 | 单测 + 手工 |
+| V21 | **R0 原子性**：R0 合入后单独启动应用，进程树 tab 不报「命令不存在」，而是按 §5.5 渲染 `notImplemented` 文案 + `reason`；`get_resource_capabilities` / `get_process_snapshot` 均在 `ipc.rs` 注册 | 手工 + 代码审查 |
+| V22 | **三平台可编译**：Linux / macOS 由既有 CI 矩阵（`ubuntu-latest` / `macos-latest`）的 `cargo test --workspace --all-targets` 覆盖；Windows 由开发机 `cargo check` + `cargo test` 覆盖。本文**不新增**交叉编译 job | 命令（CI + 开发机） |
+| V23 | **三平台口径各一**：Windows 私有工作集、Linux 工作集（`memoryAdditive == false`）、macOS `phys_footprint` 各取一次真机快照，`memoryBasis` / `memoryAdditive` 与 §2.4 一致。执行位置按 §10.1「平台验证分工」：Linux / macOS 走 CI 真机（可用 `#[cfg]` 门控的实机用例），Windows 走开发机。macOS 还需确认 WebView 进程不在子树内时如实展示平台托管说明（§2.3） | 手工 / 实机用例 |
+| V24 | **滚动记忆不改壳**：实现后 `AppShell` 无 diff、无新增内层滚动容器，表头吸顶位置与 R0 前一致 | 代码审查 + 手工 |
+| V25 | **`notImplemented` 产出条件收窄**：仅在非三平台目标构建或该平台后端未定案时出现；三平台齐备后，正常构建中该取值不出现在 `processTree` 能力上 | 单测 + 代码审查 |
+| V26 | **`webviewDetached` 按平台确定**：macOS 为 `true`、Windows / Linux 为 `false`；为 `true` 时 UI 必现平台托管说明，且 WebView 家族进程**不**因镜像名被收进 `entries` | 单测 + 手工 |
 
 ---
 
@@ -614,10 +681,12 @@ type CapabilitiesView = ResourceCapabilitiesDto & { loadFailed?: boolean };
 
 | # | 问题 | 未定案时的确定行为 |
 |---|---|---|
-| OQ1 | 平台后端选 `sysinfo` 还是手写 API | 能力声明报 `notImplemented`，tab 显示原因；定案判据：能一次快照给出 `pid` / `parentPid` / `startTime` / 内存 / CPU 时间且无额外许可成本则用 `sysinfo`，否则手写（Windows `NtQuerySystemInformation`、Linux 遍历 `/proc`、macOS `sysctl`）。新增依赖须单独过审 |
+| OQ1 | 平台后端选 `sysinfo` 还是手写 API（**三平台各自独立定案**） | **仓库当前没有 `sysinfo`**（`Cargo.lock` 里的 `procfs-core` 是 `minidump-writer` 的传递依赖，不可直接当采样后端）。优先 `sysinfo`（一套代码覆盖三平台），前置条件：单次遍历即能同时给出 `pid` / `parentPid` / `startTime` / 内存 / CPU 累计时间 / `threadCount`，且新增依赖过审。不满足则该平台改手写：Windows `NtQuerySystemInformation`（需补 `Win32_System_ProcessStatus`、`Win32_System_Diagnostics_ToolHelp` feature，现有 feature 清单无进程枚举项）、Linux 遍历 `/proc`（可复用现有 `libc`）、macOS `sysctl` + `proc_pidinfo`。某平台未定案时，该平台的 `processTree` 能力报 `notImplemented`，tab 显示原因（§2.7、§10.2 V25）。新增依赖 / 新增 feature 一律单独过审 |
 | OQ2 | 角色分类的数据源细节 | 判据已定（§2.3 三层），来源随 OQ1：Windows 读命令行、Linux 读 `/proc/<pid>/cmdline`、macOS 需 `sysctl`。**必须**有「读不到命令行」的降级角色 `webviewUnknown` 并仍计入自身 |
 | OQ3 | 将来是否扩展为「全机视图」 | 本期不做。若扩展，必须重新引入**按需指标机制**（原位掩码）与隐私边界（会看到其他应用的进程名）；只有出现**第二个消费者**时才引入按需指标，单 tab 单消费者下它只增加复杂度 |
-| OQ4 | 采样 crate 的平台相关单测是否进 CI | 跨平台单测只覆盖纯逻辑（建父子表、DFS、角色分类、PID 复用校验）；OS 调用层用 trait 隔离，CI 跑 mock 实现 |
+| OQ4 | 采样 crate 的平台相关单测是否进 CI | 跨平台单测只覆盖纯逻辑（建父子表、DFS、角色分类、PID 复用校验）；OS 调用层用 trait 隔离，CI 跑 mock 实现。CI 矩阵已含 `ubuntu-latest` + `macos-latest`（`cargo test --workspace --all-targets`），新增 crate 自动纳入，无需另加 job；Windows 由开发机验证（§10.1、§10.2 V22） |
 | OQ5 | 是否与「工具运行面板」共享组件 | 不共享。工具运行态已在聊天卡片侧交付，两者行模型不同（任务 vs 进程）；强行共用会把 `Task` 语义漏进本 tab |
 | OQ6 | WebView 角色是否可用 WebView profile 目录作辅助判据 | 可作辅助，**不得**作主判据：目录归属依赖外部布局，角色分类必须自足于命令行特征 |
 | OQ7 | 能力声明是否需要缓存 | 不需要。只返回状态，成本可忽略；缓存反而引入「状态陈旧」这类新问题 |
+| OQ8 | 页面 icon 是否继续用 `DatabaseOutlined` | 未定案前**保持** `DatabaseOutlined` 不改（§3.1、§7.2 第 1 条）；改 icon 属纯视觉调整，不阻塞任何批次 |
+| OQ9 | macOS 的 WebView 进程由 XPC 托管、不在子树内，是否引入 XPC 归属辅助 | 本期**不引入**：按 §2.3「平台可达性差异」如实展示 `coverage` 说明，`selfGroup` 只含宿主。引入 XPC 归属必须同时给出「如何证明该 XPC 进程属于本应用」的判据，否则等于按镜像名归属（违反 §2.2 约束 3） |
