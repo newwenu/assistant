@@ -18,7 +18,9 @@ use assistant_app::protocol::dto::{
     StorageReclaimRequestDto, StorageReclaimStatusDto,
 };
 use assistant_storage::attachment_store::AttachmentStore;
-use assistant_tools::{FileToolResultStorage, ToolResultStorage};
+use assistant_tools::{
+    FileToolResultStorage, FileToolScratchStore, ToolResultStorage, ToolScratchStore,
+};
 
 #[path = "support/fake_section.rs"]
 mod fake_section;
@@ -66,6 +68,7 @@ impl Fixture {
             attachments: &self.store,
             sections: Vec::new(),
             tool_results,
+            scratch: None,
             db: None,
             now,
         }
@@ -83,6 +86,25 @@ impl Fixture {
             attachments: &self.store,
             sections,
             tool_results: None,
+            scratch: None,
+            db: None,
+            now,
+        }
+    }
+
+    /// 带 `E19` owner 句柄的装配：临时区走真实 `FileToolScratchStore`（基根来自 `AppDirs`）。
+    fn ports_with_scratch(
+        &self,
+        now: i64,
+        scratch: Option<Arc<dyn ToolScratchStore>>,
+    ) -> ReclaimPorts<'_> {
+        ReclaimPorts {
+            plans: &self.plans,
+            dirs: &self.dirs,
+            attachments: &self.store,
+            sections: Vec::new(),
+            tool_results: None,
+            scratch,
             db: None,
             now,
         }
@@ -552,6 +574,71 @@ async fn execute_removes_derived_orphans_and_index_files() {
     assert_eq!(again.entries[0].status, StorageReclaimStatusDto::Skipped);
     assert_eq!(again.entries[0].removed_count, 0);
     assert_eq!(again.entries[0].failed_count, 0);
+}
+
+/// V6 / V7 / V9：`E19` 恒为 `Eligible` / `Transient` / `ClearAll`，清空删全部子项、
+/// 保留基根，报告 `removedBytes` 与清空前整根字节相符；`shared` 段一并清除（不再有永续特例）。
+#[tokio::test]
+async fn scratch_clear_all_removes_every_child_and_keeps_root() {
+    let fixture = Fixture::new();
+    let root = fixture.dirs.tool_scratch();
+    let store: Arc<dyn ToolScratchStore> = Arc::new(FileToolScratchStore::new(root.clone()));
+    let session = store.prepare("s1").unwrap();
+    std::fs::write(session.join("out.txt"), b"0123456789").unwrap();
+    let shared = store.session_root(None);
+    std::fs::create_dir_all(&shared).unwrap();
+    std::fs::write(shared.join("shared.txt"), b"abcde").unwrap();
+    let before = store.stats().unwrap();
+
+    let now = future_now();
+    let plan = plan_storage_reclaim(
+        fixture.ports_with_scratch(now, Some(store.clone())),
+        plan_request(&["tool-scratch"]),
+    )
+    .await
+    .unwrap();
+    assert_eq!(plan.entries.len(), 1);
+    assert_eq!(plan.entries[0].action, StorageReclaimActionDto::ClearAll);
+    assert_eq!(plan.entries[0].eligibility, StorageEligibilityDto::Eligible);
+    assert_eq!(
+        plan.entries[0].reason,
+        Some(StorageReclaimReasonDto::Transient),
+        "临时区的理由是 Transient，不随采样成败变化（V6）"
+    );
+    assert_eq!(plan.entries[0].expected_bytes, Some(before.bytes));
+    assert_eq!(plan.entries[0].expected_count, Some(before.count));
+
+    let result = execute_storage_reclaim(
+        fixture.ports_with_scratch(now, Some(store.clone())),
+        execute_request(
+            &plan.plan_id,
+            vec![request("tool-scratch", StorageReclaimActionDto::ClearAll)],
+            true,
+        ),
+    )
+    .await
+    .unwrap();
+    assert_eq!(result.entries[0].status, StorageReclaimStatusDto::Done);
+    assert_eq!(result.entries[0].removed_count, before.count);
+    assert_eq!(
+        result.entries[0].removed_bytes, before.bytes,
+        "removedBytes 必须与清空前整根字节相符（V7）"
+    );
+    assert_eq!(result.entries[0].failed_count, 0);
+
+    assert!(root.is_dir(), "基根必须保留（V7 / INV8）");
+    assert_eq!(
+        std::fs::read_dir(&root).unwrap().count(),
+        0,
+        "子项已删净（含 shared，V9）"
+    );
+    assert_eq!(store.stats().unwrap().bytes, 0, "占用归零");
+
+    // 自愈（V8）：清空后立刻 prepare，会话段重建且可写。
+    let rebuilt = store.prepare("s2").unwrap();
+    assert!(rebuilt.is_dir());
+    std::fs::write(rebuilt.join("out.txt"), b"ok").unwrap();
+    assert_eq!(store.stats().unwrap().bytes, 2);
 }
 
 /// 单条失败隔离（V9）：`E4` 整条失败时同批的 `E2` 照常 `done`，不整批回滚。

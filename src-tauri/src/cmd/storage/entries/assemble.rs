@@ -285,6 +285,9 @@ mod tests {
             // `E14`：资格恒 `eligible`（否则前端无入口，待执行标记永远写不进），
             // 运行期不删由执行结果 `scheduled` 表达（§13.3.5）。
             "EBWebView",
+            // `E19`：资格恒 `eligible`（I77 §4.5 / V6）——清空的判据是用户显式意图，
+            // 不依赖采样数字，采样失败也不该藏按钮。
+            "tool-scratch",
         ];
         for entry in &dto.entries {
             if eligible_keys.contains(&entry.key.as_str()) {

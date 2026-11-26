@@ -39,6 +39,15 @@ pub fn tool_exec(app: &AppHandle) -> Result<Arc<crate::adapters::PipelineToolExe
     typed(slot(app, "tool_exec")?, "tool_exec")
 }
 
+/// 工具临时区所有者（I77 §3.2 / C4）：从执行器槽取同一份实例，
+/// 会话删除与存储管理器共用它，**禁止**另建第二套。
+pub fn tool_scratch(app: &AppHandle) -> Result<Arc<dyn assistant_tools::ToolScratchStore>, CapErr> {
+    tool_exec(app)?
+        .scratch()
+        .cloned()
+        .ok_or_else(|| CapErr::build("tool_exec", "tool scratch store not assembled"))
+}
+
 /// MCP 管理器（`tool_runtime` 顺带产出）：命令层与启动序列共用这一份实例。
 pub fn mcp_manager(app: &AppHandle) -> Result<Arc<assistant_tools::mcp::McpServerManager>, CapErr> {
     typed(slot(app, "mcp_manager")?, "mcp_manager")

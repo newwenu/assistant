@@ -124,6 +124,11 @@ pub enum StorageReclaimActionDto {
     PruneToLimit,
     RebuildCache,
     Rotate,
+    /// 整根清空：删基根下全部子项、保留基根本身（I77 §4.1）。
+    ///
+    /// 与 `DeleteOrphans` 的区别在于判据来源：不做磁盘侧差集、不读会话表，
+    /// 删除权完全交给用户显式意图（含活跃会话段与 `shared`）。
+    ClearAll,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]

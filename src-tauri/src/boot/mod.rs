@@ -10,7 +10,7 @@ mod runner;
 
 pub use access::{
     boot_conf, dirs, mcp_manager, pending_approval, pending_question, permission_audit, tool_exec,
-    tools,
+    tool_scratch, tools,
 };
 pub use conf::BootConf;
 pub(crate) use ctx::epoch_ms;

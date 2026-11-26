@@ -23,6 +23,7 @@ use crate::os::agent_ask_user::QuestionTimeoutSource;
 use crate::question::QuestionPrompter;
 use crate::r#trait::Tool;
 use crate::registry::ToolRegistry;
+use crate::runtime::scratch::ToolScratchStore;
 use crate::sandbox::{SandboxEnforcement, SandboxProbe};
 use crate::storage::{ReadReceiptStore, ToolResultStorage};
 
@@ -84,6 +85,7 @@ pub fn register_interactive_tools(
 pub fn register_shell_tools(
     registry: &ToolRegistry,
     storage: Arc<dyn ToolResultStorage>,
+    scratch: Arc<dyn ToolScratchStore>,
     probe: &'static SandboxProbe,
 ) {
     if probe.enforcement == SandboxEnforcement::None {
@@ -97,5 +99,6 @@ pub fn register_shell_tools(
         log::warn!("shell not registered: no usable shell program");
         return;
     }
-    registry.register(Arc::new(agent_shell::ShellTool::new(probe, storage)) as Arc<dyn Tool>);
+    registry
+        .register(Arc::new(agent_shell::ShellTool::new(probe, storage, scratch)) as Arc<dyn Tool>);
 }

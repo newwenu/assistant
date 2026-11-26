@@ -7,7 +7,7 @@ use futures::future::join_all;
 use tauri::{AppHandle, Manager};
 
 use assistant_storage::attachment_store::{AttachmentEntry, AttachmentStore};
-use assistant_tools::ToolResultStorage;
+use assistant_tools::{ToolResultStorage, ToolScratchStore};
 
 use crate::app_dirs::registry::CoreEntry;
 use crate::app_dirs::AppDirs;
@@ -46,6 +46,7 @@ pub async fn collect(
     let db: Option<DbState> = app
         .try_state::<DbState>()
         .map(|state| state.inner().clone());
+    let scratch: Option<Arc<dyn ToolScratchStore>> = crate::boot::tool_scratch(app).ok();
 
     collect_with(SampleInputs {
         dirs,
@@ -54,6 +55,7 @@ pub async fn collect(
         referenced,
         sections,
         tool_results,
+        scratch,
         db,
     })
     .await
@@ -68,6 +70,7 @@ pub async fn collect_with(inputs: SampleInputs<'_>) -> Sampled {
         referenced,
         sections,
         tool_results: storage,
+        scratch,
         db,
     } = inputs;
 
@@ -170,14 +173,20 @@ pub async fn collect_with(inputs: SampleInputs<'_>) -> Sampled {
         })));
     }
 
-    // E19：shell 临时区（I73 §3.8）。`sample/collect.rs` 不是 `match`，编译器不点名，
-    // 漏采样会让 `declared = 0`、整棵树被误报成余量（与 `E12` 的同款 G11 缺陷）。
-    {
-        let scratch_root = dirs.tool_scratch();
-        tasks.push(Box::pin(timed_blocking(
+    // E19：shell 临时区（I77 §3.8）。句柄缺失 = 特性未装配，与 `E3` 同款降级。
+    // 注意：本文件不是 `match`，编译器不点名，漏采样会让 `declared = 0`、
+    // 整棵树被误报成余量（与 `E12` 的同款 G11 缺陷）。
+    match scratch {
+        Some(scratch) => tasks.push(Box::pin(timed_blocking(
             CoreEntry::ToolScratch.id(),
-            move || sample_scratch(&scratch_root),
-        )));
+            move || sample_scratch(&scratch),
+        ))),
+        None => set_sample(
+            &views,
+            &mut samples,
+            CoreEntry::ToolScratch.id(),
+            EntrySample::degraded(StorageAvailabilityDto::NotImplemented),
+        ),
     }
 
     // E14：WebView2 profile，整棵树由应用接管观测（§13.3）。

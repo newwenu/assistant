@@ -17,9 +17,9 @@ use crate::boot::ctx::StartupCtx;
 use crate::boot::resources::{CapErr, CapValue};
 use assistant_tools::{
     mcp::McpServerManager, os, sandbox, ApprovalPrompter, FileToolResultStorage,
-    InMemoryReadReceiptStore, PermissionAuditStore, PermissionGrantStore, ReadReceiptStore,
-    SandboxEnforcement, SandboxHostPaths, SandboxProbe, ToolGateway, ToolPipeline, ToolRegistry,
-    ToolResultStorage, ToolTier,
+    FileToolScratchStore, InMemoryReadReceiptStore, PermissionAuditStore, PermissionGrantStore,
+    ReadReceiptStore, SandboxEnforcement, SandboxHostPaths, SandboxProbe, ToolGateway,
+    ToolPipeline, ToolRegistry, ToolResultStorage, ToolScratchStore, ToolTier,
 };
 
 /// 沙箱读拒绝的固定列表（I53 §5.4 / I73 §3.8 W3）：只由本函数构造，不读用户配置、不受模型输入影响。
@@ -158,10 +158,14 @@ pub fn build(ctx: &StartupCtx<'_>) -> Result<CapValue, CapErr> {
         FileToolResultStorage::new(results_dir)
             .with_retention(retention.days, retention.effective_since),
     );
+    // 临时区所有者（I77 §3.2 / C5）：装配期创建**唯一**实例，同时交给 shell 工具与
+    // 执行器；两侧各 `new` 一份会让建目录与观测落到不同基根。
+    let scratch: Arc<dyn ToolScratchStore> =
+        Arc::new(FileToolScratchStore::new(dirs.tool_scratch()));
     // C5：`shell` 的注册点必须晚于 registry 与 storage（两者都是它的构造输入），
     // 门禁判据仍在注册期探测结论上：`enforcement == none` 时整组不注册。
     if shell_registration_allowed(probe) {
-        os::register_shell_tools(&registry, storage.clone(), probe);
+        os::register_shell_tools(&registry, storage.clone(), scratch.clone(), probe);
     }
     let pipeline = Arc::new(ToolPipeline::new(registry.clone(), gateway, storage));
 
@@ -211,8 +215,8 @@ pub fn build(ctx: &StartupCtx<'_>) -> Result<CapValue, CapErr> {
         PipelineToolExecution::with_workspace_source(pipeline, waits, workspace_source)
             // 行索引缓存根：与结果落盘同为可重建产物，由装配层给出（I58 §3.5）。
             .with_index_root(dirs.indexes())
-            // shell 临时区基根：会话段由执行器按 session 派生，应用层只给基根（I73 §5.4 P4.0）。
-            .with_tool_scratch(dirs.tool_scratch())
+            // shell 临时区所有者：与注册处共享同一实例，执行器只把它搬进上下文（I77 C4）。
+            .with_tool_scratch(scratch)
             // 升级通道：注册表 + 层级来源，`request_tool(detail = "enable")` 的唯一出口（I58 §3.8）。
             .with_escalation(registry.clone(), max_tool_tier_source),
     );

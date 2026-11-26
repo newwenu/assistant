@@ -28,6 +28,7 @@ use assistant_tools::result::{ToolErrorKind, ToolResult};
 use assistant_tools::sandbox::{
     detect, SandboxDimension, SandboxEnforcement, SandboxHostPaths, SandboxKind, SandboxProbe,
 };
+use assistant_tools::scratch::{FileToolScratchStore, ToolScratchStore};
 use assistant_tools::storage::{FileToolResultStorage, ToolResultStorage, SPILL_TRUNCATED_MARKER};
 use assistant_tools::Tool;
 
@@ -59,11 +60,18 @@ fn plain_path(path: &std::path::Path) -> String {
     }
 }
 
+/// 本文件的会话 id：`scratch_root()` 与 `ctx()` 共用，保证派生出的会话段一致。
+const SESSION_ID: &str = "shell-e2e";
+
 struct Harness {
     workspace: tempfile::TempDir,
     storage: tempfile::TempDir,
-    /// 会话临时区（I73 §3.8：会话级单目录，跨调用复用、随会话删除）。
-    scratch: tempfile::TempDir,
+    /// 临时区基根（所有者的根）；会话段由所有者派生（I77 INV3）。
+    /// 只靠 `Drop` 保活：路径在构造期被所有者取走，用例本身不读它。
+    #[allow(dead_code)]
+    scratch_base: tempfile::TempDir,
+    /// 临时区所有者：工具与 `scratch_root()` 共用同一实例，杜绝两套拼法。
+    scratch: Arc<dyn ToolScratchStore>,
     /// 只靠 `Drop` 保活：路径在构造期被 `detect` 取走，用例本身不读它。
     #[allow(dead_code)]
     sensitive: tempfile::TempDir,
@@ -75,7 +83,9 @@ impl Harness {
     fn new() -> Self {
         let workspace = tempfile::tempdir().expect("workspace tempdir");
         let storage = tempfile::tempdir().expect("storage tempdir");
-        let scratch = tempfile::tempdir().expect("scratch tempdir");
+        let scratch_base = tempfile::tempdir().expect("scratch tempdir");
+        let scratch: Arc<dyn ToolScratchStore> =
+            Arc::new(FileToolScratchStore::new(scratch_base.path()));
         // 敏感列表必须非空（Unix 后端以空列表判负），且须用兄弟 tempdir：
         // 与可写根不相交，macOS 后置的 `deny file-read*` 也不会罩住 workspace。
         let sensitive = tempfile::tempdir().expect("sensitive tempdir");
@@ -90,10 +100,11 @@ impl Harness {
         );
         let backend: Arc<dyn ToolResultStorage> =
             Arc::new(FileToolResultStorage::new(storage.path()));
-        let tool = Arc::new(ShellTool::new(probe, backend));
+        let tool = Arc::new(ShellTool::new(probe, backend, scratch.clone()));
         Self {
             workspace,
             storage,
+            scratch_base,
             scratch,
             sensitive,
             probe,
@@ -111,15 +122,18 @@ impl Harness {
     }
 
     /// 会话临时区根（与可写根并列的第二个沙箱可写根）。
+    ///
+    /// 路径经所有者的 `prepare` 得到（幂等建目录），用例先写文件也不依赖执行顺序。
     fn scratch_root(&self) -> PathBuf {
-        std::fs::canonicalize(self.scratch.path()).expect("canonicalize scratch")
+        let path = self.scratch.prepare(SESSION_ID).expect("prepare scratch");
+        std::fs::canonicalize(path).expect("canonicalize scratch")
     }
 
     fn ctx(&self, call_id: &str) -> ToolUseContext {
         ToolUseContext {
             workspace_root: Some(self.workspace.path().display().to_string()),
             tool_scratch_root: Some(self.scratch_root()),
-            session_id: Some("shell-e2e".to_string()),
+            session_id: Some(SESSION_ID.to_string()),
             tool_call_id: Some(call_id.to_string()),
             ..Default::default()
         }
@@ -1182,14 +1196,17 @@ async fn a35_registration_gate_refuses_unsandboxed_shell() {
     )));
 
     let registry = ToolRegistry::new();
-    register_shell_tools(&registry, backend.clone(), unavailable);
+    let scratch: Arc<dyn ToolScratchStore> = Arc::new(FileToolScratchStore::new(
+        storage_root.path().join("scratch"),
+    ));
+    register_shell_tools(&registry, backend.clone(), scratch.clone(), unavailable);
     assert!(
         registry.find("shell").is_none(),
         "no empty tool may be registered when enforcement is none"
     );
 
     let constructed = std::panic::catch_unwind(AssertUnwindSafe(|| {
-        ShellTool::new(unavailable, backend.clone())
+        ShellTool::new(unavailable, backend.clone(), scratch.clone())
     }));
     assert!(
         constructed.is_err(),
@@ -1198,7 +1215,7 @@ async fn a35_registration_gate_refuses_unsandboxed_shell() {
 
     let harness = Harness::new();
     let healthy = ToolRegistry::new();
-    register_shell_tools(&healthy, backend, harness.probe);
+    register_shell_tools(&healthy, backend, harness.scratch.clone(), harness.probe);
     assert!(
         healthy.find("shell").is_some(),
         "shell must register once the boundary is real"
@@ -1393,7 +1410,7 @@ async fn a33_description_covers_the_six_contracts() {
     let storage_root = tempfile::tempdir().expect("storage tempdir");
     let backend: Arc<dyn ToolResultStorage> =
         Arc::new(FileToolResultStorage::new(storage_root.path()));
-    let tool = ShellTool::new(harness.probe, backend);
+    let tool = ShellTool::new(harness.probe, backend, harness.scratch.clone());
     let description = tool.description().await.expect("description");
     let schema = serde_json::to_string(&tool.input_schema()).expect("schema");
     let text = format!("{}\n{}", description, schema).to_lowercase();

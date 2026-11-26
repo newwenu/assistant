@@ -254,7 +254,7 @@ pub const MANAGED_ROOTS: &[ManagedRoot] = &[
         scope: RootScope::Local,
         segments: &[dir_name::TOOL_SCRATCH],
         coverage: RootCoverage::RecursiveTree,
-        owner: "ShellToolScratch",
+        owner: "ToolScratchStore",
         risk: RiskTier::Low,
         inventory: false,
     },

@@ -6,7 +6,9 @@ pub mod os;
 pub mod sandbox;
 
 pub use contract::{catalog, context, definition, escalation, r#trait, result};
-pub use runtime::{args, compact, exec, gateway, pipeline, policy, question, registry, storage};
+pub use runtime::{
+    args, compact, exec, gateway, pipeline, policy, question, registry, scratch, storage,
+};
 
 pub use catalog::*;
 pub use context::*;
@@ -21,5 +23,6 @@ pub use r#trait::*;
 pub use registry::*;
 pub use result::*;
 pub use sandbox::*;
+pub use scratch::*;
 pub use storage::*;
 mod dto_bridge;

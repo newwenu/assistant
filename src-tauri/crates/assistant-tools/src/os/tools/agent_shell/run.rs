@@ -17,6 +17,7 @@ use serde_json::{json, Value};
 
 use crate::context::ToolUseContext;
 use crate::result::{ToolErrorKind, ToolResult};
+use crate::runtime::scratch::ToolScratchStore;
 use crate::sandbox::{
     self, KillHandle, SandboxChild, SandboxDimension, SandboxEnforcement, SandboxError,
     SandboxProbe,
@@ -60,6 +61,7 @@ pub async fn execute(
     context: &ToolUseContext,
     probe: &'static SandboxProbe,
     storage: Arc<dyn ToolResultStorage>,
+    scratch: Arc<dyn ToolScratchStore>,
 ) -> ToolResult {
     let started = Instant::now();
 
@@ -77,12 +79,19 @@ pub async fn execute(
         );
     }
 
-    // 第 3 步：推导执行计划并幂等建会话临时区。
+    // 第 3 步：推导执行计划并幂等建会话临时区（建目录由所有者执行，I77 INV3）。
+    // 临时区是会话级目录，故会话 id 是硬前置；缺失即无法定位会话段，按业务错误拒绝。
+    let Some(session_id) = context.session_id.as_deref() else {
+        return failure(
+            CODE_SANDBOX_SETUP_FAILED,
+            "shell requires a session id to locate its session scratch dir",
+        );
+    };
     let call_id = context
         .tool_call_id
         .clone()
         .unwrap_or_else(|| format!("call-{}", next_call_seq()));
-    let plan = match spawn::build_plan(&parsed) {
+    let plan = match spawn::build_plan(&parsed, scratch.as_ref(), session_id) {
         Ok(plan) => plan,
         Err(error) => {
             return failure(error.code(), &error.to_message());
@@ -219,7 +228,7 @@ pub async fn execute(
     let denied = is_sandbox_denied(probe.enforcement, exit_code, &spilled.preview);
     let text = assemble_text(
         &spilled,
-        &parsed.scratch_root,
+        &plan.scratch_root,
         denied,
         exit_code,
         signal,

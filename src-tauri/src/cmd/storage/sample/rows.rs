@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use assistant_storage::attachment_store::AttachmentEntry;
 use assistant_tools::os::index_stats;
-use assistant_tools::ToolResultStorage;
+use assistant_tools::{ToolResultStorage, ToolScratchStore};
 
 use crate::db_state::DbState;
 use crate::protocol::dto::StorageAvailabilityDto;
@@ -121,10 +121,19 @@ pub(super) fn sample_logs(root: &Path) -> EntrySample {
     from_io(crate::app_dirs::fs_stats::tree_stats(root))
 }
 
-/// `E19`：shell 临时区（I73 §3.8）。目录由应用自持、会话结束时整棵删除，
-/// 故与 `E12` 同口径走 `tree_stats`，只观测占用、不提供回收入口。
-pub(super) fn sample_scratch(root: &Path) -> EntrySample {
-    from_io(crate::app_dirs::fs_stats::tree_stats(root))
+/// `E19`：shell 临时区（I77 §3.8）。观测与清空共用所有者同一份遍历（`dir_tree_stats`），
+/// 用户清空是整根全清，故 `reclaimable` 直接等于整根字节与条目数（与 `E4` 同档）。
+pub(super) fn sample_scratch(store: &Arc<dyn ToolScratchStore>) -> EntrySample {
+    let stats = match store.stats() {
+        Ok(stats) => stats,
+        Err(error) => {
+            log::debug!("临时区统计失败: {error}");
+            return EntrySample::degraded(StorageAvailabilityDto::Unreadable);
+        }
+    };
+    let mut sample = from_dir_stats(stats);
+    sample.reclaimable = Some((sample.bytes.unwrap_or(0), sample.count.unwrap_or(0)));
+    sample
 }
 
 /// `E14`：WebView2 profile 整棵树由应用接管观测，可回收量只算缓存白名单子目录。

@@ -515,7 +515,8 @@
           "sweepExpired": "清理过期文件",
           "pruneToLimit": "清理超出上限的旧文件",
           "rebuildCache": "重新生成缓存",
-          "rotate": "自动轮换旧文件"
+          "rotate": "自动轮换旧文件",
+          "clearAll": "清空临时文件"
         },
         "policy": {
           "source": {

@@ -8,8 +8,8 @@ use crate::protocol::dto::{
 };
 
 use super::executors::{
-    execute_derived, execute_index, execute_orphans, execute_section, execute_tool_results,
-    execute_webview,
+    execute_derived, execute_index, execute_orphans, execute_scratch_clear, execute_section,
+    execute_tool_results, execute_webview,
 };
 use super::report::{entry_result, Totals};
 use super::store::CachedPlan;
@@ -68,6 +68,10 @@ pub async fn execute_storage_reclaim(
             Some(CoreEntry::WebViewProfile) => {
                 execute_webview(ports.dirs, key.to_string(), action).await
             }
+            // `E19` 临时区：用户显式清空整根，判据不来自磁盘差集（I77 §4.1）。
+            Some(CoreEntry::ToolScratch) => {
+                execute_scratch_clear(ports.scratch.clone(), key.to_string(), action).await
+            }
             // 其余 core 条目没有执行器（`executor_action` 已在校验期拒绝），此处保持零副作用。
             Some(
                 CoreEntry::MascotAssets
@@ -76,8 +80,7 @@ pub async fn execute_storage_reclaim(
                 | CoreEntry::Crashes
                 | CoreEntry::Config
                 | CoreEntry::OrbConfig
-                | CoreEntry::MascotConfig
-                | CoreEntry::ToolScratch,
+                | CoreEntry::MascotConfig,
             ) => entry_result(
                 key.to_string(),
                 action,
@@ -131,16 +134,16 @@ fn executor_action(view: &EntryView) -> Option<StorageReclaimActionDto> {
             Some(StorageReclaimActionDto::RebuildCache)
         }
         CoreEntry::ToolResults => Some(StorageReclaimActionDto::SweepExpired),
+        // `E19` 临时区：整根清空，与 `decl.rs` 的 `action` 必须同档（双重校验，漏一处即被整体拒绝）。
+        CoreEntry::ToolScratch => Some(StorageReclaimActionDto::ClearAll),
         // `E15` / `E17` / `E18` 是用户业务数据（`Forbidden`），没有执行器：白名单直接拒绝。
-        // `E19` 临时区没有独立回收 API（`NotImplemented`），同样不放行任何动作。
         CoreEntry::MascotAssets
         | CoreEntry::Database
         | CoreEntry::Logs
         | CoreEntry::Crashes
         | CoreEntry::Config
         | CoreEntry::OrbConfig
-        | CoreEntry::MascotConfig
-        | CoreEntry::ToolScratch => None,
+        | CoreEntry::MascotConfig => None,
     }
 }
 

@@ -536,7 +536,8 @@
           "sweepExpired": "Remove expired files",
           "pruneToLimit": "Remove old files above the limit",
           "rebuildCache": "Regenerate cache",
-          "rotate": "Rotate old files automatically"
+          "rotate": "Rotate old files automatically",
+          "clearAll": "Clear all temp files"
         },
         "policy": {
           "source": {

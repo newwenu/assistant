@@ -5,6 +5,7 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::runtime::scratch::ToolScratchStore;
 use crate::sandbox::SandboxPlan;
 
 use super::schema::ShellInput;
@@ -42,11 +43,13 @@ impl ShellFlavor {
     }
 }
 
-/// 一次 `execute` 的执行输入：沙箱计划 + 方言。
+/// 一次 `execute` 的执行输入：沙箱计划 + 方言 + 已建好的会话临时区。
 #[derive(Debug, Clone)]
 pub struct ShellSpawnPlan {
     pub plan: SandboxPlan,
     pub flavor: ShellFlavor,
+    /// 会话临时区路径（由所有者 `prepare` 返回），回填与清单都以它为准。
+    pub scratch_root: PathBuf,
 }
 
 /// 推导失败的两档：程序不可用（注册期就该挡住）与临时目录建立失败。
@@ -80,12 +83,19 @@ impl SpawnPlanError {
 ///
 /// 临时区必须在 `spawn` 之前建好：命令的第一个写临时文件动作就要用到它，
 /// 建不出来就不该起进程（否则命令会以「Access is denied」失败而原因不可见）。
-/// 临时区是**会话级单目录**（`input.scratch_root`，已含 `<session_hash>`），
-/// 跨调用复用、不在调用结束时删除（I73 §3.8），故这里只 `create_dir_all`。
-pub fn build_plan(input: &ShellInput) -> Result<ShellSpawnPlan, SpawnPlanError> {
+/// 建目录**只能**经所有者 [`ToolScratchStore::prepare`]（I77 INV3）：本模块不再自己
+/// `create_dir_all`，也不再拼会话段。临时区是**会话级单目录**，跨调用复用、
+/// 不在调用结束时删除（I73 §3.8）。
+pub fn build_plan(
+    input: &ShellInput,
+    scratch: &dyn ToolScratchStore,
+    session_id: &str,
+) -> Result<ShellSpawnPlan, SpawnPlanError> {
     let program = resolve_program().map_err(SpawnPlanError::ProgramUnavailable)?;
 
-    prepare_scratch(&input.scratch_root).map_err(SpawnPlanError::ScratchDirFailed)?;
+    let scratch_root = scratch.prepare(session_id).map_err(|error| {
+        SpawnPlanError::ScratchDirFailed(format!("create scratch dir failed: {}", error))
+    })?;
 
     let args = program.args_for(&input.command);
 
@@ -94,8 +104,8 @@ pub fn build_plan(input: &ShellInput) -> Result<ShellSpawnPlan, SpawnPlanError> 
         args,
         cwd: input.cwd.clone(),
         // 两个可写根并列：工作区根 + 会话临时区根，逐根授权（I73 §3.8 W1）。
-        write_roots: vec![input.writable_root.clone(), input.scratch_root.clone()],
-        env: env_block(&input.scratch_root),
+        write_roots: vec![input.writable_root.clone(), scratch_root.clone()],
+        env: env_block(&scratch_root),
         // P14 恒 false：不代表「命令不能联网」（§8.4 的 `sandbox.network` 另行求交）。
         network: false,
         // 无 stdin 通道。
@@ -105,6 +115,7 @@ pub fn build_plan(input: &ShellInput) -> Result<ShellSpawnPlan, SpawnPlanError> 
     Ok(ShellSpawnPlan {
         plan,
         flavor: program.flavor,
+        scratch_root,
     })
 }
 
@@ -289,31 +300,9 @@ fn plain_path_text(path: &Path) -> String {
     }
 }
 
-/// 建会话临时区：幂等 `create_dir_all`，**不**清空（目录跨调用共享，I73 §3.8 W6）。
-///
-/// 早先「已存在即清空」的写法是为调用级目录服务的；会话级目录一旦清空，
-/// 就抹掉了上一次调用留给下一次的 handoff 产物。
-fn prepare_scratch(scratch: &Path) -> Result<(), String> {
-    std::fs::create_dir_all(scratch)
-        .map_err(|error| format!("create scratch dir failed: {}", error))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn prepare_scratch_is_idempotent_and_keeps_existing_files() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let scratch = dir.path().join("session");
-        prepare_scratch(&scratch).expect("first create");
-        std::fs::write(scratch.join("kept.txt"), b"x").expect("write");
-        prepare_scratch(&scratch).expect("second create");
-        assert!(
-            scratch.join("kept.txt").exists(),
-            "会话级临时区不得被下一次调用清空"
-        );
-    }
 
     #[test]
     fn plain_path_strips_extended_prefix() {

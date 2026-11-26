@@ -50,6 +50,7 @@ const ACTION_KEYS = {
   pruneToLimit: "settings.storage.entries.action.pruneToLimit",
   rebuildCache: "settings.storage.entries.action.rebuildCache",
   rotate: "settings.storage.entries.action.rotate",
+  clearAll: "settings.storage.entries.action.clearAll",
 } as const satisfies Record<string, I18nPath>;
 
 const POLICY_SOURCE_KEYS = {

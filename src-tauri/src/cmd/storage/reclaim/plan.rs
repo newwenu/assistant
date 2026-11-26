@@ -42,6 +42,7 @@ pub async fn plan_storage_reclaim(
         referenced: referenced.as_ref(),
         sections: ports.sections.clone(),
         tool_results: ports.tool_results.clone(),
+        scratch: ports.scratch.clone(),
         db: ports.db.clone(),
     })
     .await;

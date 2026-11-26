@@ -10,7 +10,6 @@ use assistant_agent::agent::tool_event::{
     ToolEvent, ToolEventPayload,
 };
 use assistant_tools::compact::{ToolResultCompact, TruncatedUnit};
-use assistant_tools::storage::scratch_root_for;
 use assistant_tools::{
     PipelineEvent, PipelineEventSink, PipelineStage, ResolvedPermissionPolicy, ToolCall,
     ToolErrorKind, ToolOutcome, ToolPipeline, ToolRegistry, ToolUseContext,
@@ -148,9 +147,9 @@ pub struct PipelineToolExecution {
     /// 行索引缓存根（I58 §3.5）：由应用层装配时给出，库 crate 不解析基根。
     /// `None` = 未装配索引能力，`super_read` 据此报业务错误。
     index_root: Option<std::path::PathBuf>,
-    /// 临时区基根（I73 §5.4 P4.0）：装配期由应用层给出（`AppDirs::tool_scratch()`），
-    /// 本适配器只搬运；会话段在每次 `execute` 由 `scratch_root_for` 派生。
-    tool_scratch: Option<std::path::PathBuf>,
+    /// 临时区所有者（I77 §3.2 / C4）：装配期由应用层给出**唯一**实例，
+    /// 本适配器只把它搬进上下文；会话段由所有者 `session_root` 派生，不再自行拼路径。
+    tool_scratch: Option<Arc<dyn assistant_tools::ToolScratchStore>>,
     /// 升级通道装配（I58 §3.8 ③）：注册表 + 层级来源。`None` = 不提供升级通道，
     /// `request_tool(detail = "enable")` 返回业务错误（§3.8 ⑥）。
     escalation: Option<EscalationWiring>,
@@ -201,11 +200,20 @@ impl PipelineToolExecution {
         self
     }
 
-    /// 装配临时区基根（I73 §5.4 P4.0）：由应用层传入 `AppDirs::tool_scratch()`，
-    /// 本适配器只搬运，不自行解析基根；会话段在 `execute` 里派生。
-    pub fn with_tool_scratch(mut self, tool_scratch: std::path::PathBuf) -> Self {
+    /// 装配临时区所有者（I77 §3.2 / C4）：由应用层传入装配期创建的唯一实例，
+    /// 本适配器只搬运；会话段由所有者的 `session_root` 派生。
+    pub fn with_tool_scratch(
+        mut self,
+        tool_scratch: Arc<dyn assistant_tools::ToolScratchStore>,
+    ) -> Self {
         self.tool_scratch = Some(tool_scratch);
         self
+    }
+
+    /// 临时区所有者的只读句柄（I77 C4）：存储管理器据此观测与回收，
+    /// 与 shell 工具共享同一实例，禁止另建第二套。
+    pub fn scratch(&self) -> Option<&Arc<dyn assistant_tools::ToolScratchStore>> {
+        self.tool_scratch.as_ref()
     }
 
     /// 装配升级通道（I58 §3.8 ③）：注册表 + 本轮层级来源。
@@ -290,15 +298,12 @@ impl ToolExecutionPort for PipelineToolExecution {
             .storage()
             .namespace_root(Some(&session_id))
             .and_then(|root| assistant_tools::os::path::canonicalize_lenient(&root).ok());
-        // 临时区域根同口径（I73 §5.4 P4.0 / N17）：基根来自装配期注入，会话段由
-        // `scratch_root_for` 唯一实现点派生（`crate` 内不得自行 join 会话段）。
+        // 临时区域根同口径（I73 §5.4 P4.0 / N17）：会话段由所有者唯一实现点派生
+        // （I77 INV3：`crate` 内不得自行 join 会话段）。
         // 目录尚未创建时 `canonicalize_lenient` 仍给出确定形态，故这里无需建目录。
-        let tool_scratch_root = self.tool_scratch.as_ref().and_then(|base| {
-            assistant_tools::os::path::canonicalize_lenient(&scratch_root_for(
-                base,
-                Some(&session_id),
-            ))
-            .ok()
+        let tool_scratch_root = self.tool_scratch.as_ref().and_then(|store| {
+            assistant_tools::os::path::canonicalize_lenient(&store.session_root(Some(&session_id)))
+                .ok()
         });
         // 升级端口每次 `execute` 现构造（I58 §3.8 ③）：层级按会话求值，收集器按轮次
         // 归属。任一侧缺失（未装配 / 本链路不支持升级）都保持 `None`，`enable` 分支

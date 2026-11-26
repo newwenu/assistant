@@ -16,7 +16,7 @@ use crate::protocol::dto::{
     StorageReclaimResultDto,
 };
 use assistant_storage::attachment_store::{self, AttachmentStore};
-use assistant_tools::ToolResultStorage;
+use assistant_tools::{ToolResultStorage, ToolScratchStore};
 
 use inventory::InventoryCache;
 use ledger::{build_base, load_attachment_refs};
@@ -81,6 +81,7 @@ struct ReclaimContext {
     store: AttachmentStore,
     sections: Vec<StorageSectionHandle>,
     tool_results: Option<Arc<dyn ToolResultStorage>>,
+    scratch: Option<Arc<dyn ToolScratchStore>>,
     db: Option<DbState>,
 }
 
@@ -95,6 +96,7 @@ impl ReclaimContext {
         let tool_results: Option<Arc<dyn ToolResultStorage>> = crate::boot::tool_exec(app)
             .ok()
             .map(|exec| exec.storage().clone());
+        let scratch: Option<Arc<dyn ToolScratchStore>> = crate::boot::tool_scratch(app).ok();
         let db = app
             .try_state::<DbState>()
             .map(|state| state.inner().clone());
@@ -104,6 +106,7 @@ impl ReclaimContext {
             store: app.state::<AttachmentStore>().inner().clone(),
             sections,
             tool_results,
+            scratch,
             db,
         })
     }
@@ -115,6 +118,7 @@ impl ReclaimContext {
             attachments: &self.store,
             sections: self.sections.clone(),
             tool_results: self.tool_results.clone(),
+            scratch: self.scratch.clone(),
             db: self.db.clone(),
             now,
         }

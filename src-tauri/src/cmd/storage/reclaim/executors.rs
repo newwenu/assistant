@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use assistant_storage::attachment_store::{self, AttachmentStore};
-use assistant_tools::{DeleteReport, ExpiredCandidate, ToolResultStorage};
+use assistant_tools::{DeleteReport, ExpiredCandidate, ToolResultStorage, ToolScratchStore};
 
 use crate::app_dirs::AppDirs;
 use crate::cmd::storage::section::{SectionError, StorageSectionHandle};
@@ -382,4 +382,51 @@ pub(super) async fn execute_webview(
             StorageReclaimStatusDto::Failed,
         ),
     }
+}
+
+/// `E19`：一键清空整根临时区（I77 §4.1）。
+///
+/// 三条纪律：①判据只有一个——用户显式点清空，**不读会话表、不算差集**（INV5）；
+/// ②整根全清，`removed_bytes` 由 owner 在删除前统计（INV8）；
+/// ③基根保留、部分失败只计数不上抛（INV6 / INV8），`prepare` 负责下一次自愈。
+pub(super) async fn execute_scratch_clear(
+    store: Option<Arc<dyn ToolScratchStore>>,
+    key: String,
+    action: StorageReclaimActionDto,
+) -> StorageReclaimEntryResultDto {
+    let Some(store) = store else {
+        return entry_result(
+            key,
+            action,
+            Totals::default(),
+            vec![error_dto(
+                StorageReclaimErrorCodeDto::OwnerUnavailable,
+                "临时区不可用",
+            )],
+            StorageReclaimStatusDto::Failed,
+        );
+    };
+    let report = match tauri::async_runtime::spawn_blocking(move || store.clear()).await {
+        Ok(report) => report,
+        Err(_) => {
+            return entry_result(
+                key,
+                action,
+                Totals::default(),
+                vec![error_dto(
+                    StorageReclaimErrorCodeDto::Unknown,
+                    "清理任务出错".to_string(),
+                )],
+                StorageReclaimStatusDto::Failed,
+            );
+        }
+    };
+    let totals = Totals {
+        removed: report.removed,
+        removed_bytes: report.removed_bytes,
+        failed: report.failed,
+        skipped: report.skipped,
+    };
+    let errors = failure_errors(totals.failed, 0, "部分临时文件删除失败", "临时区读取失败");
+    entry_result(key, action, totals, errors, status_of(totals))
 }

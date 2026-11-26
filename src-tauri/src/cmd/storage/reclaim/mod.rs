@@ -16,7 +16,7 @@ mod store;
 use std::sync::Arc;
 
 use assistant_storage::attachment_store::AttachmentStore;
-use assistant_tools::ToolResultStorage;
+use assistant_tools::{ToolResultStorage, ToolScratchStore};
 
 use crate::app_dirs::AppDirs;
 use crate::cmd::storage::section::StorageSectionHandle;
@@ -40,6 +40,8 @@ pub struct ReclaimPorts<'a> {
     /// 已注册的可选分区快照：空 = 关闭特性构建，清单里只剩 core 条目。
     pub sections: Vec<StorageSectionHandle>,
     pub tool_results: Option<Arc<dyn ToolResultStorage>>,
+    /// `E19` 的观测与清空句柄（与 `E3` 同款双重暴露，I77 §3.2）。
+    pub scratch: Option<Arc<dyn ToolScratchStore>>,
     pub db: Option<DbState>,
     /// 本次请求的统一时间戳：计划 `sampledAt` 与执行「判据排除」都按它比较。
     pub now: i64,

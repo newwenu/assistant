@@ -133,16 +133,16 @@ pub(super) fn static_for(entry: CoreEntry) -> EntryStatic {
             counts_self_logs: false,
             note: Some("配置文件承载用户设置，只展示占用，不提供清理入口"),
         },
-        // `E19` 临时区（I73 §3.8）：没有独立回收 API，会话结束时随会话一并删除，
-        // 这里只观测占用；与 `E13` 同档（`NotImplemented` / `NoReclaimApi`）。
+        // `E19` 临时区（I77 §4.5）：会话删除时随会话释放，也可由用户一键清空整根。
+        // 静态 `Eligible`（同 `E2` / `E4` / `E14`）：执行器不依赖采样数字，采样失败也不该藏按钮。
         CoreEntry::ToolScratch => EntryStatic {
-            action: StorageReclaimActionDto::None,
-            eligibility: StorageEligibilityDto::NotImplemented,
-            reason: StorageReclaimReasonDto::NoReclaimApi,
+            action: StorageReclaimActionDto::ClearAll,
+            eligibility: StorageEligibilityDto::Eligible,
+            reason: StorageReclaimReasonDto::Transient,
             policy: ReclaimPolicyDto::default(),
             auto_active: false,
             counts_self_logs: false,
-            note: Some("会话结束时随会话一并删除，这里只展示占用情况"),
+            note: Some("会话删除时随会话释放；也可在存储管理器一键清空（含其他会话与共享段）"),
         },
     }
 }

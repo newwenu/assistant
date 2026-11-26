@@ -23,6 +23,7 @@ use crate::r#trait::{
     ValidationResult,
 };
 use crate::result::ToolResult;
+use crate::runtime::scratch::ToolScratchStore;
 use crate::sandbox::{SandboxEnforcement, SandboxProbe};
 use crate::storage::ToolResultStorage;
 
@@ -37,6 +38,8 @@ const TOOL_ID: &str = "shell";
 pub struct ShellTool {
     probe: &'static SandboxProbe,
     storage: Arc<dyn ToolResultStorage>,
+    /// 临时区所有者（I77 INV3）：建目录只经它的 `prepare`，工具不自行拼路径。
+    scratch: Arc<dyn ToolScratchStore>,
 }
 
 impl ShellTool {
@@ -44,13 +47,21 @@ impl ShellTool {
     ///
     /// 门禁在注册处（`register_shell_tools`），这里只是防止绕过注册处直接构造，
     /// 让「无沙箱执行」在类型层面也不可能出现。
-    pub fn new(probe: &'static SandboxProbe, storage: Arc<dyn ToolResultStorage>) -> Self {
+    pub fn new(
+        probe: &'static SandboxProbe,
+        storage: Arc<dyn ToolResultStorage>,
+        scratch: Arc<dyn ToolScratchStore>,
+    ) -> Self {
         assert_ne!(
             probe.enforcement,
             SandboxEnforcement::None,
             "ShellTool requires a sandbox boundary; register it only when enforcement != none"
         );
-        Self { probe, storage }
+        Self {
+            probe,
+            storage,
+            scratch,
+        }
     }
 }
 
@@ -178,6 +189,13 @@ impl Tool for ShellTool {
     }
 
     async fn execute(&self, input: &Value, context: &ToolUseContext) -> Result<ToolResult, String> {
-        Ok(run::execute(input, context, self.probe, self.storage.clone()).await)
+        Ok(run::execute(
+            input,
+            context,
+            self.probe,
+            self.storage.clone(),
+            self.scratch.clone(),
+        )
+        .await)
     }
 }

@@ -24,7 +24,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use assistant_storage::attachment_store::{AttachmentEntry, AttachmentStore};
-use assistant_tools::ToolResultStorage;
+use assistant_tools::{ToolResultStorage, ToolScratchStore};
 
 use crate::app_dirs::AppDirs;
 use crate::cmd::storage::entries::{EntrySample, EntryView};
@@ -51,6 +51,8 @@ pub struct SampleInputs<'a> {
     /// 已注册的可选分区快照：空 = 关闭特性构建，条目清单里只剩 core 条目。
     pub sections: Vec<StorageSectionHandle>,
     pub tool_results: Option<Arc<dyn ToolResultStorage>>,
+    /// `E19` 的观测句柄（`boot::tool_exec(app).scratch()`，与 `E3` 同款双重暴露）。
+    pub scratch: Option<Arc<dyn ToolScratchStore>>,
     pub db: Option<DbState>,
 }
 

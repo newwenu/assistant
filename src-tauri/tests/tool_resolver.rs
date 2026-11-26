@@ -241,7 +241,10 @@ async fn shell_visibility_needs_registration_checkbox_and_tier() {
     let probe: &'static assistant_tools::sandbox::SandboxProbe = Box::leak(Box::new(probe));
 
     let registry = ToolRegistry::new();
-    register_shell_tools(&registry, backend, probe);
+    let scratch: Arc<dyn assistant_tools::ToolScratchStore> = Arc::new(
+        assistant_tools::FileToolScratchStore::new(storage.path().join("scratch")),
+    );
+    register_shell_tools(&registry, backend, scratch, probe);
     let enabled = vec!["shell".to_string()];
 
     let checked = resolve_available_tools(&registry, &enabled, &[], ToolTier::Os).await;

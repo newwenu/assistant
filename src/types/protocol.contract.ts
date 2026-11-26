@@ -569,7 +569,7 @@ export type StorageInventoryTotalsDto = { scanBytes: number | null, scanCount: n
 partial: boolean, data: StorageInventoryScopeTotalsDto, local: StorageInventoryScopeTotalsDto, };
 export type StorageLayerDto = "data" | "local";
 export type StoragePolicySourceDto = "config" | "constant" | "owner" | "none";
-export type StorageReclaimActionDto = "none" | "deleteOrphans" | "deleteSelected" | "sweepExpired" | "pruneToLimit" | "rebuildCache" | "rotate";
+export type StorageReclaimActionDto = "none" | "deleteOrphans" | "deleteSelected" | "sweepExpired" | "pruneToLimit" | "rebuildCache" | "rotate" | "clearAll";
 export type StorageReclaimEntryRequestDto = { key: string, action: StorageReclaimActionDto, };
 export type StorageReclaimEntryResultDto = { key: string, action: StorageReclaimActionDto, status: StorageReclaimStatusDto, removedCount: number, removedBytes: number, failedCount: number, 
 /**
