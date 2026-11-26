@@ -1,6 +1,7 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import zhCN from "@/i18n/locales/zh-CN.json";
 import enUS from "@/i18n/locales/en-US.json";
+import i18n from "@/i18n";
 import {
   actionText,
   availabilityText,
@@ -165,6 +166,17 @@ describe("存储词表", () => {
 });
 
 describe("存储条目统计文案", () => {
+  // `translateKey` 读的是全局 i18n 当前语言（由浏览器语言探测决定），
+  // 单测里必须钉死，否则跑在 en-US 环境的 CI 上会拿到英文文案。
+  let previousLanguage: string | undefined;
+  beforeEach(async () => {
+    previousLanguage = i18n.language;
+    await i18n.changeLanguage("zh-CN");
+  });
+  afterEach(async () => {
+    await i18n.changeLanguage(previousLanguage ?? "zh-CN");
+  });
+
   it("noReportYet 表达「统计中」，与 staleReport「已过期」区分", () => {
     expect(
       localeHas(zhCN, "settings.storage.entries.availability.noReportYet"),
