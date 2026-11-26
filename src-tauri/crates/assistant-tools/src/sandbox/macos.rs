@@ -209,7 +209,7 @@ fn build_profile(host: &SandboxHostPaths, write_roots: &[PathBuf]) -> Result<Str
         .iter()
         .map(|path| profile_path(path))
         .collect();
-    let writable: Vec<String> = write_roots.iter().map(|path| profile_path(path)).collect();
+    let writable: Vec<PathBuf> = write_roots.iter().map(|path| profile_path(path)).collect();
 
     for root in &writable {
         if sensitive.iter().any(|item| paths_overlap(root, item)) {

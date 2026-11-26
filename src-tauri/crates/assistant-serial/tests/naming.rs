@@ -1,6 +1,8 @@
 use std::cmp::Ordering;
 
-use assistant_serial::backend::{device_path, natural_cmp};
+#[cfg(windows)]
+use assistant_serial::backend::device_path;
+use assistant_serial::backend::natural_cmp;
 
 #[test]
 fn natural_order_puts_small_numbers_first() {
