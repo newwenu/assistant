@@ -109,7 +109,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # 主 app 依赖 Tauri（Linux 需要 WebKitGTK 系列），vault 的 Linux 后端链接 libsecret。
+      # 主 app 依赖 Tauri（Linux 需要 WebKitGTK 系列），vault 的 Linux 后端链接 libsecret，
+      # xcap 的 Linux 截屏后端经 pipewire 链接 libpipewire-0.3，其 build.rs 还会调用 bindgen
+      # （需要 libclang）。
       # 更新索引与安装拆成两步：一条 run 块内是 bash -e，前一条失败会中断后一条，
       # 拆开后两个动作各自受 !cancelled() 保护、各自出结论。
       - name: 更新 APT 索引
@@ -126,6 +128,8 @@ jobs:
             libsecret-1-dev \
             libssl-dev \
             libxdo-dev \
+            libpipewire-0.3-dev \
+            libclang-dev \
             pkg-config \
             patchelf
 
