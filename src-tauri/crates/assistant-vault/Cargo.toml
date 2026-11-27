@@ -42,6 +42,7 @@ windows-future = { workspace = true }
 [target.'cfg(target_os = "macos")'.dependencies]
 core-foundation = { workspace = true }
 security-framework = { workspace = true }
+security-framework-sys = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libsecret = { workspace = true }

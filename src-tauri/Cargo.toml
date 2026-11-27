@@ -154,6 +154,7 @@ tempfile = "3"
 windows-future = "0.3"
 core-foundation = "0.10"
 security-framework = "3.0"
+security-framework-sys = "2"
 libsecret = "0.1"
 ssh-key = { version = "0.6", features = ["encryption", "rsa", "ed25519"] }
 rsa = { version = "0.9", features = ["pem"] }
